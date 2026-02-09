@@ -18,6 +18,7 @@ import qualified Data.ByteString as BS
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Ptr
+import Control.Exception (mask_)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.FFI.ECKey
@@ -48,7 +49,7 @@ withECPublicKey (ECPublicKey fptr) = withForeignPtr fptr
 
 -- | Generate a new EC key pair for the given curve.
 generateECKeyPair :: ECCurve -> IO ECKeyPair
-generateECKeyPair curve = do
+generateECKeyPair curve = mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   if keyPtr == nullPtr
     then fail "generateECKeyPair: EC_KEY_new_by_curve_name failed"
@@ -85,7 +86,7 @@ ecPrivateKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
 
 -- | Reconstruct an EC key pair from a curve and private key bytes.
 ecKeyPairFromPrivateBytes :: ECCurve -> ByteString -> IO ECKeyPair
-ecKeyPairFromPrivateBytes curve privBytes = do
+ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   if keyPtr == nullPtr
     then fail "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed"
@@ -128,7 +129,7 @@ ecKeyPairFromPrivateBytes curve privBytes = do
 
 -- | Parse an EC public key from uncompressed point bytes.
 ecPublicKeyFromBytes :: ECCurve -> ByteString -> IO ECPublicKey
-ecPublicKeyFromBytes curve pubBytes = do
+ecPublicKeyFromBytes curve pubBytes = mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   if keyPtr == nullPtr
     then fail "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed"

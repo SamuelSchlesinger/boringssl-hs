@@ -10,6 +10,7 @@ module Crypto.BoringSSL.X509
   , issuerName
   ) where
 
+import Control.Exception (mask_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
 import Foreign.C.String
@@ -35,12 +36,13 @@ parseDER bs = unsafePerformIO $
       poke inpPtr dataPtr
       alloca $ \outPtr -> do
         poke outPtr nullPtr
-        cert <- c_d2i_X509 outPtr inpPtr (fromIntegral dataLen)
-        if cert == nullPtr
-          then return Nothing
-          else do
-            fptr <- newForeignPtr c_X509_free_funptr cert
-            return (Just (X509Cert fptr))
+        mask_ $ do
+          cert <- c_d2i_X509 outPtr inpPtr (fromIntegral dataLen)
+          if cert == nullPtr
+            then return Nothing
+            else do
+              fptr <- newForeignPtr c_X509_free_funptr cert
+              return (Just (X509Cert fptr))
 {-# NOINLINE parseDER #-}
 
 -- | Serialize an X.509 certificate to DER encoding.

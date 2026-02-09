@@ -23,6 +23,7 @@ import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
+import Control.Exception (mask_)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer
@@ -116,7 +117,7 @@ newtype DigestCtx = DigestCtx (ForeignPtr EVP_MD_CTX)
 
 -- | Initialize a streaming digest context for the given algorithm.
 digestInit :: Algorithm -> IO DigestCtx
-digestInit algo = do
+digestInit algo = mask_ $ do
   ctx <- c_EVP_MD_CTX_new
   if ctx == nullPtr
     then fail "digestInit: EVP_MD_CTX_new returned NULL"

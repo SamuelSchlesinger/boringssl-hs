@@ -13,6 +13,7 @@ module Crypto.BoringSSL.AEAD
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
+import Control.Exception (mask_)
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
@@ -49,7 +50,7 @@ newAEADCtx algo key = do
   if BS.length key /= expectedKeyLen
     then fail $ "newAEADCtx: key length " ++ show (BS.length key)
              ++ " does not match expected " ++ show expectedKeyLen
-    else withByteString key $ \keyPtr keyLen -> do
+    else withByteString key $ \keyPtr keyLen -> mask_ $ do
       ctx <- c_EVP_AEAD_CTX_new aead keyPtr keyLen 0
       if ctx == nullPtr
         then do

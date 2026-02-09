@@ -29,6 +29,7 @@ import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
+import Control.Exception (mask_, mask, onException)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -49,7 +50,7 @@ rsaPKCS1OAEPPadding = 4
 
 -- | Generate a new RSA key pair.
 generateRSAKeyPair :: Int -> IO RSAKeyPair
-generateRSAKeyPair bits = do
+generateRSAKeyPair bits = mask $ \restore -> do
   rsa <- c_RSA_new
   if rsa == nullPtr
     then fail "generateRSAKeyPair: RSA_new failed"
@@ -61,7 +62,8 @@ generateRSAKeyPair bits = do
           fail "generateRSAKeyPair: BN_new failed"
         else do
           _ <- c_BN_set_word e 65537
-          rc <- c_RSA_generate_key_ex rsa (fromIntegral bits) e nullPtr
+          rc <- restore (c_RSA_generate_key_ex rsa (fromIntegral bits) e nullPtr)
+                  `onException` (c_BN_free e >> c_RSA_free rsa)
           c_BN_free e
           if rc /= 1
             then do
@@ -85,7 +87,7 @@ publicKeyToBytes (RSAKeyPair fptr) =
 -- | Deserialize a public key from DER-encoded PKCS#1 format.
 publicKeyFromBytes :: ByteString -> IO RSAPublicKey
 publicKeyFromBytes bs =
-  withByteString bs $ \ptr len -> do
+  withByteString bs $ \ptr len -> mask_ $ do
     rsa <- c_RSA_public_key_from_bytes ptr len
     if rsa == nullPtr
       then fail "publicKeyFromBytes: RSA_public_key_from_bytes failed"
@@ -107,7 +109,7 @@ privateKeyToBytes (RSAKeyPair fptr) =
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
 privateKeyFromBytes :: ByteString -> IO RSAKeyPair
 privateKeyFromBytes bs =
-  withByteString bs $ \ptr len -> do
+  withByteString bs $ \ptr len -> mask_ $ do
     rsa <- c_RSA_private_key_from_bytes ptr len
     if rsa == nullPtr
       then fail "privateKeyFromBytes: RSA_private_key_from_bytes failed"
