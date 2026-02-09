@@ -33,6 +33,9 @@ library
         Crypto.BoringSSL.MLDSA
         Crypto.BoringSSL.X509
         Crypto.BoringSSL.PEM
+        Crypto.BoringSSL.HPKE
+        Crypto.BoringSSL.SPAKE2
+        Crypto.BoringSSL.TrustToken
     other-modules:
         Crypto.BoringSSL.Internal.FFI
         Crypto.BoringSSL.Internal.FFI.Digest
@@ -53,6 +56,9 @@ library
         Crypto.BoringSSL.Internal.FFI.MLKEM
         Crypto.BoringSSL.Internal.FFI.MLDSA
         Crypto.BoringSSL.Internal.FFI.X509
+        Crypto.BoringSSL.Internal.FFI.HPKE
+        Crypto.BoringSSL.Internal.FFI.SPAKE2
+        Crypto.BoringSSL.Internal.FFI.TrustToken
         Crypto.BoringSSL.Internal.Digest
         Crypto.BoringSSL.Internal.ECKey
         Crypto.BoringSSL.Internal.Buffer
@@ -63,6 +69,8 @@ library
     hs-source-dirs:   src
     default-language: Haskell2010
     include-dirs:     third_party/boringssl/include
+    c-sources:        cbits/trust_token_helpers.c
+    cc-options:       -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION
     cxx-options:      -std=c++17 -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION -fno-exceptions -fno-rtti
     if os(darwin)
         extra-libraries: c++
@@ -335,6 +343,9 @@ test-suite boringssl-test
         Test.MLDSA
         Test.X509
         Test.PEM
+        Test.HPKE
+        Test.SPAKE2
+        Test.TrustToken
         Test.Properties
     build-depends:
         base ^>=4.18.3.0,

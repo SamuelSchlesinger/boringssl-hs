@@ -18,6 +18,9 @@ import qualified Test.MLKEM
 import qualified Test.MLDSA
 import qualified Test.X509
 import qualified Test.PEM
+import qualified Test.HPKE
+import qualified Test.SPAKE2
+import qualified Test.TrustToken
 import qualified Test.Properties
 
 main :: IO ()
@@ -39,5 +42,8 @@ main = defaultMain $ testGroup "BoringSSL"
   , Test.MLDSA.tests
   , Test.X509.tests
   , Test.PEM.tests
+  , Test.HPKE.tests
+  , Test.SPAKE2.tests
+  , Test.TrustToken.tests
   , Test.Properties.tests
   ]
