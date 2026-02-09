@@ -3,19 +3,22 @@ module Crypto.BoringSSL.Internal.Buffer
   , createByteString
   , createByteStringLen
   , packOpenSSLBuffer
+  , constTimeEq
   ) where
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Unsafe as BSU
+import Control.Exception (finally)
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 
-import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_free)
+import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_free, c_CRYPTO_memcmp)
+import System.IO.Unsafe (unsafePerformIO)
 
 -- | Use a ByteString as a C pointer and length. For empty ByteStrings,
 -- passes a non-null pointer (nullPtr is avoided for safety with some C APIs).
@@ -53,6 +56,17 @@ packOpenSSLBuffer :: Ptr (Ptr CUChar) -> Ptr CSize -> IO ByteString
 packOpenSSLBuffer bufPtrPtr lenPtr = do
   bufPtr <- peek bufPtrPtr
   len <- peek lenPtr
-  bs <- BS.packCStringLen (castPtr bufPtr, fromIntegral len)
-  c_OPENSSL_free bufPtr
-  return bs
+  BS.packCStringLen (castPtr bufPtr, fromIntegral len)
+    `finally` c_OPENSSL_free bufPtr
+
+-- | Constant-time equality comparison for ByteStrings.
+-- Uses BoringSSL's CRYPTO_memcmp to avoid timing side-channel attacks.
+-- Returns True if the two ByteStrings are equal, False otherwise.
+constTimeEq :: ByteString -> ByteString -> Bool
+constTimeEq a b
+  | BS.length a /= BS.length b = False
+  | otherwise = unsafePerformIO $
+      BSU.unsafeUseAsCStringLen a $ \(ptrA, len) ->
+        BSU.unsafeUseAsCStringLen b $ \(ptrB, _) -> do
+          rc <- c_CRYPTO_memcmp ptrA ptrB (fromIntegral len)
+          return (rc == 0)
