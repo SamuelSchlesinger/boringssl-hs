@@ -36,6 +36,10 @@ To run the test suite:
 cabal test
 ```
 
+## Disclaimer
+
+This is not an officially supported Google product.
+
 ## Current status
 
 This library is a work in progress. The cryptographic primitives listed above
