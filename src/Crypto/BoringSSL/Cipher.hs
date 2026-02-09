@@ -1,7 +1,14 @@
+-- | Symmetric cipher encryption and decryption.
+--
+-- Supports AES-128\/256 in CBC and CTR modes. CBC mode applies
+-- PKCS#7 padding automatically.
 module Crypto.BoringSSL.Cipher
-  ( CipherAlgorithm(..)
+  ( -- * Algorithms
+    CipherAlgorithm(..)
+    -- * Encryption and decryption
   , encrypt
   , decrypt
+    -- * Algorithm properties
   , cipherKeyLength
   , cipherIVLength
   , cipherBlockSize

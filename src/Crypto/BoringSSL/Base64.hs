@@ -1,3 +1,7 @@
+-- | Base64 encoding and decoding.
+--
+-- Pure functions for standard Base64 (RFC 4648) encoding and decoding,
+-- backed by BoringSSL's constant-time implementation.
 module Crypto.BoringSSL.Base64
   ( encode
   , decode

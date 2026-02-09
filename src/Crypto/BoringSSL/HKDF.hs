@@ -1,5 +1,11 @@
+-- | HKDF key derivation (RFC 5869).
+--
+-- Provides the full extract-then-expand operation in one call ('hkdf'),
+-- or the individual 'hkdfExtract' and 'hkdfExpand' steps.
 module Crypto.BoringSSL.HKDF
-  ( hkdf
+  ( -- * One-shot
+    hkdf
+    -- * Extract and expand
   , hkdfExtract
   , hkdfExpand
   ) where

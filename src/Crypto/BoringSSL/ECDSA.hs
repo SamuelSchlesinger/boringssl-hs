@@ -1,9 +1,16 @@
+-- | ECDSA digital signatures.
+--
+-- Supports P-256 and P-384 curves. Signatures are produced in
+-- DER-encoded ASN.1 format.
 module Crypto.BoringSSL.ECDSA
-  ( ECCurve(..)
+  ( -- * Key types
+    ECCurve(..)
   , ECKeyPair
   , ECPublicKey
+    -- * Key generation
   , generateKeyPair
   , ecPublicKeyOfPair
+    -- * Signing and verification
   , ecdsaSign
   , ecdsaVerify
     -- * Key serialization

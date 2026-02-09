@@ -1,9 +1,16 @@
+-- | Elliptic curve Diffie-Hellman key agreement.
+--
+-- Supports P-256 and P-384 curves using the FIPS-compliant
+-- ECDH variant that hashes the shared point.
 module Crypto.BoringSSL.ECDH
-  ( ECCurve(..)
+  ( -- * Key types
+    ECCurve(..)
   , ECKeyPair
   , ECPublicKey
   , ecPublicKeyOfPair
+    -- * Key generation
   , generateECKeyPair
+    -- * Key agreement
   , ecdhComputeSecret
     -- * Key serialization
   , ecPublicKeyBytes

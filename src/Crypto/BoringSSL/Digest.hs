@@ -1,5 +1,12 @@
+-- | Cryptographic hash functions.
+--
+-- Supports SHA-1, SHA-2 (224\/256\/384\/512\/512-256), MD5, and BLAKE2b-256.
+-- Both one-shot hashing and incremental streaming APIs are provided.
 module Crypto.BoringSSL.Digest
-  ( Algorithm(..)
+  ( -- * Algorithms
+    Algorithm(..)
+  , digestSize
+    -- * One-shot hashing
   , hash
   , hashSHA256
   , hashSHA512
@@ -14,7 +21,6 @@ module Crypto.BoringSSL.Digest
   , digestInit
   , digestUpdate
   , digestFinalize
-  , digestSize
   ) where
 
 import Data.ByteString (ByteString)

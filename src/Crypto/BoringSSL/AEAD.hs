@@ -1,10 +1,18 @@
+-- | Authenticated encryption with associated data (AEAD).
+--
+-- Supports AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305, and AES-GCM-SIV.
+-- Use 'seal' to encrypt and 'open' to decrypt.
 module Crypto.BoringSSL.AEAD
-  ( AEADAlgorithm(..)
+  ( -- * Algorithms
+    AEADAlgorithm(..)
+    -- * Context
   , AEADCtx
   , BoringSSLError(..)
   , newAEADCtx
+    -- * Encryption and decryption
   , seal
   , open
+    -- * Algorithm properties
   , keyLength
   , nonceLength
   , maxOverhead

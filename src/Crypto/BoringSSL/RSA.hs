@@ -1,5 +1,10 @@
+-- | RSA encryption and digital signatures.
+--
+-- Supports PKCS#1 v1.5 and PSS signing, and OAEP encryption.
+-- Key serialization uses DER-encoded PKCS#1 format.
 module Crypto.BoringSSL.RSA
-  ( RSAKeyPair(..)
+  ( -- * Key types
+    RSAKeyPair(..)
   , RSAPublicKey(..)
     -- * Key generation
   , generateRSAKeyPair

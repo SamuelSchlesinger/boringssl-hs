@@ -1,3 +1,7 @@
+-- | PBKDF2 password-based key derivation.
+--
+-- Derives key material from a password and salt using iterated
+-- HMAC, as specified in RFC 2898.
 module Crypto.BoringSSL.PBKDF2
   ( pbkdf2
   ) where

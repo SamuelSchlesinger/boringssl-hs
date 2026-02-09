@@ -1,9 +1,16 @@
+-- | Ed25519 digital signatures (RFC 8032).
+--
+-- Provides key generation, deterministic signing, and signature verification.
+-- Signing is pure and deterministic per RFC 8032.
 module Crypto.BoringSSL.Ed25519
-  ( PublicKey
+  ( -- * Key types
+    PublicKey
   , PrivateKey
   , Signature
+    -- * Key generation
   , generateKeyPair
   , keyPairFromSeed
+    -- * Signing and verification
   , sign
   , verify
     -- * Serialization

@@ -1,9 +1,16 @@
+-- | HMAC message authentication codes.
+--
+-- Provides one-shot HMAC computation, an incremental streaming API,
+-- and constant-time verification to prevent timing attacks.
 module Crypto.BoringSSL.HMAC
-  ( hmac
+  ( -- * One-shot
+    hmac
+    -- * Streaming
   , HMACCtx
   , hmacInit
   , hmacUpdate
   , hmacFinalize
+    -- * Verification
   , hmacVerify
   , constTimeEq
   ) where

@@ -1,3 +1,7 @@
+-- | Cryptographically secure random number generation.
+--
+-- Backed by BoringSSL's CSPRNG, which aborts the process on failure
+-- rather than returning insecure output.
 module Crypto.BoringSSL.Random
   ( randomBytes
   ) where

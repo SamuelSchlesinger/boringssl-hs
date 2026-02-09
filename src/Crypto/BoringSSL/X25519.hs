@@ -1,8 +1,15 @@
+-- | X25519 Diffie-Hellman key exchange (RFC 7748).
+--
+-- Provides key pair generation and shared secret computation using
+-- Curve25519 scalar multiplication.
 module Crypto.BoringSSL.X25519
-  ( PublicKey
+  ( -- * Key types
+    PublicKey
   , PrivateKey
+    -- * Key generation
   , generateKeyPair
   , publicFromPrivate
+    -- * Key exchange
   , computeSharedSecret
     -- * Serialization
   , publicKeyToBytes
