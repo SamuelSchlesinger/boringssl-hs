@@ -7,7 +7,10 @@ module Crypto.BoringSSL.Cipher
   , cipherBlockSize
   ) where
 
+import Control.Exception (bracket)
+import Control.Monad (when)
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
@@ -50,98 +53,104 @@ cipherBlockSize AES256CTR = 1
 -- | Encrypt plaintext. CBC mode applies PKCS#7 padding automatically.
 encrypt :: CipherAlgorithm -> ByteString -> ByteString -> ByteString
         -> IO (Either BoringSSLError ByteString)
-encrypt algo key iv plaintext =
-  withByteString key $ \keyPtr _ ->
-    withByteString iv $ \ivPtr _ ->
-      withByteString plaintext $ \inPtr inLen -> do
-        ctx <- c_EVP_CIPHER_CTX_new
-        if ctx == nullPtr
-          then return (Left (BoringSSLError 0 "encrypt: EVP_CIPHER_CTX_new failed"))
-          else do
-            -- Max output: input + one block of padding
-            let maxOutLen = fromIntegral inLen + (16 :: Int)
-            fptr <- BSI.mallocByteString maxOutLen
-            result <- withForeignPtr fptr $ \outPtr -> do
-              rc1 <- c_EVP_EncryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
-              if rc1 /= 1
-                then do
-                  c_EVP_CIPHER_CTX_free ctx
-                  merr <- getBoringSSLError
-                  return (Left (maybe (BoringSSLError 0 "encrypt: EncryptInit failed") id merr))
-                else do
-                  alloca $ \updateLenPtr ->
-                    alloca $ \finalLenPtr -> do
-                      rc2 <- c_EVP_EncryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
-                               (fromIntegral maxOutLen) inPtr inLen
-                      if rc2 /= 1
-                        then do
-                          c_EVP_CIPHER_CTX_free ctx
-                          merr <- getBoringSSLError
-                          return (Left (maybe (BoringSSLError 0 "encrypt: EncryptUpdate failed") id merr))
-                        else do
-                          updateLen <- peek updateLenPtr
-                          let remaining = fromIntegral maxOutLen - updateLen
-                          rc3 <- c_EVP_EncryptFinal_ex2 ctx
-                                   (castPtr outPtr `plusPtr` fromIntegral updateLen)
-                                   finalLenPtr remaining
-                          c_EVP_CIPHER_CTX_free ctx
-                          if rc3 /= 1
-                            then do
-                              merr <- getBoringSSLError
-                              return (Left (maybe (BoringSSLError 0 "encrypt: EncryptFinal failed") id merr))
-                            else do
-                              finalLen <- peek finalLenPtr
-                              return (Right (fromIntegral (updateLen + finalLen)))
-            case result of
-              Left err  -> return (Left err)
-              Right len -> return (Right (BSI.BS fptr len))
+encrypt algo key iv plaintext
+  | BS.length key /= cipherKeyLength algo =
+      return (Left (BoringSSLError 0 ("encrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
+  | BS.length iv /= cipherIVLength algo =
+      return (Left (BoringSSLError 0 ("encrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
+  | otherwise =
+      withByteString key $ \keyPtr _ ->
+        withByteString iv $ \ivPtr _ ->
+          withByteString plaintext $ \inPtr inLen -> do
+        bracket c_EVP_CIPHER_CTX_new
+                (\ctx -> when (ctx /= nullPtr) (c_EVP_CIPHER_CTX_free ctx))
+                $ \ctx ->
+          if ctx == nullPtr
+            then return (Left (BoringSSLError 0 "encrypt: EVP_CIPHER_CTX_new failed"))
+            else do
+              let maxOutLen = fromIntegral inLen + (16 :: Int)
+              fptr <- BSI.mallocByteString maxOutLen
+              result <- withForeignPtr fptr $ \outPtr -> do
+                rc1 <- c_EVP_EncryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
+                if rc1 /= 1
+                  then do
+                    merr <- getBoringSSLError
+                    return (Left (maybe (BoringSSLError 0 "encrypt: EncryptInit failed") id merr))
+                  else do
+                    alloca $ \updateLenPtr ->
+                      alloca $ \finalLenPtr -> do
+                        rc2 <- c_EVP_EncryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
+                                 (fromIntegral maxOutLen) inPtr inLen
+                        if rc2 /= 1
+                          then do
+                            merr <- getBoringSSLError
+                            return (Left (maybe (BoringSSLError 0 "encrypt: EncryptUpdate failed") id merr))
+                          else do
+                            updateLen <- peek updateLenPtr
+                            let remaining = fromIntegral maxOutLen - updateLen
+                            rc3 <- c_EVP_EncryptFinal_ex2 ctx
+                                     (castPtr outPtr `plusPtr` fromIntegral updateLen)
+                                     finalLenPtr remaining
+                            if rc3 /= 1
+                              then do
+                                merr <- getBoringSSLError
+                                return (Left (maybe (BoringSSLError 0 "encrypt: EncryptFinal failed") id merr))
+                              else do
+                                finalLen <- peek finalLenPtr
+                                return (Right (fromIntegral (updateLen + finalLen)))
+              case result of
+                Left err  -> return (Left err)
+                Right len -> return (Right (BSI.BS fptr len))
 
 -- | Decrypt ciphertext. CBC mode removes PKCS#7 padding automatically.
 -- Returns Left on failure (e.g. bad padding).
 decrypt :: CipherAlgorithm -> ByteString -> ByteString -> ByteString
         -> IO (Either BoringSSLError ByteString)
-decrypt algo key iv ciphertext =
-  withByteString key $ \keyPtr _ ->
-    withByteString iv $ \ivPtr _ ->
-      withByteString ciphertext $ \inPtr inLen -> do
-        ctx <- c_EVP_CIPHER_CTX_new
-        if ctx == nullPtr
-          then return (Left (BoringSSLError 0 "decrypt: EVP_CIPHER_CTX_new failed"))
-          else do
-            -- Max output: same as input (padding is removed)
-            let maxOutLen = fromIntegral inLen + (16 :: Int)
-            fptr <- BSI.mallocByteString maxOutLen
-            result <- withForeignPtr fptr $ \outPtr -> do
-              rc1 <- c_EVP_DecryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
-              if rc1 /= 1
-                then do
-                  c_EVP_CIPHER_CTX_free ctx
-                  merr <- getBoringSSLError
-                  return (Left (maybe (BoringSSLError 0 "decrypt: DecryptInit failed") id merr))
-                else do
-                  alloca $ \updateLenPtr ->
-                    alloca $ \finalLenPtr -> do
-                      rc2 <- c_EVP_DecryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
-                               (fromIntegral maxOutLen) inPtr inLen
-                      if rc2 /= 1
-                        then do
-                          c_EVP_CIPHER_CTX_free ctx
-                          merr <- getBoringSSLError
-                          return (Left (maybe (BoringSSLError 0 "decrypt: DecryptUpdate failed") id merr))
-                        else do
-                          updateLen <- peek updateLenPtr
-                          let remaining = fromIntegral maxOutLen - updateLen
-                          rc3 <- c_EVP_DecryptFinal_ex2 ctx
-                                   (castPtr outPtr `plusPtr` fromIntegral updateLen)
-                                   finalLenPtr remaining
-                          c_EVP_CIPHER_CTX_free ctx
-                          if rc3 /= 1
-                            then do
-                              merr <- getBoringSSLError
-                              return (Left (maybe (BoringSSLError 0 "decrypt: bad padding or corrupted ciphertext") id merr))
-                            else do
-                              finalLen <- peek finalLenPtr
-                              return (Right (fromIntegral (updateLen + finalLen)))
-            case result of
-              Left err  -> return (Left err)
-              Right len -> return (Right (BSI.BS fptr len))
+decrypt algo key iv ciphertext
+  | BS.length key /= cipherKeyLength algo =
+      return (Left (BoringSSLError 0 ("decrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
+  | BS.length iv /= cipherIVLength algo =
+      return (Left (BoringSSLError 0 ("decrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
+  | otherwise =
+      withByteString key $ \keyPtr _ ->
+        withByteString iv $ \ivPtr _ ->
+          withByteString ciphertext $ \inPtr inLen -> do
+        bracket c_EVP_CIPHER_CTX_new
+                (\ctx -> when (ctx /= nullPtr) (c_EVP_CIPHER_CTX_free ctx))
+                $ \ctx ->
+          if ctx == nullPtr
+            then return (Left (BoringSSLError 0 "decrypt: EVP_CIPHER_CTX_new failed"))
+            else do
+              let maxOutLen = fromIntegral inLen + (16 :: Int)
+              fptr <- BSI.mallocByteString maxOutLen
+              result <- withForeignPtr fptr $ \outPtr -> do
+                rc1 <- c_EVP_DecryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
+                if rc1 /= 1
+                  then do
+                    merr <- getBoringSSLError
+                    return (Left (maybe (BoringSSLError 0 "decrypt: DecryptInit failed") id merr))
+                  else do
+                    alloca $ \updateLenPtr ->
+                      alloca $ \finalLenPtr -> do
+                        rc2 <- c_EVP_DecryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
+                                 (fromIntegral maxOutLen) inPtr inLen
+                        if rc2 /= 1
+                          then do
+                            merr <- getBoringSSLError
+                            return (Left (maybe (BoringSSLError 0 "decrypt: DecryptUpdate failed") id merr))
+                          else do
+                            updateLen <- peek updateLenPtr
+                            let remaining = fromIntegral maxOutLen - updateLen
+                            rc3 <- c_EVP_DecryptFinal_ex2 ctx
+                                     (castPtr outPtr `plusPtr` fromIntegral updateLen)
+                                     finalLenPtr remaining
+                            if rc3 /= 1
+                              then do
+                                merr <- getBoringSSLError
+                                return (Left (maybe (BoringSSLError 0 "decrypt: bad padding or corrupted ciphertext") id merr))
+                              else do
+                                finalLen <- peek finalLenPtr
+                                return (Right (fromIntegral (updateLen + finalLen)))
+              case result of
+                Left err  -> return (Left err)
+                Right len -> return (Right (BSI.BS fptr len))
