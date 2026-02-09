@@ -25,6 +25,8 @@ module Crypto.BoringSSL.RSA
     -- * OAEP encryption
   , rsaEncrypt
   , rsaDecrypt
+    -- * Error type
+  , BoringSSLError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -49,24 +51,24 @@ newtype RSAKeyPair = RSAKeyPair (ForeignPtr RSA_C)
 -- | An RSA public key only.
 newtype RSAPublicKey = RSAPublicKey (ForeignPtr RSA_C)
 
--- | RSA_PKCS1_OAEP_PADDING = 4
+-- | RSA_PKCS1_AEP_PADDING = 4
 rsaPKCS1OAEPPadding :: CInt
 rsaPKCS1OAEPPadding = 4
 
 -- | Generate a new RSA key pair. The key size must be at least 2048 bits.
-generateRSAKeyPair :: Int -> IO RSAKeyPair
+generateRSAKeyPair :: Int -> IO (Either BoringSSLError RSAKeyPair)
 generateRSAKeyPair bits
-  | bits < 2048 = fail "generateRSAKeyPair: key size must be at least 2048 bits"
+  | bits < 2048 = return (Left (BoringSSLError 0 "generateRSAKeyPair: key size must be at least 2048 bits"))
   | otherwise = mask $ \restore -> do
   rsa <- c_RSA_new
   if rsa == nullPtr
-    then fail "generateRSAKeyPair: RSA_new failed"
+    then return (Left (BoringSSLError 0 "generateRSAKeyPair: RSA_new failed"))
     else do
       e <- c_BN_new
       if e == nullPtr
         then do
           c_RSA_free rsa
-          fail "generateRSAKeyPair: BN_new failed"
+          return (Left (BoringSSLError 0 "generateRSAKeyPair: BN_new failed"))
         else do
           _ <- c_BN_set_word e 65537
           rc <- restore (c_RSA_generate_key_ex rsa (fromIntegral bits) e nullPtr)
@@ -75,54 +77,63 @@ generateRSAKeyPair bits
           if rc /= 1
             then do
               c_RSA_free rsa
-              fail "generateRSAKeyPair: RSA_generate_key_ex failed"
+              merr <- getBoringSSLError
+              return (Left (maybe (BoringSSLError 0 "generateRSAKeyPair: RSA_generate_key_ex failed") id merr))
             else do
               fptr <- newForeignPtr c_RSA_free_funptr rsa
-              return (RSAKeyPair fptr)
+              return (Right (RSAKeyPair fptr))
 
 -- | Serialize the public key to DER-encoded PKCS#1 format.
-publicKeyToBytes :: RSAKeyPair -> IO ByteString
+publicKeyToBytes :: RSAKeyPair -> IO (Either BoringSSLError ByteString)
 publicKeyToBytes (RSAKeyPair fptr) =
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
       alloca $ \outLenPtr -> do
         rc <- c_RSA_public_key_to_bytes outPtrPtr outLenPtr rsa
         if rc /= 1
-          then fail "publicKeyToBytes: RSA_public_key_to_bytes failed"
-          else packOpenSSLBuffer outPtrPtr outLenPtr
+          then do
+            merr <- getBoringSSLError
+            return (Left (maybe (BoringSSLError 0 "publicKeyToBytes: RSA_public_key_to_bytes failed") id merr))
+          else Right <$> packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a public key from DER-encoded PKCS#1 format.
-publicKeyFromBytes :: ByteString -> IO RSAPublicKey
+publicKeyFromBytes :: ByteString -> IO (Either BoringSSLError RSAPublicKey)
 publicKeyFromBytes bs =
   withByteString bs $ \ptr len -> mask_ $ do
     rsa <- c_RSA_public_key_from_bytes ptr len
     if rsa == nullPtr
-      then fail "publicKeyFromBytes: RSA_public_key_from_bytes failed"
+      then do
+        merr <- getBoringSSLError
+        return (Left (maybe (BoringSSLError 0 "publicKeyFromBytes: RSA_public_key_from_bytes failed") id merr))
       else do
         fptr <- newForeignPtr c_RSA_free_funptr rsa
-        return (RSAPublicKey fptr)
+        return (Right (RSAPublicKey fptr))
 
 -- | Serialize the private key to DER-encoded PKCS#1 format.
-privateKeyToBytes :: RSAKeyPair -> IO ByteString
+privateKeyToBytes :: RSAKeyPair -> IO (Either BoringSSLError ByteString)
 privateKeyToBytes (RSAKeyPair fptr) =
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
       alloca $ \outLenPtr -> do
         rc <- c_RSA_private_key_to_bytes outPtrPtr outLenPtr rsa
         if rc /= 1
-          then fail "privateKeyToBytes: RSA_private_key_to_bytes failed"
-          else packOpenSSLBuffer outPtrPtr outLenPtr
+          then do
+            merr <- getBoringSSLError
+            return (Left (maybe (BoringSSLError 0 "privateKeyToBytes: RSA_private_key_to_bytes failed") id merr))
+          else Right <$> packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
-privateKeyFromBytes :: ByteString -> IO RSAKeyPair
+privateKeyFromBytes :: ByteString -> IO (Either BoringSSLError RSAKeyPair)
 privateKeyFromBytes bs =
   withByteString bs $ \ptr len -> mask_ $ do
     rsa <- c_RSA_private_key_from_bytes ptr len
     if rsa == nullPtr
-      then fail "privateKeyFromBytes: RSA_private_key_from_bytes failed"
+      then do
+        merr <- getBoringSSLError
+        return (Left (maybe (BoringSSLError 0 "privateKeyFromBytes: RSA_private_key_from_bytes failed") id merr))
       else do
         fptr <- newForeignPtr c_RSA_free_funptr rsa
-        return (RSAKeyPair fptr)
+        return (Right (RSAKeyPair fptr))
 
 -- | Get the RSA key size in bits.
 rsaBits :: RSAKeyPair -> IO Int

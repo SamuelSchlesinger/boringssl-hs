@@ -7,8 +7,17 @@ module Crypto.BoringSSL.Internal.FFI.AEAD
   , c_EVP_aead_aes_128_gcm
   , c_EVP_aead_aes_256_gcm
   , c_EVP_aead_chacha20_poly1305
+  , c_EVP_aead_aes_192_gcm
   , c_EVP_aead_aes_128_gcm_siv
   , c_EVP_aead_aes_256_gcm_siv
+  , c_EVP_aead_xchacha20_poly1305
+  , c_EVP_aead_aes_128_ctr_hmac_sha256
+  , c_EVP_aead_aes_256_ctr_hmac_sha256
+  , c_EVP_aead_aes_128_eax
+  , c_EVP_aead_aes_256_eax
+  , c_EVP_aead_aes_128_ccm_bluetooth
+  , c_EVP_aead_aes_128_ccm_bluetooth_8
+  , c_EVP_aead_aes_128_ccm_matter
     -- * AEAD context lifecycle
   , c_EVP_AEAD_CTX_new
   , c_EVP_AEAD_CTX_free
@@ -33,6 +42,10 @@ data EVP_AEAD_CTX
 foreign import ccall unsafe "EVP_aead_aes_128_gcm"
   c_EVP_aead_aes_128_gcm :: Ptr EVP_AEAD
 
+-- | const EVP_AEAD *EVP_aead_aes_192_gcm(void)
+foreign import ccall unsafe "EVP_aead_aes_192_gcm"
+  c_EVP_aead_aes_192_gcm :: Ptr EVP_AEAD
+
 -- | const EVP_AEAD *EVP_aead_aes_256_gcm(void)
 foreign import ccall unsafe "EVP_aead_aes_256_gcm"
   c_EVP_aead_aes_256_gcm :: Ptr EVP_AEAD
@@ -48,6 +61,38 @@ foreign import ccall unsafe "EVP_aead_aes_128_gcm_siv"
 -- | const EVP_AEAD *EVP_aead_aes_256_gcm_siv(void)
 foreign import ccall unsafe "EVP_aead_aes_256_gcm_siv"
   c_EVP_aead_aes_256_gcm_siv :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_xchacha20_poly1305(void)
+foreign import ccall unsafe "EVP_aead_xchacha20_poly1305"
+  c_EVP_aead_xchacha20_poly1305 :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_128_ctr_hmac_sha256(void)
+foreign import ccall unsafe "EVP_aead_aes_128_ctr_hmac_sha256"
+  c_EVP_aead_aes_128_ctr_hmac_sha256 :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_256_ctr_hmac_sha256(void)
+foreign import ccall unsafe "EVP_aead_aes_256_ctr_hmac_sha256"
+  c_EVP_aead_aes_256_ctr_hmac_sha256 :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_128_eax(void)
+foreign import ccall unsafe "EVP_aead_aes_128_eax"
+  c_EVP_aead_aes_128_eax :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_256_eax(void)
+foreign import ccall unsafe "EVP_aead_aes_256_eax"
+  c_EVP_aead_aes_256_eax :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_128_ccm_bluetooth(void)
+foreign import ccall unsafe "EVP_aead_aes_128_ccm_bluetooth"
+  c_EVP_aead_aes_128_ccm_bluetooth :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_128_ccm_bluetooth_8(void)
+foreign import ccall unsafe "EVP_aead_aes_128_ccm_bluetooth_8"
+  c_EVP_aead_aes_128_ccm_bluetooth_8 :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_128_ccm_matter(void)
+foreign import ccall unsafe "EVP_aead_aes_128_ccm_matter"
+  c_EVP_aead_aes_128_ccm_matter :: Ptr EVP_AEAD
 
 -- | EVP_AEAD_CTX *EVP_AEAD_CTX_new(const EVP_AEAD *aead, const uint8_t *key, size_t key_len, size_t tag_len)
 foreign import ccall unsafe "EVP_AEAD_CTX_new"

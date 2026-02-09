@@ -14,6 +14,7 @@ module Crypto.BoringSSL.Internal.FFI.HPKE
     -- * KEM selectors
   , c_EVP_hpke_x25519_hkdf_sha256
   , c_EVP_hpke_p256_hkdf_sha256
+  , c_EVP_hpke_xwing
   , c_EVP_hpke_mlkem768
   , c_EVP_hpke_mlkem1024
     -- * KDF selectors
@@ -37,6 +38,8 @@ module Crypto.BoringSSL.Internal.FFI.HPKE
     -- * Setup
   , c_EVP_HPKE_CTX_setup_sender
   , c_EVP_HPKE_CTX_setup_recipient
+  , c_EVP_HPKE_CTX_setup_auth_sender
+  , c_EVP_HPKE_CTX_setup_auth_recipient
     -- * Operations
   , c_EVP_HPKE_CTX_seal
   , c_EVP_HPKE_CTX_open
@@ -80,6 +83,10 @@ foreign import ccall unsafe "EVP_hpke_x25519_hkdf_sha256"
 -- | const EVP_HPKE_KEM *EVP_hpke_p256_hkdf_sha256(void)
 foreign import ccall unsafe "EVP_hpke_p256_hkdf_sha256"
   c_EVP_hpke_p256_hkdf_sha256 :: Ptr EVP_HPKE_KEM
+
+-- | const EVP_HPKE_KEM *EVP_hpke_xwing(void)
+foreign import ccall unsafe "EVP_hpke_xwing"
+  c_EVP_hpke_xwing :: Ptr EVP_HPKE_KEM
 
 -- | const EVP_HPKE_KEM *EVP_hpke_mlkem768(void)
 foreign import ccall unsafe "EVP_hpke_mlkem768"
@@ -182,6 +189,32 @@ foreign import ccall unsafe "EVP_HPKE_CTX_setup_recipient"
   c_EVP_HPKE_CTX_setup_recipient
     :: Ptr EVP_HPKE_CTX -> Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KDF
     -> Ptr EVP_HPKE_AEAD -> Ptr CUChar -> CSize
+    -> Ptr CUChar -> CSize
+    -> IO CInt
+
+-- | int EVP_HPKE_CTX_setup_auth_sender(
+--     EVP_HPKE_CTX *ctx, uint8_t *out_enc, size_t *out_enc_len, size_t max_enc,
+--     const EVP_HPKE_KEY *key, const EVP_HPKE_KDF *kdf, const EVP_HPKE_AEAD *aead,
+--     const uint8_t *peer_public_key, size_t peer_public_key_len,
+--     const uint8_t *info, size_t info_len)
+foreign import ccall unsafe "EVP_HPKE_CTX_setup_auth_sender"
+  c_EVP_HPKE_CTX_setup_auth_sender
+    :: Ptr EVP_HPKE_CTX -> Ptr CUChar -> Ptr CSize -> CSize
+    -> Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KDF -> Ptr EVP_HPKE_AEAD
+    -> Ptr CUChar -> CSize
+    -> Ptr CUChar -> CSize
+    -> IO CInt
+
+-- | int EVP_HPKE_CTX_setup_auth_recipient(
+--     EVP_HPKE_CTX *ctx, const EVP_HPKE_KEY *key, const EVP_HPKE_KDF *kdf,
+--     const EVP_HPKE_AEAD *aead, const uint8_t *enc, size_t enc_len,
+--     const uint8_t *info, size_t info_len,
+--     const uint8_t *peer_public_key, size_t peer_public_key_len)
+foreign import ccall unsafe "EVP_HPKE_CTX_setup_auth_recipient"
+  c_EVP_HPKE_CTX_setup_auth_recipient
+    :: Ptr EVP_HPKE_CTX -> Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KDF
+    -> Ptr EVP_HPKE_AEAD -> Ptr CUChar -> CSize
+    -> Ptr CUChar -> CSize
     -> Ptr CUChar -> CSize
     -> IO CInt
 

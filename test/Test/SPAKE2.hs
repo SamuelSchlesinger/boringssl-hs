@@ -9,36 +9,36 @@ import Crypto.BoringSSL.SPAKE2
 tests :: TestTree
 tests = testGroup "SPAKE2"
   [ testCase "Alice and Bob agree on key" $ do
-      ctxA <- newContext Alice "alice" "bob"
-      ctxB <- newContext Bob   "bob" "alice"
+      Right ctxA <- newContext Alice "alice" "bob"
+      Right ctxB <- newContext Bob   "bob" "alice"
       let password = "shared password"
-      msgA <- generateMessage ctxA password
-      msgB <- generateMessage ctxB password
-      Just keyA <- processMessage ctxA msgB
-      Just keyB <- processMessage ctxB msgA
+      Right msgA <- generateMessage ctxA password
+      Right msgB <- generateMessage ctxB password
+      Right keyA <- processMessage ctxA msgB
+      Right keyB <- processMessage ctxB msgA
       keyA @?= keyB
   , testCase "different passwords produce different keys" $ do
-      ctxA <- newContext Alice "alice" "bob"
-      ctxB <- newContext Bob   "bob" "alice"
-      msgA <- generateMessage ctxA "password1"
-      msgB <- generateMessage ctxB "password2"
-      Just keyA <- processMessage ctxA msgB
-      Just keyB <- processMessage ctxB msgA
+      Right ctxA <- newContext Alice "alice" "bob"
+      Right ctxB <- newContext Bob   "bob" "alice"
+      Right msgA <- generateMessage ctxA "password1"
+      Right msgB <- generateMessage ctxB "password2"
+      Right keyA <- processMessage ctxA msgB
+      Right keyB <- processMessage ctxB msgA
       assertBool "keys should differ with different passwords" (keyA /= keyB)
   , testCase "empty names work" $ do
-      ctxA <- newContext Alice "" ""
-      ctxB <- newContext Bob   "" ""
+      Right ctxA <- newContext Alice "" ""
+      Right ctxB <- newContext Bob   "" ""
       let password = "test"
-      msgA <- generateMessage ctxA password
-      msgB <- generateMessage ctxB password
-      Just keyA <- processMessage ctxA msgB
-      Just keyB <- processMessage ctxB msgA
+      Right msgA <- generateMessage ctxA password
+      Right msgB <- generateMessage ctxB password
+      Right keyA <- processMessage ctxA msgB
+      Right keyB <- processMessage ctxB msgA
       keyA @?= keyB
   , testCase "invalid message rejected" $ do
-      ctxA <- newContext Alice "a" "b"
+      Right ctxA <- newContext Alice "a" "b"
       _ <- generateMessage ctxA "pw"
       result <- processMessage ctxA "invalid message that is clearly wrong"
       case result of
-        Nothing -> return ()
-        Just _  -> assertFailure "should reject invalid message"
+        Left _  -> return ()
+        Right _ -> assertFailure "should reject invalid message"
   ]

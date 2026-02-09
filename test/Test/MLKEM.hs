@@ -19,13 +19,15 @@ tests = testGroup "MLKEM"
         (ct, ssEncap) <- encapsulate priv
         BS.length ct @?= ciphertextBytes MLKEM768
         BS.length ssEncap @?= 32
-        Just ssDecap <- decapsulate priv ct
+        Right ssDecap <- decapsulate priv ct
         ssDecap @?= ssEncap
 
     , testCase "decap with wrong length ciphertext" $ do
         (_pub, priv) <- generateKeyPair MLKEM768
         result <- decapsulate priv "short"
-        result @?= Nothing
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "decapsulate should reject wrong-length ciphertext"
 
     , testCase "different keypairs produce different shared secrets" $ do
         (_pub1, priv1) <- generateKeyPair MLKEM768
@@ -46,7 +48,7 @@ tests = testGroup "MLKEM"
         (ct, ssEncap) <- encapsulate priv
         BS.length ct @?= ciphertextBytes MLKEM1024
         BS.length ssEncap @?= 32
-        Just ssDecap <- decapsulate priv ct
+        Right ssDecap <- decapsulate priv ct
         ssDecap @?= ssEncap
     ]
   , testGroup "Constants"

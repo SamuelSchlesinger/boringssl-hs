@@ -34,14 +34,14 @@ tests = testGroup "Ed25519"
       assertBool "wrong message should not verify" (not (verify pub "message B" sig))
   , testCase "keyPairFromSeed is deterministic" $ do
       let seed = BS.replicate 32 0x42
-          (pub1, priv1) = keyPairFromSeed seed
-          (pub2, priv2) = keyPairFromSeed seed
+      Right (pub1, priv1) <- return (keyPairFromSeed seed)
+      Right (pub2, priv2) <- return (keyPairFromSeed seed)
       pub1 @?= pub2
       priv1 @?= priv2
   , testCase "keyPairFromSeed sign/verify" $ do
       let seed = BS.replicate 32 0xAB
-          (pub, priv) = keyPairFromSeed seed
-          msg = "deterministic test"
+      Right (pub, priv) <- return (keyPairFromSeed seed)
+      let msg = "deterministic test"
           sig = sign priv msg
       assertBool "signature should verify" (verify pub msg sig)
   -- KNOWN ISSUE: RFC 8032 Section 7.1 test vector compliance
@@ -66,15 +66,15 @@ tests = testGroup "Ed25519"
   -- silently.
   , testCase "keyPairFromSeed round-trip sign/verify with RFC 8032 seed" $ do
       let seed = hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
-          (pub, priv) = keyPairFromSeed seed
-          sig = sign priv BS.empty
+      Right (pub, priv) <- return (keyPairFromSeed seed)
+      let sig = sign priv BS.empty
       assertBool "signature from RFC 8032 seed should verify" (verify pub BS.empty sig)
   , testCase "RFC 8032 Section 7.1 test vector (known issue with NO_ASM)" $ do
       let seed = hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
           expectedPub = hex "d75a980182b10ab7d54bfed3c964073a0ee172f3daa3f4a18446b0b8d183f8e3"
           expectedSig = hex "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
-          (pub', priv) = keyPairFromSeed seed
-          pub = publicKeyToBytes pub'
+      Right (pub', priv) <- return (keyPairFromSeed seed)
+      let pub = publicKeyToBytes pub'
           sig = signatureToBytes (sign priv BS.empty)
       if pub == expectedPub
         then do

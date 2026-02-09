@@ -5,12 +5,14 @@
 module Crypto.BoringSSL.PEM
   ( pemEncode
   , pemDecode
+  , BoringSSLError(..)
   ) where
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 
+import Crypto.BoringSSL.Internal.Error
 import qualified Crypto.BoringSSL.Base64 as Base64
 
 -- | Encode binary data in PEM format with the given type label.
@@ -30,24 +32,26 @@ pemEncode label derBytes =
   in BS.concat [header, wrapped, footer]
 
 -- | Decode a PEM-encoded ByteString.
--- Returns @Just (label, derBytes)@ on success, or @Nothing@ if the
+-- Returns @Right (label, derBytes)@ on success, or @Left err@ if the
 -- PEM format is invalid.
 --
 -- @pemDecode pem@ parses the PEM headers and base64-decodes the body.
-pemDecode :: ByteString -> Maybe (String, ByteString)
+pemDecode :: ByteString -> Either BoringSSLError (String, ByteString)
 pemDecode pem =
   let ls = BS8.lines (stripCR pem)
   in case ls of
-    [] -> Nothing
-    (hdr : rest) -> do
-      label <- parseHeader hdr
-      let (bodyLines, trailerLines) = break (isFooter label) rest
-          body = BS.concat bodyLines
-      case trailerLines of
-        [] -> Nothing  -- No footer found
-        _  -> case Base64.decode body of
-                Right decoded -> Just (label, decoded)
-                Left _        -> Nothing
+    [] -> Left (BoringSSLError 0 "pemDecode: empty input")
+    (hdr : rest) ->
+      case parseHeader hdr of
+        Nothing -> Left (BoringSSLError 0 "pemDecode: invalid PEM header")
+        Just label ->
+          let (bodyLines, trailerLines) = break (isFooter label) rest
+              body = BS.concat bodyLines
+          in case trailerLines of
+            [] -> Left (BoringSSLError 0 "pemDecode: missing PEM footer")
+            _  -> case Base64.decode body of
+                    Right decoded -> Right (label, decoded)
+                    Left err      -> Left err
 
 -- | Parse a PEM header line like "-----BEGIN CERTIFICATE-----"
 -- and return the label.

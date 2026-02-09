@@ -100,13 +100,16 @@ flipFirstByte bs
 
 {-# NOINLINE rsaKeyPair #-}
 rsaKeyPair :: RSA.RSAKeyPair
-rsaKeyPair = unsafePerformIO $ RSA.generateRSAKeyPair 2048
+rsaKeyPair = unsafePerformIO $ do
+  Right kp <- RSA.generateRSAKeyPair 2048
+  return kp
 
 {-# NOINLINE rsaPubKey #-}
 rsaPubKey :: RSA.RSAPublicKey
 rsaPubKey = unsafePerformIO $ do
-  pubBytes <- RSA.publicKeyToBytes rsaKeyPair
-  RSA.publicKeyFromBytes pubBytes
+  Right pubBytes <- RSA.publicKeyToBytes rsaKeyPair
+  Right pub <- RSA.publicKeyFromBytes pubBytes
+  return pub
 
 -- ---------------------------------------------------------------------------
 -- Digest Properties
@@ -176,7 +179,7 @@ prop_aeadRoundTrip :: AEADAlgorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_aeadRoundTrip algo (ArbitraryBS plaintext) (ArbitraryBS ad) = ioProperty $ do
   key <- Random.randomBytes (AEAD.keyLength algo)
   nonce <- Random.randomBytes (AEAD.nonceLength algo)
-  ctx <- AEAD.newAEADCtx algo key
+  Right ctx <- AEAD.newAEADCtx algo key
   sealResult <- AEAD.seal ctx nonce plaintext ad
   case sealResult of
     Left err -> return $ counterexample ("seal failed: " ++ show err) False
@@ -190,7 +193,7 @@ prop_aeadAuthFailure :: AEADAlgorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_aeadAuthFailure algo (ArbitraryBS plaintext) (ArbitraryBS ad) = ioProperty $ do
   key <- Random.randomBytes (AEAD.keyLength algo)
   nonce <- Random.randomBytes (AEAD.nonceLength algo)
-  ctx <- AEAD.newAEADCtx algo key
+  Right ctx <- AEAD.newAEADCtx algo key
   sealResult <- AEAD.seal ctx nonce plaintext ad
   case sealResult of
     Left _ -> return $ property True  -- seal failed, skip
@@ -213,7 +216,7 @@ prop_aeadDifferentNonce algo (NonEmptyBS plaintext) (ArbitraryBS ad) = ioPropert
   if nonce1 == nonce2
     then return $ property True  -- extremely unlikely, skip
     else do
-      ctx <- AEAD.newAEADCtx algo key
+      Right ctx <- AEAD.newAEADCtx algo key
       r1 <- AEAD.seal ctx nonce1 plaintext ad
       r2 <- AEAD.seal ctx nonce2 plaintext ad
       case (r1, r2) of
@@ -225,7 +228,7 @@ prop_aeadAAD :: AEADAlgorithm -> ArbitraryBS -> Property
 prop_aeadAAD algo (ArbitraryBS plaintext) = ioProperty $ do
   key <- Random.randomBytes (AEAD.keyLength algo)
   nonce <- Random.randomBytes (AEAD.nonceLength algo)
-  ctx <- AEAD.newAEADCtx algo key
+  Right ctx <- AEAD.newAEADCtx algo key
   let ad1 = BS.pack [1, 2, 3]
       ad2 = BS.pack [4, 5, 6]
   sealResult <- AEAD.seal ctx nonce plaintext ad1
@@ -541,12 +544,12 @@ prop_rsaOAEPRoundTrip = forAll (choose (1, 190) >>= genBytes) $ \plaintext ->
 prop_rsaKeySerializationRoundTrip :: Property
 prop_rsaKeySerializationRoundTrip = ioProperty $ do
   -- Test public key round-trip
-  pubBytes <- RSA.publicKeyToBytes rsaKeyPair
-  _restoredPub <- RSA.publicKeyFromBytes pubBytes
+  Right pubBytes <- RSA.publicKeyToBytes rsaKeyPair
+  Right _restoredPub <- RSA.publicKeyFromBytes pubBytes
   -- Test private key round-trip
-  privBytes <- RSA.privateKeyToBytes rsaKeyPair
-  restoredKP <- RSA.privateKeyFromBytes privBytes
-  pubBytes2 <- RSA.publicKeyToBytes restoredKP
+  Right privBytes <- RSA.privateKeyToBytes rsaKeyPair
+  Right restoredKP <- RSA.privateKeyFromBytes privBytes
+  Right pubBytes2 <- RSA.publicKeyToBytes restoredKP
   -- The restored key should produce the same public key bytes
   return $ pubBytes === pubBytes2
 
@@ -566,14 +569,14 @@ prop_base64RoundTrip :: ArbitraryBS -> Property
 prop_base64RoundTrip (ArbitraryBS bs) =
   let encoded = Base64.encode bs
   in case Base64.decode encoded of
-       Left err -> counterexample ("decode failed: " ++ err) False
+       Left err -> counterexample ("decode failed: " ++ show err) False
        Right decoded -> decoded === bs
 
 prop_base64EncodedLength :: ArbitraryBS -> Property
 prop_base64EncodedLength (ArbitraryBS bs) =
   let encoded = Base64.encode bs
   in case Base64.decode encoded of
-       Left err -> counterexample ("decode of encoded data failed: " ++ err) False
+       Left err -> counterexample ("decode of encoded data failed: " ++ show err) False
        Right _  -> property True
 
 -- ---------------------------------------------------------------------------

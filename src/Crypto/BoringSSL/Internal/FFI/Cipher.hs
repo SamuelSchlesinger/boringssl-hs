@@ -8,6 +8,10 @@ module Crypto.BoringSSL.Internal.FFI.Cipher
   , c_EVP_aes_256_cbc
   , c_EVP_aes_128_ctr
   , c_EVP_aes_256_ctr
+  , c_EVP_aes_128_ecb
+  , c_EVP_aes_256_ecb
+  , c_EVP_aes_128_ofb
+  , c_EVP_aes_256_ofb
     -- * Context lifecycle
   , c_EVP_CIPHER_CTX_new
   , c_EVP_CIPHER_CTX_free
@@ -45,6 +49,22 @@ foreign import ccall unsafe "EVP_aes_128_ctr"
 -- | const EVP_CIPHER *EVP_aes_256_ctr(void)
 foreign import ccall unsafe "EVP_aes_256_ctr"
   c_EVP_aes_256_ctr :: Ptr EVP_CIPHER
+
+-- | const EVP_CIPHER *EVP_aes_128_ecb(void)
+foreign import ccall unsafe "EVP_aes_128_ecb"
+  c_EVP_aes_128_ecb :: Ptr EVP_CIPHER
+
+-- | const EVP_CIPHER *EVP_aes_256_ecb(void)
+foreign import ccall unsafe "EVP_aes_256_ecb"
+  c_EVP_aes_256_ecb :: Ptr EVP_CIPHER
+
+-- | const EVP_CIPHER *EVP_aes_128_ofb(void)
+foreign import ccall unsafe "EVP_aes_128_ofb"
+  c_EVP_aes_128_ofb :: Ptr EVP_CIPHER
+
+-- | const EVP_CIPHER *EVP_aes_256_ofb(void)
+foreign import ccall unsafe "EVP_aes_256_ofb"
+  c_EVP_aes_256_ofb :: Ptr EVP_CIPHER
 
 -- Context lifecycle
 

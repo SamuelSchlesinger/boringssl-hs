@@ -21,8 +21,8 @@ tests = testGroup "X25519"
       (pubA, privA) <- generateKeyPair
       (pubB, privB) <- generateKeyPair
       case (computeSharedSecret privA pubB, computeSharedSecret privB pubA) of
-        (Just secretAB, Just secretBA) -> secretAB @?= secretBA
-        _ -> assertFailure "computeSharedSecret returned Nothing"
+        (Right secretAB, Right secretBA) -> secretAB @?= secretBA
+        _ -> assertFailure "computeSharedSecret returned Left"
   , testCase "publicFromPrivate matches generated" $ do
       (pub, priv) <- generateKeyPair
       publicFromPrivate priv @?= pub
@@ -39,8 +39,8 @@ tests = testGroup "X25519"
           publicKeyToBytes (publicFromPrivate bobPrivKey) @?= bobPub
           -- Check shared secret
           case computeSharedSecret alicePrivKey bobPubKey of
-            Just secret -> secret @?= expectedSecret
-            Nothing -> assertFailure "computeSharedSecret returned Nothing"
+            Right secret -> secret @?= expectedSecret
+            Left err -> assertFailure ("computeSharedSecret returned Left: " ++ show err)
         _ -> assertFailure "key deserialization failed"
   , testGroup "Smart constructors"
     [ testCase "publicKeyFromBytes accepts 32 bytes" $ do

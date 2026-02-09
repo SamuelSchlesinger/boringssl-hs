@@ -19,54 +19,54 @@ tests = testGroup "TrustToken"
 fullRoundTrip :: TrustTokenMethod -> IO ()
 fullRoundTrip method = do
   -- Generate keys
-  (privKey, pubKey) <- generateKey method 1
+  Right (privKey, pubKey) <- generateKey method 1
 
   -- Set up client
-  client <- newClient method 10
+  Right client <- newClient method 10
   _ <- clientAddKey client pubKey
 
   -- Set up issuer
-  issuer <- newIssuer method 10
-  issuerAddKey issuer privKey
+  Right issuer <- newIssuer method 10
+  Right () <- issuerAddKey issuer privKey
   metadataKey <- randomBytes 32
-  issuerSetMetadataKey issuer metadataKey
+  Right () <- issuerSetMetadataKey issuer metadataKey
 
   -- Client begins issuance
-  request <- beginIssuance client 1
+  Right request <- beginIssuance client 1
 
   -- Issuer issues tokens (public_metadata = key ID = 1)
-  Just (response, _tokensIssued) <- issue issuer request 1 0 1
+  Right (response, _tokensIssued) <- issue issuer request 1 0 1
 
   -- Client finishes issuance
-  Just (tokens, _keyIdx) <- finishIssuance client response
+  Right (tokens, _keyIdx) <- finishIssuance client response
   assertBool "should get at least one token" (not (null tokens))
 
   let token = head tokens
 
   -- Client begins redemption
-  redemptionReq <- beginRedemption client token "client data"
+  Right redemptionReq <- beginRedemption client token "client data"
 
   -- Issuer redeems
-  Just (_pubMeta, _privMeta, _tokenData, clientData) <- redeem issuer redemptionReq
+  Right (_pubMeta, _privMeta, _tokenData, clientData) <- redeem issuer redemptionReq
   clientData @?= "client data"
 
 batchIssuance :: TrustTokenMethod -> IO ()
 batchIssuance method = do
-  (privKey, pubKey) <- generateKey method 1
+  Right (privKey, pubKey) <- generateKey method 1
 
-  client <- newClient method 10
+  Right client <- newClient method 10
   _ <- clientAddKey client pubKey
 
-  issuer <- newIssuer method 10
-  issuerAddKey issuer privKey
+  Right issuer <- newIssuer method 10
+  Right () <- issuerAddKey issuer privKey
   metadataKey <- randomBytes 32
-  issuerSetMetadataKey issuer metadataKey
+  Right () <- issuerSetMetadataKey issuer metadataKey
 
   -- Request 5 tokens
-  request <- beginIssuance client 5
+  Right request <- beginIssuance client 5
 
-  Just (response, tokensIssued) <- issue issuer request 1 0 5
+  Right (response, tokensIssued) <- issue issuer request 1 0 5
   assertBool "should issue multiple tokens" (tokensIssued > 0)
 
-  Just (tokens, _keyIdx) <- finishIssuance client response
+  Right (tokens, _keyIdx) <- finishIssuance client response
   assertBool "should get multiple tokens" (length tokens > 0)

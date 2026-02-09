@@ -15,8 +15,8 @@ tests = testGroup "PEM"
           der = BS8.pack "some binary data here \x00\x01\x02\xff"
           pem = pemEncode label der
       case pemDecode pem of
-        Nothing -> assertFailure "pemDecode failed on pemEncode output"
-        Just (decodedLabel, decodedDer) -> do
+        Left err -> assertFailure ("pemDecode failed on pemEncode output: " ++ show err)
+        Right (decodedLabel, decodedDer) -> do
           decodedLabel @?= label
           decodedDer @?= der
 
@@ -25,8 +25,8 @@ tests = testGroup "PEM"
           der = BS.empty
           pem = pemEncode label der
       case pemDecode pem of
-        Nothing -> assertFailure "pemDecode failed on empty data"
-        Just (decodedLabel, decodedDer) -> do
+        Left err -> assertFailure ("pemDecode failed on empty data: " ++ show err)
+        Right (decodedLabel, decodedDer) -> do
           decodedLabel @?= label
           decodedDer @?= der
 
@@ -35,22 +35,22 @@ tests = testGroup "PEM"
           der = BS.replicate 128 0x42
           pem = pemEncode label der
       case pemDecode pem of
-        Nothing -> assertFailure "pemDecode failed"
-        Just (decodedLabel, decodedDer) -> do
+        Left err -> assertFailure ("pemDecode failed: " ++ show err)
+        Right (decodedLabel, decodedDer) -> do
           decodedLabel @?= label
           decodedDer @?= der
 
   , testCase "decode rejects garbage" $ do
       let result = pemDecode "not a pem"
       case result of
-        Nothing -> return ()
-        Just _  -> assertFailure "pemDecode should reject garbage"
+        Left _  -> return ()
+        Right _ -> assertFailure "pemDecode should reject garbage"
 
   , testCase "decode rejects missing footer" $ do
       let incomplete = BS8.pack "-----BEGIN TEST-----\nYWJj\n"
       case pemDecode incomplete of
-        Nothing -> return ()
-        Just _  -> assertFailure "pemDecode should reject missing footer"
+        Left _  -> return ()
+        Right _ -> assertFailure "pemDecode should reject missing footer"
 
   , testCase "decode known PEM" $ do
       let pem = BS8.unlines
@@ -59,8 +59,8 @@ tests = testGroup "PEM"
             , "-----END TEST DATA-----"
             ]
       case pemDecode pem of
-        Nothing -> assertFailure "pemDecode failed on known PEM"
-        Just (label, decoded) -> do
+        Left err -> assertFailure ("pemDecode failed on known PEM: " ++ show err)
+        Right (label, decoded) -> do
           label @?= "TEST DATA"
           decoded @?= BS8.pack "Hello, World!"
 

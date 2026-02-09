@@ -11,10 +11,19 @@ module Crypto.BoringSSL.Internal.FFI
   , c_SHA512
     -- * AEAD algorithm selectors
   , c_EVP_aead_aes_128_gcm
+  , c_EVP_aead_aes_192_gcm
   , c_EVP_aead_aes_256_gcm
   , c_EVP_aead_chacha20_poly1305
+  , c_EVP_aead_xchacha20_poly1305
   , c_EVP_aead_aes_128_gcm_siv
   , c_EVP_aead_aes_256_gcm_siv
+  , c_EVP_aead_aes_128_ctr_hmac_sha256
+  , c_EVP_aead_aes_256_ctr_hmac_sha256
+  , c_EVP_aead_aes_128_eax
+  , c_EVP_aead_aes_256_eax
+  , c_EVP_aead_aes_128_ccm_bluetooth
+  , c_EVP_aead_aes_128_ccm_bluetooth_8
+  , c_EVP_aead_aes_128_ccm_matter
     -- * AEAD context lifecycle
   , c_EVP_AEAD_CTX_new
   , c_EVP_AEAD_CTX_free

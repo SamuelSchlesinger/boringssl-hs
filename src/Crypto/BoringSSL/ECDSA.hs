@@ -1,7 +1,7 @@
 -- | ECDSA digital signatures.
 --
--- Supports P-256 and P-384 curves. Signatures are produced in
--- DER-encoded ASN.1 format.
+-- Supports P-256, P-384, and P-521 curves. Signatures are produced in
+-- DER-encoded ASN.1 format or IEEE P1363 fixed-size format.
 module Crypto.BoringSSL.ECDSA
   ( -- * Key types
     ECCurve(..)
@@ -10,9 +10,12 @@ module Crypto.BoringSSL.ECDSA
     -- * Key generation
   , generateKeyPair
   , ecPublicKeyOfPair
-    -- * Signing and verification
+    -- * Signing and verification (DER format)
   , ecdsaSign
   , ecdsaVerify
+    -- * Signing and verification (P1363 fixed-size format)
+  , ecdsaSignP1363
+  , ecdsaVerifyP1363
     -- * Key serialization
   , ecPublicKeyBytes
   , ecPrivateKeyBytes
@@ -65,4 +68,37 @@ ecdsaVerify pubKey digest sig =
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
         rc <- c_ECDSA_verify 0 digestPtr digestLen sigPtr sigLen keyPtr
+        return (rc == 1)
+
+-- | Sign a pre-hashed digest with ECDSA, producing a fixed-size P1363
+-- signature (r || s, each zero-padded to the group order size).
+-- The signature length is always @2 * group_order_bytes@
+-- (64 for P-256, 96 for P-384, 132 for P-521).
+ecdsaSignP1363 :: ECKeyPair -> ByteString -> IO (Either BoringSSLError ByteString)
+ecdsaSignP1363 kp digest =
+  withECKeyPair kp $ \keyPtr -> do
+    maxSigLen <- c_ECDSA_size_p1363 keyPtr
+    fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
+    result <- withForeignPtr fptr $ \sigPtr ->
+      withByteString digest $ \digestPtr digestLen ->
+        alloca $ \sigLenPtr -> do
+          rc <- c_ECDSA_sign_p1363 digestPtr digestLen (castPtr sigPtr) sigLenPtr maxSigLen keyPtr
+          if rc /= 1
+            then do
+              merr <- getBoringSSLError
+              return (Left (maybe (BoringSSLError 0 "ecdsaSignP1363: ECDSA_sign_p1363 failed") id merr))
+            else do
+              sigLen <- peek sigLenPtr
+              return (Right (fromIntegral sigLen))
+    case result of
+      Left err  -> return (Left err)
+      Right len -> return (Right (BSI.BS fptr len))
+
+-- | Verify a P1363 fixed-size ECDSA signature on a pre-hashed digest.
+ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO Bool
+ecdsaVerifyP1363 pubKey digest sig =
+  withECPublicKey pubKey $ \keyPtr ->
+    withByteString digest $ \digestPtr digestLen ->
+      withByteString sig $ \sigPtr sigLen -> do
+        rc <- c_ECDSA_verify_p1363 digestPtr digestLen sigPtr sigLen keyPtr
         return (rc == 1)

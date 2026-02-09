@@ -62,33 +62,33 @@ tests = testGroup "X509"
   [ testCase "parseDER rejects garbage" $ do
       let result = parseDER "not a certificate"
       case result of
-        Nothing -> return ()
-        Just _  -> assertFailure "parseDER should reject garbage input"
+        Left _  -> return ()
+        Right _ -> assertFailure "parseDER should reject garbage input"
 
   , testCase "parseDER rejects empty input" $ do
       let result = parseDER BS.empty
       case result of
-        Nothing -> return ()
-        Just _  -> assertFailure "parseDER should reject empty input"
+        Left _  -> return ()
+        Right _ -> assertFailure "parseDER should reject empty input"
 
   , testCase "parseDER rejects truncated DER" $ do
       -- A truncated DER sequence tag
       let result = parseDER "\x30\x82\x01\x00"
       case result of
-        Nothing -> return ()
-        Just _  -> assertFailure "parseDER should reject truncated DER"
+        Left _  -> return ()
+        Right _ -> assertFailure "parseDER should reject truncated DER"
 
   , testCase "toDER round-trip preserves bytes" $ do
       case parseDER testCertDER of
-        Nothing -> assertFailure "parseDER should parse the test certificate"
-        Just cert -> do
+        Left err -> assertFailure ("parseDER should parse the test certificate: " ++ show err)
+        Right cert -> do
           let reencoded = toDER cert
           reencoded @?= testCertDER
 
   , testCase "subjectName and issuerName on parsed cert" $ do
       case parseDER testCertDER of
-        Nothing -> assertFailure "parseDER should parse the test certificate"
-        Just cert -> do
+        Left err -> assertFailure ("parseDER should parse the test certificate: " ++ show err)
+        Right cert -> do
           let subj = subjectName cert
               iss  = issuerName cert
           assertBool ("subjectName should contain 'Test', got: " ++ subj)

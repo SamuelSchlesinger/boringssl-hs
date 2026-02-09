@@ -12,6 +12,8 @@ module Crypto.BoringSSL.MLKEM
     -- * Constants
   , publicKeyBytes
   , ciphertextBytes
+    -- * Error type
+  , BoringSSLError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -22,6 +24,7 @@ import Foreign.Marshal.Alloc
 import Foreign.Ptr
 
 import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.MLKEM
 
 -- | ML-KEM variant selection.
@@ -100,11 +103,10 @@ encapsulate (MLKEMPrivateKey MLKEM1024 skFPtr) = do
   return (BSI.BS ctFPtr ctSize, BSI.BS ssFPtr mlkemSharedSecretBytes)
 
 -- | Decapsulate a shared secret from a ciphertext using a private key.
--- Returns @Just sharedSecret@ on success, or @Nothing@ if the ciphertext
--- length is incorrect.
-decapsulate :: MLKEMPrivateKey -> ByteString -> IO (Maybe ByteString)
+decapsulate :: MLKEMPrivateKey -> ByteString -> IO (Either BoringSSLError ByteString)
 decapsulate (MLKEMPrivateKey MLKEM768 skFPtr) ciphertext
-  | BS.length ciphertext /= mlkem768CiphertextBytes = return Nothing
+  | BS.length ciphertext /= mlkem768CiphertextBytes =
+      return (Left (BoringSSLError 0 "MLKEM.decapsulate: incorrect ciphertext length"))
   | otherwise = do
       ssFPtr <- BSI.mallocByteString mlkemSharedSecretBytes
       rc <- withForeignPtr skFPtr $ \skPtr ->
@@ -112,11 +114,12 @@ decapsulate (MLKEMPrivateKey MLKEM768 skFPtr) ciphertext
           withForeignPtr ssFPtr $ \ssPtr ->
             c_MLKEM768_decap (castPtr ssPtr) ctPtr ctLen (castPtr skPtr)
       if rc == 1
-        then return (Just (BSI.BS ssFPtr mlkemSharedSecretBytes))
-        else return Nothing
+        then return (Right (BSI.BS ssFPtr mlkemSharedSecretBytes))
+        else return (Left (BoringSSLError 0 "MLKEM.decapsulate: decapsulation failed"))
 
 decapsulate (MLKEMPrivateKey MLKEM1024 skFPtr) ciphertext
-  | BS.length ciphertext /= mlkem1024CiphertextBytes = return Nothing
+  | BS.length ciphertext /= mlkem1024CiphertextBytes =
+      return (Left (BoringSSLError 0 "MLKEM.decapsulate: incorrect ciphertext length"))
   | otherwise = do
       ssFPtr <- BSI.mallocByteString mlkemSharedSecretBytes
       rc <- withForeignPtr skFPtr $ \skPtr ->
@@ -124,5 +127,5 @@ decapsulate (MLKEMPrivateKey MLKEM1024 skFPtr) ciphertext
           withForeignPtr ssFPtr $ \ssPtr ->
             c_MLKEM1024_decap (castPtr ssPtr) ctPtr ctLen (castPtr skPtr)
       if rc == 1
-        then return (Just (BSI.BS ssFPtr mlkemSharedSecretBytes))
-        else return Nothing
+        then return (Right (BSI.BS ssFPtr mlkemSharedSecretBytes))
+        else return (Left (BoringSSLError 0 "MLKEM.decapsulate: decapsulation failed"))

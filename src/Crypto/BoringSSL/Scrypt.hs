@@ -1,0 +1,43 @@
+-- | Scrypt password-based key derivation.
+--
+-- Derives key material from a password and salt using the scrypt
+-- algorithm, as specified in RFC 7914.
+module Crypto.BoringSSL.Scrypt
+  ( scrypt
+  , BoringSSLError(..)
+  ) where
+
+import Data.ByteString (ByteString)
+import qualified Data.ByteString.Internal as BSI
+import qualified Data.ByteString.Unsafe as BSU
+import Data.Word (Word64)
+import Foreign.ForeignPtr
+import Foreign.Ptr (castPtr)
+import System.IO.Unsafe (unsafePerformIO)
+
+import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.FFI.Scrypt
+
+-- | Derive a key using scrypt.
+--
+-- @scrypt password salt n r p keyLen@ computes @keyLen@ bytes of key
+-- material from @password@ and @salt@ using the scrypt parameters @n@
+-- (CPU\/memory cost), @r@ (block size), and @p@ (parallelization).
+--
+-- Returns 'Left' on failure (e.g. invalid parameters).
+scrypt :: ByteString -> ByteString -> Word64 -> Word64 -> Word64 -> Int -> Either BoringSSLError ByteString
+scrypt password salt n r p keyLen = unsafePerformIO $
+  BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
+    withByteString salt $ \saltPtr saltLen -> do
+      fptr <- BSI.mallocByteString keyLen
+      rc <- withForeignPtr fptr $ \outPtr ->
+        c_EVP_PBE_scrypt
+          passPtr (fromIntegral passLen)
+          saltPtr saltLen
+          n r p 0
+          (castPtr outPtr) (fromIntegral keyLen)
+      if rc /= 1
+        then return (Left (BoringSSLError 0 "scrypt: derivation failed"))
+        else return (Right (BSI.BS fptr keyLen))
+{-# NOINLINE scrypt #-}

@@ -10,6 +10,8 @@ module Crypto.BoringSSL.SPAKE2
   , newContext
   , generateMessage
   , processMessage
+    -- * Error type
+  , BoringSSLError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -22,6 +24,7 @@ import Foreign.Storable
 import Control.Exception (mask_)
 
 import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.SPAKE2
 
 -- | The role in a SPAKE2 exchange. The two parties must use different roles.
@@ -37,21 +40,21 @@ roleToC Bob   = spake2RoleBob
 
 -- | Create a new SPAKE2 context. @myName@ and @theirName@ are optional
 -- identity strings that are bound into the protocol.
-newContext :: Role -> ByteString -> ByteString -> IO SPAKE2Ctx
+newContext :: Role -> ByteString -> ByteString -> IO (Either BoringSSLError SPAKE2Ctx)
 newContext role myName theirName = mask_ $
   withByteString myName $ \myNamePtr myNameLen ->
     withByteString theirName $ \theirNamePtr theirNameLen -> do
       ctx <- c_SPAKE2_CTX_new (roleToC role) myNamePtr myNameLen
                theirNamePtr theirNameLen
       if ctx == nullPtr
-        then fail "newContext: SPAKE2_CTX_new failed"
+        then return (Left (BoringSSLError 0 "newContext: SPAKE2_CTX_new failed"))
         else do
           fptr <- newForeignPtr c_SPAKE2_CTX_free_funptr ctx
-          return (SPAKE2Ctx fptr)
+          return (Right (SPAKE2Ctx fptr))
 
 -- | Generate a SPAKE2 message from a password. Call once per context.
 -- The resulting message should be sent to the peer.
-generateMessage :: SPAKE2Ctx -> ByteString -> IO ByteString
+generateMessage :: SPAKE2Ctx -> ByteString -> IO (Either BoringSSLError ByteString)
 generateMessage (SPAKE2Ctx fptr) password =
   withForeignPtr fptr $ \ctx -> do
     let maxOut = spake2MaxMsgSize
@@ -62,15 +65,15 @@ generateMessage (SPAKE2Ctx fptr) password =
           c_SPAKE2_generate_msg ctx (castPtr outPtr) outLenPtr
             (fromIntegral maxOut) pwPtr pwLen
       if rc /= 1
-        then fail "generateMessage: SPAKE2_generate_msg failed"
+        then return (Left (BoringSSLError 0 "generateMessage: SPAKE2_generate_msg failed"))
         else do
           actualLen <- peek outLenPtr
-          return (BSI.BS outFPtr (fromIntegral actualLen))
+          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
 
 -- | Process the peer's SPAKE2 message and derive the shared key.
 -- Call once per context, after 'generateMessage'.
--- Returns 'Nothing' if the message is invalid.
-processMessage :: SPAKE2Ctx -> ByteString -> IO (Maybe ByteString)
+-- Returns 'Left' if the message is invalid.
+processMessage :: SPAKE2Ctx -> ByteString -> IO (Either BoringSSLError ByteString)
 processMessage (SPAKE2Ctx fptr) theirMsg =
   withForeignPtr fptr $ \ctx -> do
     let maxOut = spake2MaxKeySize
@@ -81,7 +84,7 @@ processMessage (SPAKE2Ctx fptr) theirMsg =
           c_SPAKE2_process_msg ctx (castPtr outPtr) outLenPtr
             (fromIntegral maxOut) msgPtr msgLen
       if rc /= 1
-        then return Nothing
+        then return (Left (BoringSSLError 0 "processMessage: SPAKE2_process_msg failed"))
         else do
           actualLen <- peek outLenPtr
-          return (Just (BSI.BS outFPtr (fromIntegral actualLen)))
+          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))

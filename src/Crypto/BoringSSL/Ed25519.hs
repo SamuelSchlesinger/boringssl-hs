@@ -20,6 +20,8 @@ module Crypto.BoringSSL.Ed25519
   , publicKeyFromBytes
   , privateKeyFromBytes
   , signatureFromBytes
+    -- * Error type
+  , BoringSSLError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -30,6 +32,7 @@ import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Ed25519
 
 -- | An Ed25519 public key (32 bytes).
@@ -88,9 +91,9 @@ generateKeyPair = do
   return (PublicKey (BSI.BS pubFPtr 32), PrivateKey (BSI.BS privFPtr 64))
 
 -- | Deterministically derive a key pair from a 32-byte seed (pure, RFC 8032).
-keyPairFromSeed :: ByteString -> (PublicKey, PrivateKey)
+keyPairFromSeed :: ByteString -> Either BoringSSLError (PublicKey, PrivateKey)
 keyPairFromSeed seed
-  | BS.length seed /= 32 = error "keyPairFromSeed: seed must be 32 bytes"
+  | BS.length seed /= 32 = Left (BoringSSLError 0 "keyPairFromSeed: seed must be 32 bytes")
   | otherwise = unsafePerformIO $ do
       pubFPtr <- BSI.mallocByteString 32
       privFPtr <- BSI.mallocByteString 64
@@ -98,7 +101,7 @@ keyPairFromSeed seed
         withForeignPtr pubFPtr $ \pubPtr ->
           withForeignPtr privFPtr $ \privPtr ->
             c_ED25519_keypair_from_seed (castPtr pubPtr) (castPtr privPtr) seedPtr
-      return (PublicKey (BSI.BS pubFPtr 32), PrivateKey (BSI.BS privFPtr 64))
+      return (Right (PublicKey (BSI.BS pubFPtr 32), PrivateKey (BSI.BS privFPtr 64)))
 {-# NOINLINE keyPairFromSeed #-}
 
 -- | Sign a message with an Ed25519 private key (pure, RFC 8032 deterministic).

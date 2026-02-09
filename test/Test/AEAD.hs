@@ -78,7 +78,7 @@ roundTrip algo = do
       nonce = BS.replicate (nonceLength algo) 0x01
       pt    = BS8.pack "Hello, BoringSSL AEAD!"
       ad    = BS8.pack "additional data"
-  ctx <- newAEADCtx algo key
+  Right ctx <- newAEADCtx algo key
   Right ct <- seal ctx nonce pt ad
   Right recovered <- open ctx nonce ct ad
   recovered @?= pt
@@ -90,7 +90,7 @@ roundTripEmpty algo = do
       nonce = BS.replicate (nonceLength algo) 0xBB
       pt    = BS.empty
       ad    = BS8.pack "auth only"
-  ctx <- newAEADCtx algo key
+  Right ctx <- newAEADCtx algo key
   Right ct <- seal ctx nonce pt ad
   Right recovered <- open ctx nonce ct ad
   recovered @?= pt
@@ -102,7 +102,7 @@ authFailure algo = do
       nonce = BS.replicate (nonceLength algo) 0x01
       pt    = BS8.pack "secret message"
       ad    = BS8.pack "aad"
-  ctx <- newAEADCtx algo key
+  Right ctx <- newAEADCtx algo key
   Right ct <- seal ctx nonce pt ad
   let tampered = flipBit ct
   result <- open ctx nonce tampered ad
@@ -127,7 +127,7 @@ rfc7539TestVector = do
       expectedCt = hex "d31a8d34648e60db7b86afbc53ef7ec2a4aded51296e08fea9e2b5a736ee62d63dbea45e8ca9671282fafb69da92728b1a71de0a9e060b2905d6a5b67ecd3b3692ddbd7f2d778b8c9803aee328091b58fab324e4fad675945585808b4831d7bc3ff4def08e4b7a9de576d26586cec64b6116"
       expectedTag = hex "1ae10b594f09e26a7e902ecbd0600691"
       expectedOutput = BS.append expectedCt expectedTag
-  ctx <- newAEADCtx ChaCha20Poly1305 key
+  Right ctx <- newAEADCtx ChaCha20Poly1305 key
   Right ct <- seal ctx nonce plaintext ad
   ct @?= expectedOutput
 
@@ -141,7 +141,7 @@ nistAES128GCMTestVector = do
       expectedCt = hex "42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985"
       expectedTag = hex "4d5c2af327cd64a62cf35abd2ba6fab4"
       expectedOutput = BS.append expectedCt expectedTag
-  ctx <- newAEADCtx AES128GCM key
+  Right ctx <- newAEADCtx AES128GCM key
   Right ct <- seal ctx nonce plaintext ad
   ct @?= expectedOutput
 
@@ -154,7 +154,7 @@ aes256GCMSIVKnownAnswer = do
       nonce = BS.replicate 12 0x02
       plaintext = BS8.pack "AES-256-GCM-SIV test"
       ad = BS8.pack "additional data"
-  ctx <- newAEADCtx AES256GCMSIV key
+  Right ctx <- newAEADCtx AES256GCMSIV key
   Right ct <- seal ctx nonce plaintext ad
   -- Ciphertext should be plaintext + 16-byte tag
   BS.length ct @?= BS.length plaintext + maxOverhead AES256GCMSIV
