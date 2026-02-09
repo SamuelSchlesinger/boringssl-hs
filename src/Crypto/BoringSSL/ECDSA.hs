@@ -21,6 +21,8 @@ module Crypto.BoringSSL.ECDSA
   , ecPrivateKeyBytes
   , ecKeyPairFromPrivateBytes
   , ecPublicKeyFromBytes
+    -- * Error type
+  , BoringSSLError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -36,7 +38,7 @@ import Crypto.BoringSSL.Internal.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECDSA
 
 -- | Generate a new EC key pair for ECDSA.
-generateKeyPair :: ECCurve -> IO ECKeyPair
+generateKeyPair :: ECCurve -> IO (Either BoringSSLError ECKeyPair)
 generateKeyPair = generateECKeyPair
 
 -- | Sign a pre-hashed digest with ECDSA.
@@ -62,13 +64,21 @@ ecdsaSign kp digest =
       Right len -> return (Right (BSI.BS fptr len))
 
 -- | Verify an ECDSA signature on a pre-hashed digest.
-ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO Bool
+-- Returns @Right True@ for valid, @Right False@ for invalid, or
+-- @Left@ for internal errors (e.g. memory allocation failure).
+ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
 ecdsaVerify pubKey digest sig =
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
         rc <- c_ECDSA_verify 0 digestPtr digestLen sigPtr sigLen keyPtr
-        return (rc == 1)
+        if rc == 1
+          then return (Right True)
+          else if rc == 0
+            then return (Right False)
+            else do
+              merr <- getBoringSSLError
+              return (Left (maybe (BoringSSLError 0 "ecdsaVerify: internal error") id merr))
 
 -- | Sign a pre-hashed digest with ECDSA, producing a fixed-size P1363
 -- signature (r || s, each zero-padded to the group order size).
@@ -95,10 +105,18 @@ ecdsaSignP1363 kp digest =
       Right len -> return (Right (BSI.BS fptr len))
 
 -- | Verify a P1363 fixed-size ECDSA signature on a pre-hashed digest.
-ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO Bool
+-- Returns @Right True@ for valid, @Right False@ for invalid, or
+-- @Left@ for internal errors.
+ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
 ecdsaVerifyP1363 pubKey digest sig =
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
         rc <- c_ECDSA_verify_p1363 digestPtr digestLen sigPtr sigLen keyPtr
-        return (rc == 1)
+        if rc == 1
+          then return (Right True)
+          else if rc == 0
+            then return (Right False)
+            else do
+              merr <- getBoringSSLError
+              return (Left (maybe (BoringSSLError 0 "ecdsaVerifyP1363: internal error") id merr))

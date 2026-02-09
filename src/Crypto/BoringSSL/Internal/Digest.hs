@@ -37,12 +37,18 @@ digestSize MD5        = 16
 digestSize BLAKE2b256 = 32
 
 -- | NID value for each algorithm (used by RSA_sign etc.).
-algorithmNID :: Algorithm -> CInt
-algorithmNID SHA1       = 64
-algorithmNID SHA224     = 675
-algorithmNID SHA256     = 672
-algorithmNID SHA384     = 673
-algorithmNID SHA512     = 674
-algorithmNID SHA512_256 = 962
-algorithmNID MD5        = 4
-algorithmNID BLAKE2b256 = 0  -- BLAKE2b256 has no NID in BoringSSL
+-- Returns 'Nothing' for algorithms that have no NID (e.g. BLAKE2b256),
+-- which cannot be used with NID-based operations like RSA PKCS#1 v1.5.
+--
+-- These values are from BoringSSL's @nid.h@ header. If BoringSSL is updated,
+-- verify these constants still match. Ideally these would be derived via
+-- hsc2hs at compile time.
+algorithmNID :: Algorithm -> Maybe CInt
+algorithmNID SHA1       = Just 64   -- NID_sha1
+algorithmNID SHA224     = Just 675  -- NID_sha224
+algorithmNID SHA256     = Just 672  -- NID_sha256
+algorithmNID SHA384     = Just 673  -- NID_sha384
+algorithmNID SHA512     = Just 674  -- NID_sha512
+algorithmNID SHA512_256 = Just 962  -- NID_sha512_256
+algorithmNID MD5        = Just 4    -- NID_md5
+algorithmNID BLAKE2b256 = Nothing   -- BLAKE2b256 has no NID in BoringSSL

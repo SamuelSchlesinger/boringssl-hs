@@ -12,6 +12,7 @@ module Crypto.BoringSSL.XWing
   , BoringSSLError(..)
   ) where
 
+import Control.Exception (mask_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
@@ -32,7 +33,7 @@ instance Show XWingPrivateKey where
 -- | Generate a random X-Wing key pair.
 -- Returns the encoded public key (1216 bytes) and an opaque private key.
 generateKeyPair :: IO (Either BoringSSLError (ByteString, XWingPrivateKey))
-generateKeyPair = do
+generateKeyPair = mask_ $ do
   pubFPtr <- BSI.mallocByteString xwingPublicKeyBytes
   skFPtr <- mallocForeignPtrBytes xwingPrivateKeyStructSize
   rc <- withForeignPtr pubFPtr $ \pubPtr ->

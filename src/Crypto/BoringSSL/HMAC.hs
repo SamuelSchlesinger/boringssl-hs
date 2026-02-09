@@ -44,7 +44,7 @@ hmac algo key msg = unsafePerformIO $
         alloca $ \outLenPtr -> do
           ret <- c_HMAC md keyPtr keyLen msgPtr msgLen (castPtr outPtr) outLenPtr
           if ret == nullPtr
-            then fail "hmac: HMAC returned NULL"
+            then error "hmac: HMAC returned NULL (should never happen)"
             else fromIntegral <$> peek outLenPtr
       return (BSI.BS fptr actualLen)
 {-# NOINLINE hmac #-}

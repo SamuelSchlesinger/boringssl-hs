@@ -110,6 +110,8 @@ encrypt algo key iv plaintext
                     else do
                       alloca $ \updateLenPtr ->
                         alloca $ \finalLenPtr -> do
+                          poke updateLenPtr 0
+                          poke finalLenPtr 0
                           rc2 <- c_EVP_EncryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
                                    (fromIntegral maxOutLen) inPtr inLen
                           if rc2 /= 1
@@ -168,6 +170,8 @@ decrypt algo key iv ciphertext
                     else do
                       alloca $ \updateLenPtr ->
                         alloca $ \finalLenPtr -> do
+                          poke updateLenPtr 0
+                          poke finalLenPtr 0
                           rc2 <- c_EVP_DecryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
                                    (fromIntegral maxOutLen) inPtr inLen
                           if rc2 /= 1

@@ -16,6 +16,7 @@ module Crypto.BoringSSL.Internal.FFI.ECKey
   , c_EC_KEY_get0_private_key
   , c_EC_KEY_set_public_key
   , c_EC_KEY_set_private_key
+  , c_EC_KEY_check_key
     -- * EC_GROUP
   , c_EC_group_p256
   , c_EC_group_p384
@@ -31,7 +32,9 @@ module Crypto.BoringSSL.Internal.FFI.ECKey
   , c_BN_set_word
   , c_BN_num_bytes
   , c_BN_bn2bin
+  , c_BN_bn2bin_padded
   , c_BN_bin2bn
+  , c_EC_GROUP_get_degree
     -- * EC_POINT arithmetic
   , c_EC_POINT_mul
   ) where
@@ -60,7 +63,7 @@ foreign import ccall unsafe "&EC_KEY_free"
   c_EC_KEY_free_funptr :: FunPtr (Ptr EC_KEY -> IO ())
 
 -- | int EC_KEY_generate_key(EC_KEY *key)
-foreign import ccall unsafe "EC_KEY_generate_key"
+foreign import ccall safe "EC_KEY_generate_key"
   c_EC_KEY_generate_key :: Ptr EC_KEY -> IO CInt
 
 -- EC_KEY accessors
@@ -84,6 +87,10 @@ foreign import ccall unsafe "EC_KEY_set_public_key"
 -- | int EC_KEY_set_private_key(EC_KEY *key, const BIGNUM *priv)
 foreign import ccall unsafe "EC_KEY_set_private_key"
   c_EC_KEY_set_private_key :: Ptr EC_KEY -> Ptr BIGNUM -> IO CInt
+
+-- | int EC_KEY_check_key(const EC_KEY *key)
+foreign import ccall unsafe "EC_KEY_check_key"
+  c_EC_KEY_check_key :: Ptr EC_KEY -> IO CInt
 
 -- EC_GROUP
 
@@ -143,6 +150,14 @@ foreign import ccall unsafe "BN_num_bytes"
 foreign import ccall unsafe "BN_bn2bin"
   c_BN_bn2bin :: Ptr BIGNUM -> Ptr CUChar -> IO CSize
 
+-- | int BN_bn2bin_padded(uint8_t *out, size_t len, const BIGNUM *in)
+foreign import ccall unsafe "BN_bn2bin_padded"
+  c_BN_bn2bin_padded :: Ptr CUChar -> CSize -> Ptr BIGNUM -> IO CInt
+
+-- | unsigned EC_GROUP_get_degree(const EC_GROUP *group)
+foreign import ccall unsafe "EC_GROUP_get_degree"
+  c_EC_GROUP_get_degree :: Ptr EC_GROUP -> IO CUInt
+
 -- | BIGNUM *BN_bin2bn(const uint8_t *in, size_t len, BIGNUM *ret)
 foreign import ccall unsafe "BN_bin2bn"
   c_BN_bin2bn :: Ptr CUChar -> CSize -> Ptr BIGNUM -> IO (Ptr BIGNUM)
@@ -153,5 +168,5 @@ foreign import ccall unsafe "BN_bin2bn"
 --                    const BIGNUM *n, const EC_POINT *q,
 --                    const BIGNUM *m, BN_CTX *ctx)
 -- To compute r = n * G (generator), pass q=NULL, m=NULL.
-foreign import ccall unsafe "EC_POINT_mul"
+foreign import ccall safe "EC_POINT_mul"
   c_EC_POINT_mul :: Ptr EC_GROUP -> Ptr EC_POINT -> Ptr BIGNUM -> Ptr EC_POINT -> Ptr BIGNUM -> Ptr () -> IO CInt

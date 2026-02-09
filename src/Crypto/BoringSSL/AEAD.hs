@@ -102,6 +102,7 @@ seal (AEADCtx algo fptr) nonce plaintext ad =
         maxOutLen = fromIntegral (fromIntegral inLen + overhead :: Int) :: CSize
     outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
     alloca $ \outLenPtr -> do
+      poke outLenPtr 0
       rc <- withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_seal ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
@@ -129,6 +130,7 @@ open (AEADCtx _algo fptr) nonce ciphertext ad =
     let maxOutLen = inLen  -- plaintext is at most as long as ciphertext
     outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
     alloca $ \outLenPtr -> do
+      poke outLenPtr 0
       rc <- withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_open ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen

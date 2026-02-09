@@ -8,6 +8,7 @@ module Crypto.BoringSSL.MLKEM
   , MLKEMPrivateKey
   , generateKeyPair
   , encapsulate
+  , encapsulatePublic
   , decapsulate
     -- * Constants
   , publicKeyBytes
@@ -19,13 +20,20 @@ module Crypto.BoringSSL.MLKEM
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
+import Control.Exception (mask_)
+import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Ptr
+import Foreign.Storable
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.MLKEM
+
+-- Size of a CBS struct (pointer + size_t).
+cbsSize :: Int
+cbsSize = sizeOf (undefined :: Ptr ()) + sizeOf (undefined :: CSize)
 
 -- | ML-KEM variant selection.
 data MLKEMVariant = MLKEM768 | MLKEM1024
@@ -51,7 +59,7 @@ ciphertextBytes MLKEM1024 = mlkem1024CiphertextBytes
 -- | Generate a random ML-KEM key pair.
 -- Returns the encoded public key and an opaque private key.
 generateKeyPair :: MLKEMVariant -> IO (ByteString, MLKEMPrivateKey)
-generateKeyPair MLKEM768 = do
+generateKeyPair MLKEM768 = mask_ $ do
   let pkSize = mlkem768PublicKeyBytes
       skSize = mlkem768PrivateKeySize
   pubFPtr <- BSI.mallocByteString pkSize
@@ -61,7 +69,7 @@ generateKeyPair MLKEM768 = do
       c_MLKEM768_generate_key (castPtr pubPtr) nullPtr (castPtr skPtr)
   return (BSI.BS pubFPtr pkSize, MLKEMPrivateKey MLKEM768 skFPtr)
 
-generateKeyPair MLKEM1024 = do
+generateKeyPair MLKEM1024 = mask_ $ do
   let pkSize = mlkem1024PublicKeyBytes
       skSize = mlkem1024PrivateKeySize
   pubFPtr <- BSI.mallocByteString pkSize
@@ -75,8 +83,11 @@ generateKeyPair MLKEM1024 = do
 -- Derives the public key struct from the private key internally,
 -- then performs encapsulation.
 -- Returns @(ciphertext, sharedSecret)@.
+--
+-- Note: For standard KEM usage where you only have the peer's public key,
+-- use 'encapsulatePublic' instead.
 encapsulate :: MLKEMPrivateKey -> IO (ByteString, ByteString)
-encapsulate (MLKEMPrivateKey MLKEM768 skFPtr) = do
+encapsulate (MLKEMPrivateKey MLKEM768 skFPtr) = mask_ $ do
   let ctSize = mlkem768CiphertextBytes
       pkStructSize = mlkem768PublicKeySize
   ctFPtr <- BSI.mallocByteString ctSize
@@ -89,7 +100,7 @@ encapsulate (MLKEMPrivateKey MLKEM768 skFPtr) = do
           c_MLKEM768_encap (castPtr ctPtr) (castPtr ssPtr) (castPtr pkStructPtr)
   return (BSI.BS ctFPtr ctSize, BSI.BS ssFPtr mlkemSharedSecretBytes)
 
-encapsulate (MLKEMPrivateKey MLKEM1024 skFPtr) = do
+encapsulate (MLKEMPrivateKey MLKEM1024 skFPtr) = mask_ $ do
   let ctSize = mlkem1024CiphertextBytes
       pkStructSize = mlkem1024PublicKeySize
   ctFPtr <- BSI.mallocByteString ctSize
@@ -101,6 +112,54 @@ encapsulate (MLKEMPrivateKey MLKEM1024 skFPtr) = do
         withForeignPtr ssFPtr $ \ssPtr ->
           c_MLKEM1024_encap (castPtr ctPtr) (castPtr ssPtr) (castPtr pkStructPtr)
   return (BSI.BS ctFPtr ctSize, BSI.BS ssFPtr mlkemSharedSecretBytes)
+
+-- | Encapsulate a shared secret using an encoded public key (the standard KEM API).
+-- Takes the encoded public key bytes (from 'generateKeyPair') rather than a
+-- private key. Returns @(ciphertext, sharedSecret)@.
+encapsulatePublic :: MLKEMVariant -> ByteString -> IO (Either BoringSSLError (ByteString, ByteString))
+encapsulatePublic MLKEM768 pubKeyBytes
+  | BS.length pubKeyBytes /= mlkem768PublicKeyBytes =
+      return (Left (BoringSSLError 0 "MLKEM.encapsulatePublic: incorrect public key length"))
+  | otherwise = do
+      let ctSize = mlkem768CiphertextBytes
+          pkStructSize = mlkem768PublicKeySize
+      ctFPtr <- BSI.mallocByteString ctSize
+      ssFPtr <- BSI.mallocByteString mlkemSharedSecretBytes
+      allocaBytes pkStructSize $ \pkStructPtr ->
+        withByteString pubKeyBytes $ \pkBytesPtr pkBytesLen ->
+          allocaBytes cbsSize $ \cbsPtr -> do
+            pokeByteOff cbsPtr 0 pkBytesPtr
+            pokeByteOff cbsPtr (sizeOf (undefined :: Ptr ())) (pkBytesLen :: CSize)
+            rc <- c_MLKEM768_parse_public_key (castPtr pkStructPtr) (castPtr cbsPtr)
+            if rc /= 1
+              then return (Left (BoringSSLError 0 "MLKEM.encapsulatePublic: failed to parse public key"))
+              else do
+                withForeignPtr ctFPtr $ \ctPtr ->
+                  withForeignPtr ssFPtr $ \ssPtr ->
+                    c_MLKEM768_encap (castPtr ctPtr) (castPtr ssPtr) (castPtr pkStructPtr)
+                return (Right (BSI.BS ctFPtr ctSize, BSI.BS ssFPtr mlkemSharedSecretBytes))
+
+encapsulatePublic MLKEM1024 pubKeyBytes
+  | BS.length pubKeyBytes /= mlkem1024PublicKeyBytes =
+      return (Left (BoringSSLError 0 "MLKEM.encapsulatePublic: incorrect public key length"))
+  | otherwise = do
+      let ctSize = mlkem1024CiphertextBytes
+          pkStructSize = mlkem1024PublicKeySize
+      ctFPtr <- BSI.mallocByteString ctSize
+      ssFPtr <- BSI.mallocByteString mlkemSharedSecretBytes
+      allocaBytes pkStructSize $ \pkStructPtr ->
+        withByteString pubKeyBytes $ \pkBytesPtr pkBytesLen ->
+          allocaBytes cbsSize $ \cbsPtr -> do
+            pokeByteOff cbsPtr 0 pkBytesPtr
+            pokeByteOff cbsPtr (sizeOf (undefined :: Ptr ())) (pkBytesLen :: CSize)
+            rc <- c_MLKEM1024_parse_public_key (castPtr pkStructPtr) (castPtr cbsPtr)
+            if rc /= 1
+              then return (Left (BoringSSLError 0 "MLKEM.encapsulatePublic: failed to parse public key"))
+              else do
+                withForeignPtr ctFPtr $ \ctPtr ->
+                  withForeignPtr ssFPtr $ \ssPtr ->
+                    c_MLKEM1024_encap (castPtr ctPtr) (castPtr ssPtr) (castPtr pkStructPtr)
+                return (Right (BSI.BS ctFPtr ctSize, BSI.BS ssFPtr mlkemSharedSecretBytes))
 
 -- | Decapsulate a shared secret from a ciphertext using a private key.
 decapsulate :: MLKEMPrivateKey -> ByteString -> IO (Either BoringSSLError ByteString)

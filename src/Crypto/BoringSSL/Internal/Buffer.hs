@@ -21,11 +21,18 @@ import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_free, c_CRYPTO_memcmp)
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | Use a ByteString as a C pointer and length. For empty ByteStrings,
--- passes a non-null pointer (nullPtr is avoided for safety with some C APIs).
+-- guarantees a non-null pointer (some C APIs dereference the pointer
+-- even when length is 0).
 withByteString :: ByteString -> (Ptr CUChar -> CSize -> IO a) -> IO a
-withByteString bs f =
-  BSU.unsafeUseAsCStringLen bs $ \(ptr, len) ->
-    f (castPtr ptr) (fromIntegral len)
+withByteString bs f
+  | BS.null bs = f emptyBufPtr 0
+  | otherwise  = BSU.unsafeUseAsCStringLen bs $ \(ptr, len) ->
+      f (castPtr ptr) (fromIntegral len)
+
+-- | A non-null pointer used for empty ByteStrings.
+emptyBufPtr :: Ptr CUChar
+emptyBufPtr = nullPtr `plusPtr` 1
+{-# NOINLINE emptyBufPtr #-}
 
 -- | Create a ByteString of a given size by filling it via an IO action.
 -- The action receives a pointer to write into and should fill exactly @n@ bytes.
@@ -43,11 +50,15 @@ createByteStringLen maxLen f = do
   fptr <- BSI.mallocByteString maxLen
   withForeignPtr fptr $ \ptr ->
     alloca $ \lenPtr -> do
+      poke lenPtr 0  -- Initialize to 0 to avoid reading garbage on buggy C functions
       rc <- f (castPtr ptr) lenPtr
       if rc == 1
         then do
           actualLen <- peek lenPtr
-          return (Just (BSI.BS fptr (fromIntegral actualLen)))
+          let actual = fromIntegral actualLen
+          if actual > maxLen
+            then return Nothing  -- Bounds check: reject if C returned more than allocated
+            else return (Just (BSI.BS fptr actual))
         else return Nothing
 
 -- | Pack a buffer allocated by BoringSSL (via OPENSSL_malloc) into a ByteString,
@@ -59,9 +70,15 @@ packOpenSSLBuffer bufPtrPtr lenPtr = do
   BS.packCStringLen (castPtr bufPtr, fromIntegral len)
     `finally` c_OPENSSL_free bufPtr
 
--- | Constant-time equality comparison for ByteStrings.
+-- | Constant-time equality comparison for ByteStrings of equal length.
 -- Uses BoringSSL's CRYPTO_memcmp to avoid timing side-channel attacks.
 -- Returns True if the two ByteStrings are equal, False otherwise.
+--
+-- Note: The length comparison itself is /not/ constant-time. If the
+-- two inputs have different lengths, this returns @False@ immediately.
+-- This is acceptable for fixed-length cryptographic values (MACs,
+-- digests, keys of known size) but should not be relied upon to hide
+-- length information.
 constTimeEq :: ByteString -> ByteString -> Bool
 constTimeEq a b
   | BS.length a /= BS.length b = False

@@ -44,11 +44,11 @@ x25519PubB = fst (unsafePerformIO X25519.generateKeyPair)
 
 {-# NOINLINE ecdsaKeyPair #-}
 ecdsaKeyPair :: ECDSA.ECKeyPair
-ecdsaKeyPair = unsafePerformIO $ ECDSA.generateKeyPair P256
+ecdsaKeyPair = unsafePerformIO $ unsafeUnwrap "ECDSA keygen" <$> ECDSA.generateKeyPair P256
 
 {-# NOINLINE ecdsaPubKey #-}
 ecdsaPubKey :: ECDSA.ECPublicKey
-ecdsaPubKey = unsafePerformIO $ ECDSA.ecPublicKeyOfPair ecdsaKeyPair
+ecdsaPubKey = unsafePerformIO $ unsafeUnwrap "ECDSA pubkey" <$> ECDSA.ecPublicKeyOfPair ecdsaKeyPair
 
 {-# NOINLINE rsaKeyPair #-}
 rsaKeyPair :: RSA.RSAKeyPair
@@ -109,13 +109,6 @@ main = do
   -- Pre-encrypt for RSA decrypt benchmark
   rsaCt <- unwrapRight "RSA encrypt" =<< RSA.rsaEncrypt rsaPubKey "short plaintext"
 
-  -- Pre-setup HPKE for open benchmark
-  (hpkeEnc, hpkeSCtx) <- unwrapRight "HPKE setup sender" =<< HPKE.setupSender HPKE.X25519HkdfSha256
-                            HPKE.HkdfSha256 HPKE.Aes128Gcm hpkeRecipPub "bench"
-  hpkeCt <- unwrapRight "HPKE seal" =<< HPKE.senderSeal hpkeSCtx input1KB ""
-  hpkeRCtx <- unwrapRight "HPKE setup recip" =<< HPKE.setupRecipient hpkeRecipKey HPKE.HkdfSha256
-                HPKE.Aes128Gcm hpkeEnc "bench"
-
   defaultMain
     [ bgroup "Digest"
       [ bench "SHA-256 1KB"    $ nf (hash SHA256) input1KB
@@ -135,7 +128,7 @@ main = do
       [ bench "HMAC-SHA-256 1KB" $ nf (HMAC.hmac SHA256 "key") input1KB
       ]
     , bgroup "HKDF"
-      [ bench "HKDF-SHA-256 32B output" $ nf (\s -> HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
+      [ bench "HKDF-SHA-256 32B output" $ nf (\s -> unsafeUnwrap "hkdf" $ HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
       ]
     , bgroup "Ed25519"
       [ bench "generateKeyPair" $ nfIO (Ed25519.generateKeyPair >>= \(p, _) -> return (Ed25519.publicKeyToBytes p))
@@ -148,11 +141,11 @@ main = do
       ]
     , bgroup "ECDSA"
       [ bench "P-256 sign" $ nfIO $ unwrapRight "s" =<< ECDSA.ecdsaSign ecdsaKeyPair digest256
-      , bench "P-256 verify" $ nfIO $ ECDSA.ecdsaVerify ecdsaPubKey digest256 ecdsaSig
+      , bench "P-256 verify" $ nfIO $ unwrapRight "v" =<< ECDSA.ecdsaVerify ecdsaPubKey digest256 ecdsaSig
       ]
     , bgroup "RSA"
       [ bench "2048-bit sign (PKCS#1)" $ nfIO $ unwrapRight "s" =<< RSA.rsaSign rsaKeyPair SHA256 digest256
-      , bench "2048-bit verify (PKCS#1)" $ nfIO $ RSA.rsaVerify rsaPubKey SHA256 digest256 rsaSig
+      , bench "2048-bit verify (PKCS#1)" $ nfIO $ unwrapRight "v" =<< RSA.rsaVerify rsaPubKey SHA256 digest256 rsaSig
       , bench "2048-bit encrypt (OAEP)" $ nfIO $ unwrapRight "e" =<< RSA.rsaEncrypt rsaPubKey "short plaintext"
       , bench "2048-bit decrypt (OAEP)" $ nfIO $ unwrapRight "d" =<< RSA.rsaDecrypt rsaKeyPair rsaCt
       ]
@@ -161,7 +154,15 @@ main = do
           (_, sCtx) <- unwrapRight "s" =<< HPKE.setupSender HPKE.X25519HkdfSha256 HPKE.HkdfSha256
                           HPKE.Aes128Gcm hpkeRecipPub "bench"
           unwrapRight "s" =<< HPKE.senderSeal sCtx input1KB ""
-      , bench "X25519 open" $ nfIO $ unwrapRight "o" =<< HPKE.recipientOpen hpkeRCtx hpkeCt ""
+      , bench "X25519 setup+open" $ nfIO $ do
+          -- HPKE contexts are stateful (sequence number), so we must create
+          -- a fresh sender+recipient pair for each iteration.
+          (enc', sCtx') <- unwrapRight "s" =<< HPKE.setupSender HPKE.X25519HkdfSha256 HPKE.HkdfSha256
+                              HPKE.Aes128Gcm hpkeRecipPub "bench"
+          ct' <- unwrapRight "s" =<< HPKE.senderSeal sCtx' input1KB ""
+          rCtx' <- unwrapRight "r" =<< HPKE.setupRecipient hpkeRecipKey HPKE.HkdfSha256
+                      HPKE.Aes128Gcm enc' "bench"
+          unwrapRight "o" =<< HPKE.recipientOpen rCtx' ct' ""
       ]
     , bgroup "SPAKE2"
       [ bench "full protocol" $ nfIO $ do

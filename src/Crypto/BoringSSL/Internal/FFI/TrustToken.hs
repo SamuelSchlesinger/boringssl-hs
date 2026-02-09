@@ -40,6 +40,9 @@ module Crypto.BoringSSL.Internal.FFI.TrustToken
   , c_boringssl_sk_TRUST_TOKEN_num
   , c_boringssl_sk_TRUST_TOKEN_value
   , c_boringssl_sk_TRUST_TOKEN_pop_free
+    -- * Token field accessors (from cbits)
+  , c_boringssl_TRUST_TOKEN_data
+  , c_boringssl_TRUST_TOKEN_len
   ) where
 
 import Foreign.C.Types
@@ -85,7 +88,7 @@ foreign import ccall unsafe "TRUST_TOKEN_pst_v1_pmb"
 --     uint8_t *out_priv_key, size_t *out_priv_key_len, size_t max_priv_key_len,
 --     uint8_t *out_pub_key, size_t *out_pub_key_len, size_t max_pub_key_len,
 --     uint32_t id)
-foreign import ccall unsafe "TRUST_TOKEN_generate_key"
+foreign import ccall safe "TRUST_TOKEN_generate_key"
   c_TRUST_TOKEN_generate_key
     :: Ptr TRUST_TOKEN_METHOD
     -> Ptr CUChar -> Ptr CSize -> CSize
@@ -191,7 +194,8 @@ foreign import ccall unsafe "TRUST_TOKEN_ISSUER_set_metadata_key"
 --     const TRUST_TOKEN_ISSUER *ctx, uint8_t **out, size_t *out_len,
 --     size_t *out_tokens_issued, const uint8_t *request, size_t request_len,
 --     uint32_t public_metadata, uint8_t private_metadata, size_t max_issuance)
-foreign import ccall unsafe "TRUST_TOKEN_ISSUER_issue"
+-- Uses safe FFI as token issuance involves expensive crypto operations.
+foreign import ccall safe "TRUST_TOKEN_ISSUER_issue"
   c_TRUST_TOKEN_ISSUER_issue
     :: Ptr TRUST_TOKEN_ISSUER -> Ptr (Ptr CUChar) -> Ptr CSize
     -> Ptr CSize -> Ptr CUChar -> CSize
@@ -201,7 +205,8 @@ foreign import ccall unsafe "TRUST_TOKEN_ISSUER_issue"
 --     const TRUST_TOKEN_ISSUER *ctx, uint32_t *out_public, uint8_t *out_private,
 --     TRUST_TOKEN **out_token, uint8_t **out_client_data,
 --     size_t *out_client_data_len, const uint8_t *request, size_t request_len)
-foreign import ccall unsafe "TRUST_TOKEN_ISSUER_redeem"
+-- Uses safe FFI as token redemption involves expensive crypto operations.
+foreign import ccall safe "TRUST_TOKEN_ISSUER_redeem"
   c_TRUST_TOKEN_ISSUER_redeem
     :: Ptr TRUST_TOKEN_ISSUER -> Ptr Word32 -> Ptr Word8
     -> Ptr (Ptr TRUST_TOKEN) -> Ptr (Ptr CUChar) -> Ptr CSize
@@ -222,3 +227,13 @@ foreign import ccall unsafe "boringssl_sk_TRUST_TOKEN_value"
 -- | void boringssl_sk_TRUST_TOKEN_pop_free(STACK_OF(TRUST_TOKEN) *sk)
 foreign import ccall unsafe "boringssl_sk_TRUST_TOKEN_pop_free"
   c_boringssl_sk_TRUST_TOKEN_pop_free :: Ptr STACK_TRUST_TOKEN -> IO ()
+
+-- Token field accessors (from cbits/trust_token_helpers.c)
+
+-- | const uint8_t *boringssl_TRUST_TOKEN_data(const TRUST_TOKEN *token)
+foreign import ccall unsafe "boringssl_TRUST_TOKEN_data"
+  c_boringssl_TRUST_TOKEN_data :: Ptr TRUST_TOKEN -> IO (Ptr CUChar)
+
+-- | size_t boringssl_TRUST_TOKEN_len(const TRUST_TOKEN *token)
+foreign import ccall unsafe "boringssl_TRUST_TOKEN_len"
+  c_boringssl_TRUST_TOKEN_len :: Ptr TRUST_TOKEN -> IO CSize

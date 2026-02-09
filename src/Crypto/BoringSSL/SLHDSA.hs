@@ -22,6 +22,7 @@ module Crypto.BoringSSL.SLHDSA
   , BoringSSLError(..)
   ) where
 
+import Control.Exception (mask_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
@@ -57,7 +58,7 @@ signatureBytes SHAKE_256F = slhdsaShake256fSignatureBytes
 -- | Generate a random SLH-DSA key pair. Returns (publicKey, privateKey) as
 -- raw 'ByteString' values.
 generateKeyPair :: SLHDSAVariant -> IO (ByteString, ByteString)
-generateKeyPair variant = do
+generateKeyPair variant = mask_ $ do
   let pubLen  = publicKeyBytes variant
       privLen = privateKeyBytes variant
   pubFPtr  <- BSI.mallocByteString pubLen

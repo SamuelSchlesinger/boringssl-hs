@@ -82,8 +82,9 @@ tests = testGroup "X509"
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER should parse the test certificate: " ++ show err)
         Right cert -> do
-          let reencoded = toDER cert
-          reencoded @?= testCertDER
+          case toDER cert of
+            Left err -> assertFailure ("toDER failed: " ++ show err)
+            Right reencoded -> reencoded @?= testCertDER
 
   , testCase "subjectName and issuerName on parsed cert" $ do
       case parseDER testCertDER of

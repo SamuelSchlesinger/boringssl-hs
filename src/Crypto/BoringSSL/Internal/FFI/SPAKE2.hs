@@ -54,13 +54,13 @@ foreign import ccall unsafe "&SPAKE2_CTX_free"
 -- | int SPAKE2_generate_msg(SPAKE2_CTX *ctx, uint8_t *out,
 --                           size_t *out_len, size_t max_out_len,
 --                           const uint8_t *password, size_t password_len)
-foreign import ccall unsafe "SPAKE2_generate_msg"
+foreign import ccall safe "SPAKE2_generate_msg"
   c_SPAKE2_generate_msg :: Ptr SPAKE2_CTX -> Ptr CUChar -> Ptr CSize -> CSize
                          -> Ptr CUChar -> CSize -> IO CInt
 
 -- | int SPAKE2_process_msg(SPAKE2_CTX *ctx, uint8_t *out_key,
 --                          size_t *out_key_len, size_t max_out_key_len,
 --                          const uint8_t *their_msg, size_t their_msg_len)
-foreign import ccall unsafe "SPAKE2_process_msg"
+foreign import ccall safe "SPAKE2_process_msg"
   c_SPAKE2_process_msg :: Ptr SPAKE2_CTX -> Ptr CUChar -> Ptr CSize -> CSize
                         -> Ptr CUChar -> CSize -> IO CInt

@@ -34,20 +34,21 @@ cmacTagSize :: Int
 cmacTagSize = 16
 
 -- | Select the appropriate AES-CBC cipher for the given key length.
-cipherForKeyLen :: Int -> Ptr a
-cipherForKeyLen 16 = castPtr c_EVP_aes_128_cbc
-cipherForKeyLen 32 = castPtr c_EVP_aes_256_cbc
-cipherForKeyLen _  = error "cmac: key must be 16 or 32 bytes"
+-- Returns Nothing for invalid key lengths.
+cipherForKeyLen :: Int -> Maybe (Ptr a)
+cipherForKeyLen 16 = Just (castPtr c_EVP_aes_128_cbc)
+cipherForKeyLen 32 = Just (castPtr c_EVP_aes_256_cbc)
+cipherForKeyLen _  = Nothing
 
 -- | Compute AES-CMAC in one shot (pure, deterministic).
 --
 -- @cmac key message@ computes the AES-CMAC of @message@ using @key@.
 -- The key must be 16 bytes (AES-128) or 32 bytes (AES-256).
--- Returns a 16-byte authentication tag.
-cmac :: ByteString -> ByteString -> ByteString
+-- Returns a 16-byte authentication tag, or 'Left' on invalid key length.
+cmac :: ByteString -> ByteString -> Either BoringSSLError ByteString
 cmac key msg
   | BS.length key /= 16 && BS.length key /= 32 =
-      error "cmac: key must be 16 or 32 bytes"
+      Left (BoringSSLError 0 "cmac: key must be 16 or 32 bytes")
   | otherwise = unsafePerformIO $
       withByteString key $ \keyPtr keyLen ->
         withByteString msg $ \msgPtr msgLen -> do
@@ -55,8 +56,8 @@ cmac key msg
           withForeignPtr fptr $ \outPtr -> do
             rc <- c_AES_CMAC (castPtr outPtr) keyPtr keyLen msgPtr msgLen
             if rc /= 1
-              then fail "cmac: AES_CMAC failed"
-              else return (BSI.BS fptr cmacTagSize)
+              then return (Left (BoringSSLError 0 "cmac: AES_CMAC failed"))
+              else return (Right (BSI.BS fptr cmacTagSize))
 {-# NOINLINE cmac #-}
 
 -- | An incremental CMAC context.
@@ -75,7 +76,9 @@ cmacInit key
       if ctx == nullPtr
         then return (Left (BoringSSLError 0 "cmacInit: CMAC_CTX_new returned NULL"))
         else do
-          let cipher = cipherForKeyLen (BS.length key)
+          let cipher = case cipherForKeyLen (BS.length key) of
+                Just c  -> c
+                Nothing -> error "cmacInit: unreachable (key length already checked)"
           withByteString key $ \keyPtr keyLen -> do
             rc <- c_CMAC_Init ctx keyPtr keyLen cipher nullPtr
             if rc /= 1

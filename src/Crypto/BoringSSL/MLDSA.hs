@@ -26,6 +26,7 @@ module Crypto.BoringSSL.MLDSA
   , BoringSSLError(..)
   ) where
 
+import Control.Exception (mask_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
@@ -95,7 +96,7 @@ cbsSize = sizeOf (undefined :: Ptr ()) + sizeOf (undefined :: CSize)
 -- 32-byte seed that can be used with 'privateKeyFromSeed' to regenerate
 -- the private key.
 generateKeyPair :: MLDSAVariant -> IO (Either BoringSSLError (ByteString, ByteString, MLDSAPrivateKey))
-generateKeyPair variant = do
+generateKeyPair variant = mask_ $ do
   let pkSize = publicKeyBytes variant
       skSize = privateKeySize variant
   pubFPtr <- BSI.mallocByteString pkSize
@@ -121,7 +122,7 @@ privateKeyFromSeed :: MLDSAVariant -> ByteString -> Either BoringSSLError MLDSAP
 privateKeyFromSeed variant seed
   | BS.length seed /= mldsaSeedBytes =
       Left (BoringSSLError 0 "privateKeyFromSeed: seed must be 32 bytes")
-  | otherwise = unsafePerformIO $ do
+  | otherwise = unsafePerformIO $ mask_ $ do
       let skSize = privateKeySize variant
       skFPtr <- mallocForeignPtrBytes skSize
       rc <- withForeignPtr skFPtr $ \skPtr ->

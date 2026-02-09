@@ -131,7 +131,7 @@ foreign import ccall unsafe "&EVP_HPKE_KEY_free"
   c_EVP_HPKE_KEY_free_funptr :: FunPtr (Ptr EVP_HPKE_KEY -> IO ())
 
 -- | int EVP_HPKE_KEY_generate(EVP_HPKE_KEY *key, const EVP_HPKE_KEM *kem)
-foreign import ccall unsafe "EVP_HPKE_KEY_generate"
+foreign import ccall safe "EVP_HPKE_KEY_generate"
   c_EVP_HPKE_KEY_generate :: Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KEM -> IO CInt
 
 -- | int EVP_HPKE_KEY_init(EVP_HPKE_KEY *key, const EVP_HPKE_KEM *kem,
@@ -173,7 +173,8 @@ foreign import ccall unsafe "&EVP_HPKE_CTX_free"
 --     const EVP_HPKE_KEM *kem, const EVP_HPKE_KDF *kdf, const EVP_HPKE_AEAD *aead,
 --     const uint8_t *peer_public_key, size_t peer_public_key_len,
 --     const uint8_t *info, size_t info_len)
-foreign import ccall unsafe "EVP_HPKE_CTX_setup_sender"
+-- Uses safe FFI as ML-KEM key generation during setup can be expensive.
+foreign import ccall safe "EVP_HPKE_CTX_setup_sender"
   c_EVP_HPKE_CTX_setup_sender
     :: Ptr EVP_HPKE_CTX -> Ptr CUChar -> Ptr CSize -> CSize
     -> Ptr EVP_HPKE_KEM -> Ptr EVP_HPKE_KDF -> Ptr EVP_HPKE_AEAD
@@ -185,7 +186,7 @@ foreign import ccall unsafe "EVP_HPKE_CTX_setup_sender"
 --     EVP_HPKE_CTX *ctx, const EVP_HPKE_KEY *key, const EVP_HPKE_KDF *kdf,
 --     const EVP_HPKE_AEAD *aead, const uint8_t *enc, size_t enc_len,
 --     const uint8_t *info, size_t info_len)
-foreign import ccall unsafe "EVP_HPKE_CTX_setup_recipient"
+foreign import ccall safe "EVP_HPKE_CTX_setup_recipient"
   c_EVP_HPKE_CTX_setup_recipient
     :: Ptr EVP_HPKE_CTX -> Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KDF
     -> Ptr EVP_HPKE_AEAD -> Ptr CUChar -> CSize
@@ -197,7 +198,7 @@ foreign import ccall unsafe "EVP_HPKE_CTX_setup_recipient"
 --     const EVP_HPKE_KEY *key, const EVP_HPKE_KDF *kdf, const EVP_HPKE_AEAD *aead,
 --     const uint8_t *peer_public_key, size_t peer_public_key_len,
 --     const uint8_t *info, size_t info_len)
-foreign import ccall unsafe "EVP_HPKE_CTX_setup_auth_sender"
+foreign import ccall safe "EVP_HPKE_CTX_setup_auth_sender"
   c_EVP_HPKE_CTX_setup_auth_sender
     :: Ptr EVP_HPKE_CTX -> Ptr CUChar -> Ptr CSize -> CSize
     -> Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KDF -> Ptr EVP_HPKE_AEAD
@@ -210,7 +211,7 @@ foreign import ccall unsafe "EVP_HPKE_CTX_setup_auth_sender"
 --     const EVP_HPKE_AEAD *aead, const uint8_t *enc, size_t enc_len,
 --     const uint8_t *info, size_t info_len,
 --     const uint8_t *peer_public_key, size_t peer_public_key_len)
-foreign import ccall unsafe "EVP_HPKE_CTX_setup_auth_recipient"
+foreign import ccall safe "EVP_HPKE_CTX_setup_auth_recipient"
   c_EVP_HPKE_CTX_setup_auth_recipient
     :: Ptr EVP_HPKE_CTX -> Ptr EVP_HPKE_KEY -> Ptr EVP_HPKE_KDF
     -> Ptr EVP_HPKE_AEAD -> Ptr CUChar -> CSize
@@ -224,7 +225,8 @@ foreign import ccall unsafe "EVP_HPKE_CTX_setup_auth_recipient"
 --                         size_t *out_len, size_t max_out_len,
 --                         const uint8_t *in, size_t in_len,
 --                         const uint8_t *ad, size_t ad_len)
-foreign import ccall unsafe "EVP_HPKE_CTX_seal"
+-- Uses safe FFI as this may process large amounts of data.
+foreign import ccall safe "EVP_HPKE_CTX_seal"
   c_EVP_HPKE_CTX_seal
     :: Ptr EVP_HPKE_CTX -> Ptr CUChar -> Ptr CSize -> CSize
     -> Ptr CUChar -> CSize -> Ptr CUChar -> CSize -> IO CInt
@@ -233,7 +235,8 @@ foreign import ccall unsafe "EVP_HPKE_CTX_seal"
 --                         size_t *out_len, size_t max_out_len,
 --                         const uint8_t *in, size_t in_len,
 --                         const uint8_t *ad, size_t ad_len)
-foreign import ccall unsafe "EVP_HPKE_CTX_open"
+-- Uses safe FFI as this may process large amounts of data.
+foreign import ccall safe "EVP_HPKE_CTX_open"
   c_EVP_HPKE_CTX_open
     :: Ptr EVP_HPKE_CTX -> Ptr CUChar -> Ptr CSize -> CSize
     -> Ptr CUChar -> CSize -> Ptr CUChar -> CSize -> IO CInt

@@ -22,6 +22,7 @@ import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 import Control.Exception (mask_)
+import Control.Concurrent.MVar
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -32,7 +33,8 @@ data Role = Alice | Bob
   deriving (Eq, Show)
 
 -- | A SPAKE2 context. Each context must be used for exactly one exchange.
-newtype SPAKE2Ctx = SPAKE2Ctx (ForeignPtr SPAKE2_CTX)
+-- Thread-safe: concurrent calls are serialized via an internal lock.
+data SPAKE2Ctx = SPAKE2Ctx !(MVar ()) !(ForeignPtr SPAKE2_CTX)
 
 roleToC :: Role -> CInt
 roleToC Alice = spake2RoleAlice
@@ -50,12 +52,15 @@ newContext role myName theirName = mask_ $
         then return (Left (BoringSSLError 0 "newContext: SPAKE2_CTX_new failed"))
         else do
           fptr <- newForeignPtr c_SPAKE2_CTX_free_funptr ctx
-          return (Right (SPAKE2Ctx fptr))
+          lock <- newMVar ()
+          return (Right (SPAKE2Ctx lock fptr))
 
 -- | Generate a SPAKE2 message from a password. Call once per context.
 -- The resulting message should be sent to the peer.
+-- Thread-safe: concurrent calls are serialized.
 generateMessage :: SPAKE2Ctx -> ByteString -> IO (Either BoringSSLError ByteString)
-generateMessage (SPAKE2Ctx fptr) password =
+generateMessage (SPAKE2Ctx lock fptr) password =
+  withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     let maxOut = spake2MaxMsgSize
     outFPtr <- BSI.mallocByteString maxOut
@@ -73,8 +78,10 @@ generateMessage (SPAKE2Ctx fptr) password =
 -- | Process the peer's SPAKE2 message and derive the shared key.
 -- Call once per context, after 'generateMessage'.
 -- Returns 'Left' if the message is invalid.
+-- Thread-safe: concurrent calls are serialized.
 processMessage :: SPAKE2Ctx -> ByteString -> IO (Either BoringSSLError ByteString)
-processMessage (SPAKE2Ctx fptr) theirMsg =
+processMessage (SPAKE2Ctx lock fptr) theirMsg =
+  withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     let maxOut = spake2MaxKeySize
     outFPtr <- BSI.mallocByteString maxOut

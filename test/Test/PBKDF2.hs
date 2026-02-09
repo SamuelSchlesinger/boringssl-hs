@@ -9,26 +9,30 @@ import Test.Tasty.HUnit
 import Crypto.BoringSSL.Digest (Algorithm(..))
 import Crypto.BoringSSL.PBKDF2
 
+unwrap :: Either BoringSSLError a -> a
+unwrap (Right x) = x
+unwrap (Left e)  = error ("unexpected error: " ++ show e)
+
 tests :: TestTree
 tests = testGroup "PBKDF2"
   [ testGroup "RFC 6070 (PBKDF2-HMAC-SHA1)"
     [ testCase "Test Vector 1 (1 iteration)" $ do
-        let derived = pbkdf2 SHA1
+        let derived = unwrap $ pbkdf2 SHA1
               (BS8.pack "password") (BS8.pack "salt") 1 20
         Base16.encode derived @?=
           "0c60c80f961f0e71f3a9b524af6012062fe037a6"
     , testCase "Test Vector 2 (2 iterations)" $ do
-        let derived = pbkdf2 SHA1
+        let derived = unwrap $ pbkdf2 SHA1
               (BS8.pack "password") (BS8.pack "salt") 2 20
         Base16.encode derived @?=
           "ea6c014dc72d6f8ccd1ed92ace1d41f0d8de8957"
     , testCase "Test Vector 3 (4096 iterations)" $ do
-        let derived = pbkdf2 SHA1
+        let derived = unwrap $ pbkdf2 SHA1
               (BS8.pack "password") (BS8.pack "salt") 4096 20
         Base16.encode derived @?=
           "4b007901b765489abead49d926f721d065a429c1"
     , testCase "Test Vector 5 (4096 iterations, long password and salt)" $ do
-        let derived = pbkdf2 SHA1
+        let derived = unwrap $ pbkdf2 SHA1
               (BS8.pack "passwordPASSWORDpassword")
               (BS8.pack "saltSALTsaltSALTsaltSALTsaltSALTsalt")
               4096 25
@@ -37,13 +41,13 @@ tests = testGroup "PBKDF2"
     ]
   , testGroup "PBKDF2-HMAC-SHA256"
     [ testCase "basic round-trip" $ do
-        let derived = pbkdf2 SHA256
+        let derived = unwrap $ pbkdf2 SHA256
               (BS8.pack "password") (BS8.pack "salt") 1 32
         -- Just verify it produces 32 bytes and doesn't crash
         BS8.length derived @?= 32
     , testCase "deterministic" $ do
-        let d1 = pbkdf2 SHA256 (BS8.pack "pw") (BS8.pack "s") 100 32
-            d2 = pbkdf2 SHA256 (BS8.pack "pw") (BS8.pack "s") 100 32
+        let d1 = unwrap $ pbkdf2 SHA256 (BS8.pack "pw") (BS8.pack "s") 100 32
+            d2 = unwrap $ pbkdf2 SHA256 (BS8.pack "pw") (BS8.pack "s") 100 32
         d1 @?= d2
     ]
   ]

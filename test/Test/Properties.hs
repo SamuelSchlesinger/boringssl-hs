@@ -308,15 +308,20 @@ prop_hkdfLength algo (ArbitraryBS secret) (ArbitraryBS salt) (ArbitraryBS info) 
   let maxOut = 255 * Digest.digestSize algo
       outLen = min 64 maxOut
   in outLen > 0 ==>
-     BS.length (HKDF.hkdf algo secret salt info outLen) == outLen
+     case HKDF.hkdf algo secret salt info outLen of
+       Right bs -> BS.length bs == outLen
+       Left _   -> False
 
 prop_hkdfExtractExpandMatchesFull :: Algorithm -> ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hkdfExtractExpandMatchesFull algo (ArbitraryBS secret) (ArbitraryBS salt) (ArbitraryBS info) =
   let outLen = 32
-      full = HKDF.hkdf algo secret salt info outLen
-      prk = HKDF.hkdfExtract algo secret salt
-      expanded = HKDF.hkdfExpand algo prk info outLen
-  in full === expanded
+  in case HKDF.hkdf algo secret salt info outLen of
+       Left _ -> property $ counterexample "hkdf failed" False
+       Right full -> case HKDF.hkdfExtract algo secret salt of
+         Left _ -> property $ counterexample "hkdfExtract failed" False
+         Right prk -> case HKDF.hkdfExpand algo prk info outLen of
+           Left _ -> property $ counterexample "hkdfExpand failed" False
+           Right expanded -> full === expanded
 
 -- ---------------------------------------------------------------------------
 -- Cipher Properties
@@ -437,21 +442,23 @@ ecdsaProperties = testGroup "ECDSA"
 
 prop_ecdsaSignVerify :: ECCurve -> Property
 prop_ecdsaSignVerify curve = ioProperty $ do
-  kp <- ECDSA.generateKeyPair curve
-  pubKey <- ECDSA.ecPublicKeyOfPair kp
+  Right kp <- ECDSA.generateKeyPair curve
+  Right pubKey <- ECDSA.ecPublicKeyOfPair kp
   msg <- Random.randomBytes 64
   let digest = Digest.hash SHA256 msg
   signResult <- ECDSA.ecdsaSign kp digest
   case signResult of
     Left err -> return $ counterexample ("sign failed: " ++ show err) False
     Right sig -> do
-      ok <- ECDSA.ecdsaVerify pubKey digest sig
-      return $ ok === True
+      verifyResult <- ECDSA.ecdsaVerify pubKey digest sig
+      case verifyResult of
+        Left err -> return $ counterexample ("verify failed: " ++ show err) False
+        Right ok -> return $ ok === True
 
 prop_ecdsaWrongDigest :: ECCurve -> Property
 prop_ecdsaWrongDigest curve = ioProperty $ do
-  kp <- ECDSA.generateKeyPair curve
-  pubKey <- ECDSA.ecPublicKeyOfPair kp
+  Right kp <- ECDSA.generateKeyPair curve
+  Right pubKey <- ECDSA.ecPublicKeyOfPair kp
   msg1 <- Random.randomBytes 64
   msg2 <- Random.randomBytes 64
   let digest1 = Digest.hash SHA256 msg1
@@ -463,8 +470,10 @@ prop_ecdsaWrongDigest curve = ioProperty $ do
       case signResult of
         Left _ -> return $ property True
         Right sig -> do
-          ok <- ECDSA.ecdsaVerify pubKey digest2 sig
-          return $ ok === False
+          verifyResult <- ECDSA.ecdsaVerify pubKey digest2 sig
+          case verifyResult of
+            Left err -> return $ counterexample ("verify failed: " ++ show err) False
+            Right ok -> return $ ok === False
 
 -- ---------------------------------------------------------------------------
 -- ECDH Properties
@@ -480,10 +489,10 @@ ecdhProperties = testGroup "ECDH"
 
 prop_ecdhSymmetric :: ECCurve -> Property
 prop_ecdhSymmetric curve = ioProperty $ do
-  kpA <- ECDH.generateECKeyPair curve
-  kpB <- ECDH.generateECKeyPair curve
-  pubA <- ECDH.ecPublicKeyOfPair kpA
-  pubB <- ECDH.ecPublicKeyOfPair kpB
+  Right kpA <- ECDH.generateECKeyPair curve
+  Right kpB <- ECDH.generateECKeyPair curve
+  Right pubA <- ECDH.ecPublicKeyOfPair kpA
+  Right pubB <- ECDH.ecPublicKeyOfPair kpB
   secretAB <- ECDH.ecdhComputeSecret kpA pubB 32
   secretBA <- ECDH.ecdhComputeSecret kpB pubA 32
   case (secretAB, secretBA) of
@@ -515,8 +524,10 @@ prop_rsaPKCS1SignVerify = ioProperty $ do
   case signResult of
     Left err -> return $ counterexample ("sign failed: " ++ show err) False
     Right sig -> do
-      ok <- RSA.rsaVerify rsaPubKey SHA256 digest sig
-      return $ ok === True
+      verifyResult <- RSA.rsaVerify rsaPubKey SHA256 digest sig
+      case verifyResult of
+        Left err -> return $ counterexample ("verify failed: " ++ show err) False
+        Right ok -> return $ ok === True
 
 prop_rsaPSSSignVerify :: Property
 prop_rsaPSSSignVerify = ioProperty $ do
@@ -526,8 +537,10 @@ prop_rsaPSSSignVerify = ioProperty $ do
   case signResult of
     Left err -> return $ counterexample ("sign failed: " ++ show err) False
     Right sig -> do
-      ok <- RSA.rsaVerifyPSS rsaPubKey SHA256 digest sig
-      return $ ok === True
+      verifyResult <- RSA.rsaVerifyPSS rsaPubKey SHA256 digest sig
+      case verifyResult of
+        Left err -> return $ counterexample ("verify failed: " ++ show err) False
+        Right ok -> return $ ok === True
 
 prop_rsaOAEPRoundTrip :: Property
 prop_rsaOAEPRoundTrip = forAll (choose (1, 190) >>= genBytes) $ \plaintext ->

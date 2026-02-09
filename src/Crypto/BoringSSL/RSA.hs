@@ -146,15 +146,22 @@ rsaSize (RSAKeyPair fptr) = withForeignPtr fptr $ \rsa ->
   fromIntegral <$> c_RSA_size rsa
 
 -- | PKCS#1 v1.5 sign a pre-hashed digest.
+-- Returns 'Left' if the algorithm has no NID (e.g. BLAKE2b256).
 rsaSign :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either BoringSSLError ByteString)
-rsaSign (RSAKeyPair fptr) algo digest =
+rsaSign _ algo _
+  | Nothing <- ID.algorithmNID algo =
+      return (Left (BoringSSLError 0 ("rsaSign: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
+rsaSign (RSAKeyPair fptr) algo digest = do
+  let nid = case ID.algorithmNID algo of
+              Just n  -> n
+              Nothing -> error "rsaSign: unreachable (algorithmNID already checked)"
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     outFPtr <- BSI.mallocByteString modSize
     result <- withForeignPtr outFPtr $ \outPtr ->
       withByteString digest $ \digestPtr digestLen ->
         alloca $ \outLenPtr -> do
-          rc <- c_RSA_sign (ID.algorithmNID algo) digestPtr digestLen
+          rc <- c_RSA_sign nid digestPtr digestLen
                   (castPtr outPtr) outLenPtr rsa
           if rc /= 1
             then do
@@ -168,13 +175,27 @@ rsaSign (RSAKeyPair fptr) algo digest =
       Right len -> return (Right (BSI.BS outFPtr len))
 
 -- | PKCS#1 v1.5 verify a signature on a pre-hashed digest.
-rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO Bool
-rsaVerify (RSAPublicKey fptr) algo digest sig =
+-- Returns @Left@ if the algorithm has no NID, or @Right False@ for invalid
+-- signatures, or @Right True@ for valid signatures.
+rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
+rsaVerify _ algo _ _
+  | Nothing <- ID.algorithmNID algo =
+      return (Left (BoringSSLError 0 ("rsaVerify: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
+rsaVerify (RSAPublicKey fptr) algo digest sig = do
+  let nid = case ID.algorithmNID algo of
+              Just n  -> n
+              Nothing -> error "rsaVerify: unreachable (algorithmNID already checked)"
   withForeignPtr fptr $ \rsa ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
-        rc <- c_RSA_verify (ID.algorithmNID algo) digestPtr digestLen sigPtr sigLen rsa
-        return (rc == 1)
+        rc <- c_RSA_verify nid digestPtr digestLen sigPtr sigLen rsa
+        if rc == 1
+          then return (Right True)
+          else if rc == 0
+            then return (Right False)
+            else do
+              merr <- getBoringSSLError
+              return (Left (maybe (BoringSSLError 0 "rsaVerify: internal error") id merr))
 
 -- | RSA-PSS sign a pre-hashed digest. Uses the same hash for MGF1
 -- and salt length equal to the digest size.
@@ -202,7 +223,9 @@ rsaSignPSS (RSAKeyPair fptr) algo digest =
       Right len -> return (Right (BSI.BS outFPtr len))
 
 -- | RSA-PSS verify a signature on a pre-hashed digest.
-rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO Bool
+-- Returns @Right True@ for valid, @Right False@ for invalid, or
+-- @Left@ for internal errors.
+rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
 rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
   withForeignPtr fptr $ \rsa ->
     withByteString digest $ \digestPtr digestLen ->
@@ -210,7 +233,13 @@ rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
         let md = ID.evpMD algo
             saltLen = fromIntegral (ID.digestSize algo)
         rc <- c_RSA_verify_pss_mgf1 rsa digestPtr digestLen md md saltLen sigPtr sigLen
-        return (rc == 1)
+        if rc == 1
+          then return (Right True)
+          else if rc == 0
+            then return (Right False)
+            else do
+              merr <- getBoringSSLError
+              return (Left (maybe (BoringSSLError 0 "rsaVerifyPSS: internal error") id merr))
 
 -- | RSA-OAEP encrypt plaintext with a public key.
 rsaEncrypt :: RSAPublicKey -> ByteString -> IO (Either BoringSSLError ByteString)

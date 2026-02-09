@@ -25,7 +25,10 @@ encode :: ByteString -> ByteString
 encode bs = unsafePerformIO $
   withByteString bs $ \srcPtr srcLen -> do
     alloca $ \outLenPtr -> do
-      _ <- c_EVP_EncodedLength outLenPtr srcLen
+      rc <- c_EVP_EncodedLength outLenPtr srcLen
+      if rc /= 1
+        then error "Base64.encode: EVP_EncodedLength failed (input too large)"
+        else return ()
       maxLen <- peek outLenPtr
       -- EVP_EncodeBlock returns the number of bytes written (not including NUL)
       fptr <- BSI.mallocByteString (fromIntegral maxLen)

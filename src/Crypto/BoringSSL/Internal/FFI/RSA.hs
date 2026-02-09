@@ -71,12 +71,12 @@ foreign import ccall unsafe "RSA_bits"
 
 -- | int RSA_sign(int hash_nid, const uint8_t *digest, size_t digest_len,
 --                uint8_t *out, unsigned *out_len, RSA *rsa)
-foreign import ccall unsafe "RSA_sign"
+foreign import ccall safe "RSA_sign"
   c_RSA_sign :: CInt -> Ptr CUChar -> CSize -> Ptr CUChar -> Ptr CUInt -> Ptr RSA_C -> IO CInt
 
 -- | int RSA_verify(int hash_nid, const uint8_t *digest, size_t digest_len,
 --                  const uint8_t *sig, size_t sig_len, RSA *rsa)
-foreign import ccall unsafe "RSA_verify"
+foreign import ccall safe "RSA_verify"
   c_RSA_verify :: CInt -> Ptr CUChar -> CSize -> Ptr CUChar -> CSize -> Ptr RSA_C -> IO CInt
 
 -- PSS sign/verify
@@ -84,7 +84,7 @@ foreign import ccall unsafe "RSA_verify"
 -- | int RSA_sign_pss_mgf1(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
 --                         const uint8_t *digest, size_t digest_len,
 --                         const EVP_MD *md, const EVP_MD *mgf1_md, int salt_len)
-foreign import ccall unsafe "RSA_sign_pss_mgf1"
+foreign import ccall safe "RSA_sign_pss_mgf1"
   c_RSA_sign_pss_mgf1 :: Ptr RSA_C -> Ptr CSize -> Ptr CUChar -> CSize
                        -> Ptr CUChar -> CSize
                        -> Ptr EVP_MD -> Ptr EVP_MD -> CInt
@@ -93,7 +93,7 @@ foreign import ccall unsafe "RSA_sign_pss_mgf1"
 -- | int RSA_verify_pss_mgf1(RSA *rsa, const uint8_t *digest, size_t digest_len,
 --                           const EVP_MD *md, const EVP_MD *mgf1_md, int salt_len,
 --                           const uint8_t *sig, size_t sig_len)
-foreign import ccall unsafe "RSA_verify_pss_mgf1"
+foreign import ccall safe "RSA_verify_pss_mgf1"
   c_RSA_verify_pss_mgf1 :: Ptr RSA_C -> Ptr CUChar -> CSize
                          -> Ptr EVP_MD -> Ptr EVP_MD -> CInt
                          -> Ptr CUChar -> CSize
@@ -103,13 +103,13 @@ foreign import ccall unsafe "RSA_verify_pss_mgf1"
 
 -- | int RSA_encrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
 --                   const uint8_t *in, size_t in_len, int padding)
-foreign import ccall unsafe "RSA_encrypt"
+foreign import ccall safe "RSA_encrypt"
   c_RSA_encrypt :: Ptr RSA_C -> Ptr CSize -> Ptr CUChar -> CSize
                 -> Ptr CUChar -> CSize -> CInt -> IO CInt
 
 -- | int RSA_decrypt(RSA *rsa, size_t *out_len, uint8_t *out, size_t max_out,
 --                   const uint8_t *in, size_t in_len, int padding)
-foreign import ccall unsafe "RSA_decrypt"
+foreign import ccall safe "RSA_decrypt"
   c_RSA_decrypt :: Ptr RSA_C -> Ptr CSize -> Ptr CUChar -> CSize
                 -> Ptr CUChar -> CSize -> CInt -> IO CInt
 

@@ -70,13 +70,13 @@ parsePEM pem =
     Left err -> Left err
 
 -- | Serialize an X.509 certificate to DER encoding.
-toDER :: X509Cert -> ByteString
+toDER :: X509Cert -> Either BoringSSLError ByteString
 toDER (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     -- First call with NULL to get length
     len <- c_i2d_X509 certPtr nullPtr
     if len <= 0
-      then fail "X509.toDER: i2d_X509 failed to compute length"
+      then return (Left (BoringSSLError 0 "X509.toDER: i2d_X509 failed to compute length"))
       else do
         -- Second call to write
         outFPtr <- BSI.mallocByteString (fromIntegral len)
@@ -85,8 +85,8 @@ toDER (X509Cert fptr) = unsafePerformIO $
             poke outPtrPtr (castPtr outBuf)
             actualLen <- c_i2d_X509 certPtr outPtrPtr
             if actualLen <= 0
-              then fail "X509.toDER: i2d_X509 failed to serialize"
-              else return (BSI.BS outFPtr (fromIntegral actualLen))
+              then return (Left (BoringSSLError 0 "X509.toDER: i2d_X509 failed to serialize"))
+              else return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
 {-# NOINLINE toDER #-}
 
 -- | Get the subject name of an X.509 certificate as a human-readable string.
@@ -96,8 +96,8 @@ subjectName (X509Cert fptr) = unsafePerformIO $
     namePtr <- c_X509_get_subject_name certPtr
     if namePtr == nullPtr
       then return ""
-      else allocaArray 256 $ \buf -> do
-        result <- c_X509_NAME_oneline namePtr buf 256
+      else allocaArray 1024 $ \buf -> do
+        result <- c_X509_NAME_oneline namePtr buf 1024
         if result == nullPtr
           then return ""
           else peekCString buf
@@ -110,8 +110,8 @@ issuerName (X509Cert fptr) = unsafePerformIO $
     namePtr <- c_X509_get_issuer_name certPtr
     if namePtr == nullPtr
       then return ""
-      else allocaArray 256 $ \buf -> do
-        result <- c_X509_NAME_oneline namePtr buf 256
+      else allocaArray 1024 $ \buf -> do
+        result <- c_X509_NAME_oneline namePtr buf 1024
         if result == nullPtr
           then return ""
           else peekCString buf

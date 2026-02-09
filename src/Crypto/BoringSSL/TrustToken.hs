@@ -144,13 +144,9 @@ extractTokens stack = do
 extractToken :: Ptr STACK_TRUST_TOKEN -> CSize -> IO ByteString
 extractToken stack i = do
   tok <- c_boringssl_sk_TRUST_TOKEN_value stack i
-  -- TRUST_TOKEN struct has data and len fields.
-  -- We read data (ptr) at offset 0 and len at offset 8 (on 64-bit).
-  dataPtr <- peek (castPtr tok :: Ptr (Ptr CUChar))
-  len <- peek (castPtr tok `plusPtr` sizeOfPtr :: Ptr CSize)
+  dataPtr <- c_boringssl_TRUST_TOKEN_data tok
+  len <- c_boringssl_TRUST_TOKEN_len tok
   BS.packCStringLen (castPtr dataPtr, fromIntegral len)
-  where
-    sizeOfPtr = 8  -- sizeof(void*) on 64-bit platforms
 
 -- | Begin token redemption. Returns the redemption request.
 beginRedemption :: TrustTokenClient -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
@@ -264,9 +260,9 @@ redeem (TrustTokenIssuer fptr) request =
                     pubMeta <- peek pubPtr
                     privMeta <- peek privPtr
                     tokenRawPtr <- peek tokenPtrPtr
-                    -- Extract token data
-                    tokDataPtr <- peek (castPtr tokenRawPtr :: Ptr (Ptr CUChar))
-                    tokLen <- peek (castPtr tokenRawPtr `plusPtr` 8 :: Ptr CSize)
+                    -- Extract token data via C accessor functions
+                    tokDataPtr <- c_boringssl_TRUST_TOKEN_data tokenRawPtr
+                    tokLen <- c_boringssl_TRUST_TOKEN_len tokenRawPtr
                     tokenBs <- BS.packCStringLen (castPtr tokDataPtr, fromIntegral tokLen)
                     c_TRUST_TOKEN_free tokenRawPtr
                     clientData <- packOpenSSLBuffer cdPtrPtr cdLenPtr

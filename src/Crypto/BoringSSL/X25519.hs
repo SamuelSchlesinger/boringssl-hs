@@ -27,7 +27,7 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)
 
-import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Buffer (withByteString, createByteString, constTimeEq)
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.X25519
 
@@ -37,7 +37,9 @@ newtype PublicKey = PublicKey ByteString
 
 -- | An X25519 private key (32 bytes).
 newtype PrivateKey = PrivateKey ByteString
-  deriving (Eq)
+
+instance Eq PrivateKey where
+  PrivateKey a == PrivateKey b = constTimeEq a b
 
 instance Show PrivateKey where
   show _ = "PrivateKey <redacted>"

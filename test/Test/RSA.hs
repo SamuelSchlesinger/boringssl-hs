@@ -23,7 +23,7 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         let digest = hashSHA256 "Hello, RSA!"
         Right sig <- rsaSign kp SHA256 digest
-        valid <- rsaVerify pub SHA256 digest sig
+        Right valid <- rsaVerify pub SHA256 digest sig
         assertBool "signature should verify" valid
     , testCase "wrong digest rejected" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -32,7 +32,7 @@ tests = testGroup "RSA"
         let digest1 = hashSHA256 "message A"
             digest2 = hashSHA256 "message B"
         Right sig <- rsaSign kp SHA256 digest1
-        valid <- rsaVerify pub SHA256 digest2 sig
+        Right valid <- rsaVerify pub SHA256 digest2 sig
         assertBool "wrong digest should not verify" (not valid)
     ]
   , testGroup "PSS"
@@ -42,7 +42,7 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         let digest = hashSHA256 "Hello, RSA-PSS!"
         Right sig <- rsaSignPSS kp SHA256 digest
-        valid <- rsaVerifyPSS pub SHA256 digest sig
+        Right valid <- rsaVerifyPSS pub SHA256 digest sig
         assertBool "PSS signature should verify" valid
     ]
   , testGroup "OAEP"
@@ -85,7 +85,7 @@ tests = testGroup "RSA"
         -- Verify the deserialized key works
         let digest = hashSHA256 "serialization test"
         Right sig <- rsaSign kp SHA256 digest
-        valid <- rsaVerify pub SHA256 digest sig
+        Right valid <- rsaVerify pub SHA256 digest sig
         assertBool "deserialized key should work" valid
     , testCase "private key round-trip" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -96,7 +96,7 @@ tests = testGroup "RSA"
         -- Sign with deserialized private key, verify with original public key
         let digest = hashSHA256 "private key serialization test"
         Right sig <- rsaSign kp2 SHA256 digest
-        valid <- rsaVerify pub SHA256 digest sig
+        Right valid <- rsaVerify pub SHA256 digest sig
         assertBool "deserialized private key should work" valid
     ]
   ]

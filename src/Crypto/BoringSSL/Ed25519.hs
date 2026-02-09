@@ -31,7 +31,7 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)
 
-import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Buffer (withByteString, createByteString, constTimeEq)
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Ed25519
 
@@ -41,7 +41,9 @@ newtype PublicKey = PublicKey ByteString
 
 -- | An Ed25519 private key (64 bytes: seed + public key).
 newtype PrivateKey = PrivateKey ByteString
-  deriving (Eq)
+
+instance Eq PrivateKey where
+  PrivateKey a == PrivateKey b = constTimeEq a b
 
 instance Show PrivateKey where
   show _ = "PrivateKey <redacted>"
@@ -112,7 +114,7 @@ sign (PrivateKey privKey) msg = unsafePerformIO $ do
       withByteString privKey $ \privPtr _ -> do
         rc <- c_ED25519_sign sigPtr msgPtr msgLen privPtr
         if rc /= 1
-          then fail "Ed25519.sign: ED25519_sign failed"
+          then error "Ed25519.sign: ED25519_sign failed (should never happen with valid key)"
           else return ()
   return (Signature sig)
 {-# NOINLINE sign #-}

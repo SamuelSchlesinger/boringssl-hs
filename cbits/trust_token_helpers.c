@@ -13,3 +13,11 @@ TRUST_TOKEN *boringssl_sk_TRUST_TOKEN_value(const STACK_OF(TRUST_TOKEN) *sk, siz
 void boringssl_sk_TRUST_TOKEN_pop_free(STACK_OF(TRUST_TOKEN) *sk) {
     sk_TRUST_TOKEN_pop_free(sk, TRUST_TOKEN_free);
 }
+
+const uint8_t *boringssl_TRUST_TOKEN_data(const TRUST_TOKEN *token) {
+    return token->data;
+}
+
+size_t boringssl_TRUST_TOKEN_len(const TRUST_TOKEN *token) {
+    return token->len;
+}

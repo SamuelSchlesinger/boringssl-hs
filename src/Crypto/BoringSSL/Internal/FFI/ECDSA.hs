@@ -15,12 +15,12 @@ import Foreign.Ptr
 
 -- | int ECDSA_sign(int type, const uint8_t *digest, size_t digest_len,
 --                  uint8_t *sig, unsigned int *sig_len, const EC_KEY *key)
-foreign import ccall unsafe "ECDSA_sign"
+foreign import ccall safe "ECDSA_sign"
   c_ECDSA_sign :: CInt -> Ptr CUChar -> CSize -> Ptr CUChar -> Ptr CUInt -> Ptr EC_KEY -> IO CInt
 
 -- | int ECDSA_verify(int type, const uint8_t *digest, size_t digest_len,
 --                    const uint8_t *sig, size_t sig_len, const EC_KEY *key)
-foreign import ccall unsafe "ECDSA_verify"
+foreign import ccall safe "ECDSA_verify"
   c_ECDSA_verify :: CInt -> Ptr CUChar -> CSize -> Ptr CUChar -> CSize -> Ptr EC_KEY -> IO CInt
 
 -- | size_t ECDSA_size(const EC_KEY *key)
@@ -32,14 +32,14 @@ foreign import ccall unsafe "ECDSA_size"
 -- | int ECDSA_sign_p1363(const uint8_t *digest, size_t digest_len,
 --                         uint8_t *sig, size_t *out_sig_len,
 --                         size_t max_sig_len, const EC_KEY *key)
-foreign import ccall unsafe "ECDSA_sign_p1363"
+foreign import ccall safe "ECDSA_sign_p1363"
   c_ECDSA_sign_p1363 :: Ptr CUChar -> CSize -> Ptr CUChar -> Ptr CSize
                       -> CSize -> Ptr EC_KEY -> IO CInt
 
 -- | int ECDSA_verify_p1363(const uint8_t *digest, size_t digest_len,
 --                           const uint8_t *sig, size_t sig_len,
 --                           const EC_KEY *key)
-foreign import ccall unsafe "ECDSA_verify_p1363"
+foreign import ccall safe "ECDSA_verify_p1363"
   c_ECDSA_verify_p1363 :: Ptr CUChar -> CSize -> Ptr CUChar -> CSize
                         -> Ptr EC_KEY -> IO CInt
 

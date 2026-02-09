@@ -44,6 +44,7 @@ import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 import Control.Exception (mask_)
+import Control.Concurrent.MVar
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -71,10 +72,12 @@ data HPKEAEAD = Aes128Gcm | Aes256Gcm | ChaChaPoly
 newtype HPKEKey = HPKEKey (ForeignPtr EVP_HPKE_KEY)
 
 -- | A sender HPKE context (stateful, ordered seal operations).
-newtype SenderCtx = SenderCtx (ForeignPtr EVP_HPKE_CTX)
+-- Thread-safe: concurrent calls are serialized via an internal lock.
+data SenderCtx = SenderCtx !(MVar ()) !(ForeignPtr EVP_HPKE_CTX)
 
 -- | A recipient HPKE context (stateful, ordered open operations).
-newtype RecipientCtx = RecipientCtx (ForeignPtr EVP_HPKE_CTX)
+-- Thread-safe: concurrent calls are serialized via an internal lock.
+data RecipientCtx = RecipientCtx !(MVar ()) !(ForeignPtr EVP_HPKE_CTX)
 
 kemPtr :: HPKEKEM -> Ptr EVP_HPKE_KEM
 kemPtr X25519HkdfSha256 = c_EVP_hpke_x25519_hkdf_sha256
@@ -190,7 +193,8 @@ setupSender kem kdf aead peerPubKey info = mask_ $ do
           return (Left (maybe (BoringSSLError 0 "setupSender: EVP_HPKE_CTX_setup_sender failed") id merr))
         Just encLen -> do
           ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          return (Right (BSI.BS encFPtr encLen, SenderCtx ctxFPtr))
+          lock <- newMVar ()
+          return (Right (BSI.BS encFPtr encLen, SenderCtx lock ctxFPtr))
 
 -- | Set up a recipient context from an encapsulated key.
 setupRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
@@ -212,7 +216,8 @@ setupRecipient (HPKEKey keyFPtr) kdf aead enc info = mask_ $ do
           return (Left (maybe (BoringSSLError 0 "setupRecipient: EVP_HPKE_CTX_setup_recipient failed") id merr))
         else do
           ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          return (Right (RecipientCtx ctxFPtr))
+          lock <- newMVar ()
+          return (Right (RecipientCtx lock ctxFPtr))
 
 -- | Set up an authenticated sender context. Like 'setupSender', but the
 -- sender authenticates themselves with their own 'HPKEKey'. The recipient
@@ -247,7 +252,8 @@ setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = mask_ $ do
           return (Left (maybe (BoringSSLError 0 "setupAuthSender: EVP_HPKE_CTX_setup_auth_sender failed") id merr))
         Just encLen -> do
           ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          return (Right (BSI.BS encFPtr encLen, SenderCtx ctxFPtr))
+          lock <- newMVar ()
+          return (Right (BSI.BS encFPtr encLen, SenderCtx lock ctxFPtr))
 
 -- | Set up an authenticated recipient context. Like 'setupRecipient', but
 -- also verifies that the sender authenticated themselves with the given
@@ -272,12 +278,15 @@ setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = mask_ $ do
           return (Left (maybe (BoringSSLError 0 "setupAuthRecipient: EVP_HPKE_CTX_setup_auth_recipient failed") id merr))
         else do
           ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          return (Right (RecipientCtx ctxFPtr))
+          lock <- newMVar ()
+          return (Right (RecipientCtx lock ctxFPtr))
 
 -- | Encrypt and authenticate plaintext using the sender context.
 -- This is stateful: each call advances the internal sequence number.
+-- Thread-safe: concurrent calls are serialized.
 senderSeal :: SenderCtx -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
-senderSeal (SenderCtx fptr) plaintext ad =
+senderSeal (SenderCtx lock fptr) plaintext ad =
+  withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     overhead <- fromIntegral <$> c_EVP_HPKE_CTX_max_overhead ctx
     let maxOutLen = BS.length plaintext + overhead
@@ -298,8 +307,10 @@ senderSeal (SenderCtx fptr) plaintext ad =
 
 -- | Decrypt and verify ciphertext using the recipient context.
 -- This is stateful: each call advances the internal sequence number.
+-- Thread-safe: concurrent calls are serialized.
 recipientOpen :: RecipientCtx -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
-recipientOpen (RecipientCtx fptr) ciphertext ad =
+recipientOpen (RecipientCtx lock fptr) ciphertext ad =
+  withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     let maxOutLen = BS.length ciphertext
     outFPtr <- BSI.mallocByteString maxOutLen
@@ -318,8 +329,12 @@ recipientOpen (RecipientCtx fptr) ciphertext ad =
           return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
 
 -- | Export a secret from the sender context.
+-- Thread-safe: concurrent calls are serialized.
 senderExport :: SenderCtx -> ByteString -> Int -> IO (Either BoringSSLError ByteString)
-senderExport (SenderCtx fptr) context len =
+senderExport _ _ len
+  | len <= 0 = return (Left (BoringSSLError 0 "senderExport: output length must be positive"))
+senderExport (SenderCtx lock fptr) context len =
+  withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     outFPtr <- BSI.mallocByteString len
     rc <- withForeignPtr outFPtr $ \outPtr ->
@@ -332,8 +347,12 @@ senderExport (SenderCtx fptr) context len =
       else return (Right (BSI.BS outFPtr len))
 
 -- | Export a secret from the recipient context.
+-- Thread-safe: concurrent calls are serialized.
 recipientExport :: RecipientCtx -> ByteString -> Int -> IO (Either BoringSSLError ByteString)
-recipientExport (RecipientCtx fptr) context len =
+recipientExport _ _ len
+  | len <= 0 = return (Left (BoringSSLError 0 "recipientExport: output length must be positive"))
+recipientExport (RecipientCtx lock fptr) context len =
+  withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     outFPtr <- BSI.mallocByteString len
     rc <- withForeignPtr outFPtr $ \outPtr ->

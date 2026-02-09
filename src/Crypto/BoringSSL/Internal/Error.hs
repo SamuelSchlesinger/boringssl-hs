@@ -1,6 +1,7 @@
 module Crypto.BoringSSL.Internal.Error
   ( BoringSSLError(..)
   , getBoringSSLError
+  , clearBoringSSLError
   ) where
 
 import Control.Exception (Exception)
@@ -19,6 +20,14 @@ instance Show BoringSSLError where
     "BoringSSLError " ++ show code ++ ": " ++ msg
 
 instance Exception BoringSSLError
+
+-- | Clear the BoringSSL error queue for the current thread.
+-- Should be called before operations where you want to inspect the
+-- error queue afterwards, to avoid reading stale errors from prior
+-- operations (especially relevant with GHC green threads that may
+-- migrate between OS threads).
+clearBoringSSLError :: IO ()
+clearBoringSSLError = c_ERR_clear_error
 
 -- | Drain the BoringSSL error queue and return the first error, if any.
 getBoringSSLError :: IO (Maybe BoringSSLError)

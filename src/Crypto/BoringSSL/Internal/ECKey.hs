@@ -21,6 +21,7 @@ import Foreign.Ptr
 import Control.Exception (mask_)
 
 import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.ECKey
 
 -- | Supported elliptic curves.
@@ -35,7 +36,7 @@ newtype ECPublicKey = ECPublicKey (ForeignPtr EC_KEY)
 
 -- | NID for a curve.
 curveNID :: ECCurve -> CInt
-curveNID P256 = 415   -- NID_X9_62_prime256v1
+curveNID P256 = 415   -- NID_X9_62_prime256v1 (from nid.h; consider hsc2hs)
 curveNID P384 = 715   -- NID_secp384r1
 curveNID P521 = 716   -- NID_secp521r1
 
@@ -48,20 +49,21 @@ withECPublicKey :: ECPublicKey -> (Ptr EC_KEY -> IO a) -> IO a
 withECPublicKey (ECPublicKey fptr) = withForeignPtr fptr
 
 -- | Generate a new EC key pair for the given curve.
-generateECKeyPair :: ECCurve -> IO ECKeyPair
+generateECKeyPair :: ECCurve -> IO (Either BoringSSLError ECKeyPair)
 generateECKeyPair curve = mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   if keyPtr == nullPtr
-    then fail "generateECKeyPair: EC_KEY_new_by_curve_name failed"
+    then return (Left (BoringSSLError 0 "generateECKeyPair: EC_KEY_new_by_curve_name failed"))
     else do
       rc <- c_EC_KEY_generate_key keyPtr
       if rc /= 1
         then do
           c_EC_KEY_free keyPtr
-          fail "generateECKeyPair: EC_KEY_generate_key failed"
+          merr <- getBoringSSLError
+          return (Left (maybe (BoringSSLError 0 "generateECKeyPair: EC_KEY_generate_key failed") id merr))
         else do
           fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
-          return (ECKeyPair fptr)
+          return (Right (ECKeyPair fptr))
 
 -- | Get the uncompressed point encoding of the public key.
 ecPublicKeyBytes :: ECKeyPair -> IO ByteString
@@ -75,21 +77,26 @@ ecPublicKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
     _ <- c_EC_POINT_point2oct groupPtr pointPtr 4 outPtr len nullPtr
     return ()
 
--- | Get the private key as big-endian bytes.
+-- | Get the private key as fixed-width big-endian bytes, zero-padded to the
+-- full group order size. This avoids leaking information about the key value
+-- through variable-length encoding and ensures compatibility with protocols
+-- expecting fixed-width keys.
 ecPrivateKeyBytes :: ECKeyPair -> IO ByteString
 ecPrivateKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
+  groupPtr <- c_EC_KEY_get0_group keyPtr
+  degree <- c_EC_GROUP_get_degree groupPtr
+  let numBytes = fromIntegral ((degree + 7) `div` 8) :: Int
   bnPtr <- c_EC_KEY_get0_private_key keyPtr
-  numBytes <- c_BN_num_bytes bnPtr
-  createByteString (fromIntegral numBytes) $ \outPtr -> do
-    _ <- c_BN_bn2bin bnPtr outPtr
+  createByteString numBytes $ \outPtr -> do
+    _ <- c_BN_bn2bin_padded outPtr (fromIntegral numBytes) bnPtr
     return ()
 
 -- | Reconstruct an EC key pair from a curve and private key bytes.
-ecKeyPairFromPrivateBytes :: ECCurve -> ByteString -> IO ECKeyPair
+ecKeyPairFromPrivateBytes :: ECCurve -> ByteString -> IO (Either BoringSSLError ECKeyPair)
 ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   if keyPtr == nullPtr
-    then fail "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed"
+    then return (Left (BoringSSLError 0 "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed"))
     else do
       -- Set private key from bytes
       withByteString privBytes $ \privPtr privLen -> do
@@ -97,14 +104,14 @@ ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
         if bn == nullPtr
           then do
             c_EC_KEY_free keyPtr
-            fail "ecKeyPairFromPrivateBytes: BN_bin2bn failed"
+            return (Left (BoringSSLError 0 "ecKeyPairFromPrivateBytes: BN_bin2bn failed"))
           else do
             rc <- c_EC_KEY_set_private_key keyPtr bn
             c_BN_free bn
             if rc /= 1
               then do
                 c_EC_KEY_free keyPtr
-                fail "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed"
+                return (Left (BoringSSLError 0 "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed"))
               else do
                 -- Derive public key: pubPoint = privKey * G
                 groupPtr <- c_EC_KEY_get0_group keyPtr
@@ -115,24 +122,30 @@ ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
                   then do
                     c_EC_POINT_free pubPoint
                     c_EC_KEY_free keyPtr
-                    fail "ecKeyPairFromPrivateBytes: EC_POINT_mul failed"
+                    return (Left (BoringSSLError 0 "ecKeyPairFromPrivateBytes: EC_POINT_mul failed"))
                   else do
                     rc3 <- c_EC_KEY_set_public_key keyPtr pubPoint
                     c_EC_POINT_free pubPoint
                     if rc3 /= 1
                       then do
                         c_EC_KEY_free keyPtr
-                        fail "ecKeyPairFromPrivateBytes: EC_KEY_set_public_key failed"
+                        return (Left (BoringSSLError 0 "ecKeyPairFromPrivateBytes: EC_KEY_set_public_key failed"))
                       else do
-                        fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
-                        return (ECKeyPair fptr)
+                        rc4 <- c_EC_KEY_check_key keyPtr
+                        if rc4 /= 1
+                          then do
+                            c_EC_KEY_free keyPtr
+                            return (Left (BoringSSLError 0 "ecKeyPairFromPrivateBytes: EC_KEY_check_key failed"))
+                          else do
+                            fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
+                            return (Right (ECKeyPair fptr))
 
 -- | Parse an EC public key from uncompressed point bytes.
-ecPublicKeyFromBytes :: ECCurve -> ByteString -> IO ECPublicKey
+ecPublicKeyFromBytes :: ECCurve -> ByteString -> IO (Either BoringSSLError ECPublicKey)
 ecPublicKeyFromBytes curve pubBytes = mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   if keyPtr == nullPtr
-    then fail "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed"
+    then return (Left (BoringSSLError 0 "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed"))
     else do
       groupPtr <- c_EC_KEY_get0_group keyPtr
       pubPoint <- c_EC_POINT_new groupPtr
@@ -142,26 +155,31 @@ ecPublicKeyFromBytes curve pubBytes = mask_ $ do
           then do
             c_EC_POINT_free pubPoint
             c_EC_KEY_free keyPtr
-            fail "ecPublicKeyFromBytes: EC_POINT_oct2point failed"
+            return (Left (BoringSSLError 0 "ecPublicKeyFromBytes: EC_POINT_oct2point failed"))
           else do
             rc2 <- c_EC_KEY_set_public_key keyPtr pubPoint
             c_EC_POINT_free pubPoint
             if rc2 /= 1
               then do
                 c_EC_KEY_free keyPtr
-                fail "ecPublicKeyFromBytes: EC_KEY_set_public_key failed"
+                return (Left (BoringSSLError 0 "ecPublicKeyFromBytes: EC_KEY_set_public_key failed"))
               else do
-                fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
-                return (ECPublicKey fptr)
+                rc3 <- c_EC_KEY_check_key keyPtr
+                if rc3 /= 1
+                  then do
+                    c_EC_KEY_free keyPtr
+                    return (Left (BoringSSLError 0 "ecPublicKeyFromBytes: EC_KEY_check_key failed (point not on curve)"))
+                  else do
+                    fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
+                    return (Right (ECPublicKey fptr))
 
 -- | Extract the public key from a key pair.
-ecPublicKeyOfPair :: ECKeyPair -> IO ECPublicKey
+ecPublicKeyOfPair :: ECKeyPair -> IO (Either BoringSSLError ECPublicKey)
 ecPublicKeyOfPair kp = do
   pubBytes <- ecPublicKeyBytes kp
   -- Determine curve from uncompressed point size
-  let curve = case BS.length pubBytes of
-        65  -> P256   -- 1 + 2*32
-        97  -> P384   -- 1 + 2*48
-        133 -> P521   -- 1 + 2*66
-        _   -> error $ "ecPublicKeyOfPair: unexpected public key size " ++ show (BS.length pubBytes)
-  ecPublicKeyFromBytes curve pubBytes
+  case BS.length pubBytes of
+    65  -> ecPublicKeyFromBytes P256 pubBytes  -- 1 + 2*32
+    97  -> ecPublicKeyFromBytes P384 pubBytes  -- 1 + 2*48
+    133 -> ecPublicKeyFromBytes P521 pubBytes  -- 1 + 2*66
+    n   -> return (Left (BoringSSLError 0 ("ecPublicKeyOfPair: unexpected public key size " ++ show n)))
