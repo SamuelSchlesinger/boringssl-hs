@@ -7,11 +7,8 @@ author:          Samuel Schlesinger
 maintainer:      sgschlesinger@gmail.com
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
-synopsis:        Haskell bindings to BoringSSL
-description:
-  Haskell FFI bindings to Google's BoringSSL library.
-  Provides hashing, AEAD, HMAC, HKDF, symmetric ciphers,
-  Ed25519, X25519, ECDSA, ECDH, RSA, and Base64.
+synopsis:        Bindings to Google's BoringSSL library
+description:     Bindings to Google's BoringSSL library.
 
 common warnings
     ghc-options: -Wall -Werror
