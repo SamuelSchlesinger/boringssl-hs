@@ -1,12 +1,18 @@
 module Crypto.BoringSSL.X25519
-  ( PublicKey(..)
-  , PrivateKey(..)
+  ( PublicKey
+  , PrivateKey
   , generateKeyPair
   , publicFromPrivate
   , computeSharedSecret
+    -- * Serialization
+  , publicKeyToBytes
+  , privateKeyToBytes
+  , publicKeyFromBytes
+  , privateKeyFromBytes
   ) where
 
 import Data.ByteString (ByteString)
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
 import Foreign.Ptr
@@ -25,6 +31,26 @@ newtype PrivateKey = PrivateKey ByteString
 
 instance Show PrivateKey where
   show _ = "PrivateKey <redacted>"
+
+-- | Extract the raw bytes from a public key.
+publicKeyToBytes :: PublicKey -> ByteString
+publicKeyToBytes (PublicKey bs) = bs
+
+-- | Extract the raw bytes from a private key.
+privateKeyToBytes :: PrivateKey -> ByteString
+privateKeyToBytes (PrivateKey bs) = bs
+
+-- | Construct a public key from exactly 32 bytes.
+publicKeyFromBytes :: ByteString -> Maybe PublicKey
+publicKeyFromBytes bs
+  | BS.length bs == 32 = Just (PublicKey bs)
+  | otherwise = Nothing
+
+-- | Construct a private key from exactly 32 bytes.
+privateKeyFromBytes :: ByteString -> Maybe PrivateKey
+privateKeyFromBytes bs
+  | BS.length bs == 32 = Just (PrivateKey bs)
+  | otherwise = Nothing
 
 -- | Generate a random X25519 key pair.
 generateKeyPair :: IO (PublicKey, PrivateKey)
