@@ -19,6 +19,11 @@ import qualified Crypto.BoringSSL.HPKE as HPKE
 import qualified Crypto.BoringSSL.SPAKE2 as SPAKE2
 import qualified Crypto.BoringSSL.Random as Random
 
+-- | Extract Right or fail with an error message (pure, for unsafePerformIO).
+unsafeUnwrap :: String -> Either a b -> b
+unsafeUnwrap _ (Right x) = x
+unsafeUnwrap label (Left _) = error ("bench setup failed: " ++ label)
+
 -- Pre-generated keys (using unsafePerformIO at top level with NOINLINE)
 
 {-# NOINLINE ed25519Priv #-}
@@ -47,33 +52,33 @@ ecdsaPubKey = unsafePerformIO $ ECDSA.ecPublicKeyOfPair ecdsaKeyPair
 
 {-# NOINLINE rsaKeyPair #-}
 rsaKeyPair :: RSA.RSAKeyPair
-rsaKeyPair = unsafePerformIO $ RSA.generateRSAKeyPair 2048
+rsaKeyPair = unsafePerformIO $ unsafeUnwrap "RSA keygen" <$> RSA.generateRSAKeyPair 2048
 
 {-# NOINLINE rsaPubKey #-}
 rsaPubKey :: RSA.RSAPublicKey
 rsaPubKey = unsafePerformIO $ do
-  pubBytes <- RSA.publicKeyToBytes rsaKeyPair
-  RSA.publicKeyFromBytes pubBytes
+  pubBytes <- unsafeUnwrap "RSA pubkey bytes" <$> RSA.publicKeyToBytes rsaKeyPair
+  unsafeUnwrap "RSA pubkey parse" <$> RSA.publicKeyFromBytes pubBytes
 
 {-# NOINLINE aesGcmCtx #-}
 aesGcmCtx :: AEAD.AEADCtx
 aesGcmCtx = unsafePerformIO $ do
   key <- Random.randomBytes (AEAD.keyLength AES256GCM)
-  AEAD.newAEADCtx AES256GCM key
+  unsafeUnwrap "AES-GCM ctx" <$> AEAD.newAEADCtx AES256GCM key
 
 {-# NOINLINE chachaCtx #-}
 chachaCtx :: AEAD.AEADCtx
 chachaCtx = unsafePerformIO $ do
   key <- Random.randomBytes (AEAD.keyLength AEAD.ChaCha20Poly1305)
-  AEAD.newAEADCtx AEAD.ChaCha20Poly1305 key
+  unsafeUnwrap "ChaCha ctx" <$> AEAD.newAEADCtx AEAD.ChaCha20Poly1305 key
 
 {-# NOINLINE hpkeRecipKey #-}
 hpkeRecipKey :: HPKE.HPKEKey
-hpkeRecipKey = unsafePerformIO $ HPKE.generateKey HPKE.X25519HkdfSha256
+hpkeRecipKey = unsafePerformIO $ unsafeUnwrap "HPKE keygen" <$> HPKE.generateKey HPKE.X25519HkdfSha256
 
 {-# NOINLINE hpkeRecipPub #-}
 hpkeRecipPub :: BS.ByteString
-hpkeRecipPub = unsafePerformIO $ HPKE.publicKeyBytes hpkeRecipKey
+hpkeRecipPub = unsafePerformIO $ unsafeUnwrap "HPKE pubkey" <$> HPKE.publicKeyBytes hpkeRecipKey
 
 input1KB :: BS.ByteString
 input1KB = BS.replicate 1024 0x42
@@ -105,10 +110,10 @@ main = do
   rsaCt <- unwrapRight "RSA encrypt" =<< RSA.rsaEncrypt rsaPubKey "short plaintext"
 
   -- Pre-setup HPKE for open benchmark
-  (hpkeEnc, hpkeSCtx) <- HPKE.setupSender HPKE.X25519HkdfSha256
+  (hpkeEnc, hpkeSCtx) <- unwrapRight "HPKE setup sender" =<< HPKE.setupSender HPKE.X25519HkdfSha256
                             HPKE.HkdfSha256 HPKE.Aes128Gcm hpkeRecipPub "bench"
-  hpkeCt <- HPKE.senderSeal hpkeSCtx input1KB ""
-  hpkeRCtx <- HPKE.setupRecipient hpkeRecipKey HPKE.HkdfSha256
+  hpkeCt <- unwrapRight "HPKE seal" =<< HPKE.senderSeal hpkeSCtx input1KB ""
+  hpkeRCtx <- unwrapRight "HPKE setup recip" =<< HPKE.setupRecipient hpkeRecipKey HPKE.HkdfSha256
                 HPKE.Aes128Gcm hpkeEnc "bench"
 
   defaultMain
@@ -139,7 +144,7 @@ main = do
       ]
     , bgroup "X25519"
       [ bench "generateKeyPair" $ nfIO (X25519.generateKeyPair >>= \(p, _) -> return (X25519.publicKeyToBytes p))
-      , bench "sharedSecret" $ nf (\pk -> X25519.computeSharedSecret x25519PrivA pk) x25519PubB
+      , bench "sharedSecret" $ nf (\pk -> unsafeUnwrap "x25519" $ X25519.computeSharedSecret x25519PrivA pk) x25519PubB
       ]
     , bgroup "ECDSA"
       [ bench "P-256 sign" $ nfIO $ unwrapRight "s" =<< ECDSA.ecdsaSign ecdsaKeyPair digest256
@@ -153,18 +158,18 @@ main = do
       ]
     , bgroup "HPKE"
       [ bench "X25519 setup+seal" $ nfIO $ do
-          (_, sCtx) <- HPKE.setupSender HPKE.X25519HkdfSha256 HPKE.HkdfSha256
+          (_, sCtx) <- unwrapRight "s" =<< HPKE.setupSender HPKE.X25519HkdfSha256 HPKE.HkdfSha256
                           HPKE.Aes128Gcm hpkeRecipPub "bench"
-          HPKE.senderSeal sCtx input1KB ""
-      , bench "X25519 open" $ nfIO $ HPKE.recipientOpen hpkeRCtx hpkeCt ""
+          unwrapRight "s" =<< HPKE.senderSeal sCtx input1KB ""
+      , bench "X25519 open" $ nfIO $ unwrapRight "o" =<< HPKE.recipientOpen hpkeRCtx hpkeCt ""
       ]
     , bgroup "SPAKE2"
       [ bench "full protocol" $ nfIO $ do
-          ctxA <- SPAKE2.newContext SPAKE2.Alice "a" "b"
-          ctxB <- SPAKE2.newContext SPAKE2.Bob   "b" "a"
-          msgA <- SPAKE2.generateMessage ctxA "password"
-          msgB <- SPAKE2.generateMessage ctxB "password"
-          _ <- SPAKE2.processMessage ctxA msgB
-          SPAKE2.processMessage ctxB msgA
+          ctxA <- unwrapRight "s" =<< SPAKE2.newContext SPAKE2.Alice "a" "b"
+          ctxB <- unwrapRight "s" =<< SPAKE2.newContext SPAKE2.Bob   "b" "a"
+          msgA <- unwrapRight "s" =<< SPAKE2.generateMessage ctxA "password"
+          msgB <- unwrapRight "s" =<< SPAKE2.generateMessage ctxB "password"
+          _ <- unwrapRight "s" =<< SPAKE2.processMessage ctxA msgB
+          unwrapRight "s" =<< SPAKE2.processMessage ctxB msgA
       ]
     ]
