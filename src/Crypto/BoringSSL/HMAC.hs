@@ -4,6 +4,8 @@ module Crypto.BoringSSL.HMAC
   , hmacInit
   , hmacUpdate
   , hmacFinalize
+  , hmacVerify
+  , constTimeEq
   ) where
 
 import Data.ByteString (ByteString)
@@ -12,9 +14,10 @@ import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
+import Control.Exception (mask_)
 import System.IO.Unsafe (unsafePerformIO)
 
-import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Buffer (withByteString, constTimeEq)
 import Crypto.BoringSSL.Internal.Digest (Algorithm(..))
 import qualified Crypto.BoringSSL.Internal.Digest as ID
 import Crypto.BoringSSL.Internal.FFI.HMAC
@@ -44,7 +47,7 @@ newtype HMACCtx = HMACCtx (ForeignPtr HMAC_CTX)
 
 -- | Initialize a streaming HMAC context.
 hmacInit :: Algorithm -> ByteString -> IO HMACCtx
-hmacInit algo key = do
+hmacInit algo key = mask_ $ do
   ctx <- c_HMAC_CTX_new
   if ctx == nullPtr
     then fail "hmacInit: HMAC_CTX_new returned NULL"
@@ -82,3 +85,9 @@ hmacFinalize (HMACCtx fptr) =
           then fail "hmacFinalize: HMAC_Final failed"
           else fromIntegral <$> peek outLenPtr
     return (BSI.BS fout actualLen)
+
+-- | Verify an HMAC in constant time.
+-- Computes HMAC of @message@ using @key@ and compares with @expected@
+-- using constant-time comparison to prevent timing attacks.
+hmacVerify :: Algorithm -> ByteString -> ByteString -> ByteString -> Bool
+hmacVerify algo key msg expected = constTimeEq (hmac algo key msg) expected

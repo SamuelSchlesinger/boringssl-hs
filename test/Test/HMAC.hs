@@ -45,4 +45,46 @@ tests = testGroup "HMAC"
         result <- hmacFinalize ctx
         result @?= hmac SHA256 key "what do ya want for nothing?"
     ]
+  , testGroup "hmacVerify"
+    [ testCase "correct MAC verifies" $ do
+        let key = BS.replicate 20 0x0b
+            msg = "Hi There"
+            mac = hmac SHA256 key msg
+        assertBool "correct MAC should verify" (hmacVerify SHA256 key msg mac)
+    , testCase "wrong MAC rejects" $ do
+        let key = BS.replicate 20 0x0b
+            msg = "Hi There"
+            badMac = BS.replicate 32 0x00
+        assertBool "wrong MAC should not verify" (not (hmacVerify SHA256 key msg badMac))
+    , testCase "wrong key rejects" $ do
+        let key1 = BS.replicate 20 0x0b
+            key2 = BS.replicate 20 0x0c
+            msg = "Hi There"
+            mac = hmac SHA256 key1 msg
+        assertBool "wrong key should not verify" (not (hmacVerify SHA256 key2 msg mac))
+    , testCase "wrong message rejects" $ do
+        let key = BS.replicate 20 0x0b
+            msg = "Hi There"
+            mac = hmac SHA256 key msg
+        assertBool "wrong message should not verify" (not (hmacVerify SHA256 key "Bye There" mac))
+    ]
+  , testGroup "constTimeEq"
+    [ testCase "equal ByteStrings" $ do
+        let bs = "hello world"
+        assertBool "same value should be equal" (constTimeEq bs bs)
+    , testCase "equal but distinct ByteStrings" $ do
+        let a = BS.pack [1,2,3,4,5]
+            b = BS.pack [1,2,3,4,5]
+        assertBool "equal values should be equal" (constTimeEq a b)
+    , testCase "different ByteStrings same length" $ do
+        let a = BS.pack [1,2,3,4,5]
+            b = BS.pack [1,2,3,4,6]
+        assertBool "different values should not be equal" (not (constTimeEq a b))
+    , testCase "different lengths" $ do
+        let a = BS.pack [1,2,3]
+            b = BS.pack [1,2,3,4]
+        assertBool "different lengths should not be equal" (not (constTimeEq a b))
+    , testCase "empty ByteStrings" $ do
+        assertBool "two empty should be equal" (constTimeEq BS.empty BS.empty)
+    ]
   ]
