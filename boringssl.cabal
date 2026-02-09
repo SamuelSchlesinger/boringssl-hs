@@ -14,7 +14,7 @@ description:
   Ed25519, X25519, ECDSA, ECDH, RSA, and Base64.
 
 common warnings
-    ghc-options: -Wall
+    ghc-options: -Wall -Werror
 
 library
     import:           warnings
