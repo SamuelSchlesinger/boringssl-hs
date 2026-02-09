@@ -56,7 +56,7 @@ getBoringSSLError = do
     then return Nothing
     else do
       msg <- allocaArray 256 $ \buf -> do
-        _ <- c_ERR_error_string_n errCode buf 256
+        c_ERR_error_string_n errCode buf 256
         peekCString buf
       -- Drain remaining errors
       drainErrors

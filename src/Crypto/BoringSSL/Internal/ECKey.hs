@@ -18,7 +18,7 @@ import qualified Data.ByteString as BS
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Ptr
-import Control.Exception (mask_)
+import Control.Exception (mask_, finally)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -48,138 +48,182 @@ withECKeyPair (ECKeyPair fptr) = withForeignPtr fptr
 withECPublicKey :: ECPublicKey -> (Ptr EC_KEY -> IO a) -> IO a
 withECPublicKey (ECPublicKey fptr) = withForeignPtr fptr
 
+------------------------------------------------------------------------
+-- Internal helpers for chaining fallible IO steps
+------------------------------------------------------------------------
+
+-- | Chain fallible IO steps, short-circuiting on the first 'Left'.
+(>>?) :: IO (Either CryptoError a) -> (a -> IO (Either CryptoError b)) -> IO (Either CryptoError b)
+m >>? f = m >>= either (return . Left) f
+infixl 1 >>?
+
+-- | Return 'Left' if the pointer is null.
+requireNonNull :: Ptr a -> CryptoError -> IO (Either CryptoError (Ptr a))
+requireNonNull p err
+  | p == nullPtr = return (Left err)
+  | otherwise    = return (Right p)
+
+-- | Return 'Left' if the C return code is not 1 (success).
+requireSuccess :: CInt -> CryptoError -> IO (Either CryptoError ())
+requireSuccess 1 _ = return (Right ())
+requireSuccess _ err = return (Left err)
+
+------------------------------------------------------------------------
+-- Key generation
+------------------------------------------------------------------------
+
 -- | Generate a new EC key pair for the given curve.
 generateECKeyPair :: ECCurve -> IO (Either CryptoError ECKeyPair)
 generateECKeyPair curve = mask_ $ do
+  clearBoringSSLError
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
-  if keyPtr == nullPtr
-    then return (Left (AllocationFailure "generateECKeyPair: EC_KEY_new_by_curve_name failed"))
-    else do
-      rc <- c_EC_KEY_generate_key keyPtr
+  requireNonNull keyPtr (AllocationFailure "generateECKeyPair: EC_KEY_new_by_curve_name failed")
+    >>? \kp -> do
+      rc <- c_EC_KEY_generate_key kp
       if rc /= 1
         then do
-          c_EC_KEY_free keyPtr
+          c_EC_KEY_free kp
           merr <- getBoringSSLError
           return (Left (maybe (OperationFailed "generateECKeyPair: EC_KEY_generate_key failed") id merr))
         else do
-          fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
+          fptr <- newForeignPtr c_EC_KEY_free_funptr kp
           return (Right (ECKeyPair fptr))
 
+------------------------------------------------------------------------
+-- Key serialization
+------------------------------------------------------------------------
+
 -- | Get the uncompressed point encoding of the public key.
-ecPublicKeyBytes :: ECKeyPair -> IO ByteString
+ecPublicKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
 ecPublicKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
   groupPtr <- c_EC_KEY_get0_group keyPtr
-  pointPtr <- c_EC_KEY_get0_public_key keyPtr
-  -- POINT_CONVERSION_UNCOMPRESSED = 4
-  -- First query the size by passing NULL buffer
-  len <- c_EC_POINT_point2oct groupPtr pointPtr 4 nullPtr 0 nullPtr
-  createByteString (fromIntegral len) $ \outPtr -> do
-    _ <- c_EC_POINT_point2oct groupPtr pointPtr 4 outPtr len nullPtr
-    return ()
+  requireNonNull groupPtr (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_group returned NULL")
+    >>? \grp -> do
+      pointPtr <- c_EC_KEY_get0_public_key keyPtr
+      requireNonNull pointPtr (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_public_key returned NULL")
+        >>? \pt -> do
+          -- POINT_CONVERSION_UNCOMPRESSED = 4
+          -- First query the size by passing NULL buffer
+          len <- c_EC_POINT_point2oct grp pt 4 nullPtr 0 nullPtr
+          if len == 0
+            then return (Left (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct size query failed"))
+            else do
+              bs <- createByteString (fromIntegral len) $ \outPtr -> do
+                _ <- c_EC_POINT_point2oct grp pt 4 outPtr len nullPtr
+                return ()
+              return (Right bs)
 
 -- | Get the private key as fixed-width big-endian bytes, zero-padded to the
 -- full group order size. This avoids leaking information about the key value
 -- through variable-length encoding and ensures compatibility with protocols
 -- expecting fixed-width keys.
-ecPrivateKeyBytes :: ECKeyPair -> IO ByteString
+ecPrivateKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
 ecPrivateKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
   groupPtr <- c_EC_KEY_get0_group keyPtr
-  degree <- c_EC_GROUP_get_degree groupPtr
-  let numBytes = fromIntegral ((degree + 7) `div` 8) :: Int
-  bnPtr <- c_EC_KEY_get0_private_key keyPtr
-  createByteString numBytes $ \outPtr -> do
-    _ <- c_BN_bn2bin_padded outPtr (fromIntegral numBytes) bnPtr
-    return ()
+  requireNonNull groupPtr (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_group returned NULL")
+    >>? \grp -> do
+      degree <- c_EC_GROUP_get_degree grp
+      let numBytes = fromIntegral ((degree + 7) `div` 8) :: Int
+      bnPtr <- c_EC_KEY_get0_private_key keyPtr
+      requireNonNull bnPtr (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_private_key returned NULL")
+        >>? \bn -> do
+          bs <- createByteString numBytes $ \outPtr -> do
+            _ <- c_BN_bn2bin_padded outPtr (fromIntegral numBytes) bn
+            return ()
+          return (Right bs)
+
+------------------------------------------------------------------------
+-- Key import
+------------------------------------------------------------------------
 
 -- | Reconstruct an EC key pair from a curve and private key bytes.
 ecKeyPairFromPrivateBytes :: ECCurve -> ByteString -> IO (Either CryptoError ECKeyPair)
 ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
+  clearBoringSSLError
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
-  if keyPtr == nullPtr
-    then return (Left (AllocationFailure "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed"))
-    else do
-      -- Set private key from bytes
+  requireNonNull keyPtr (AllocationFailure "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed")
+    >>? \kp -> do
+      -- Attach finalizer early: EC_KEY cleanup is now automatic on all paths.
+      fptr <- newForeignPtr c_EC_KEY_free_funptr kp
+      result <- withForeignPtr fptr $ \k ->
+        setPrivateKey k >>? \() ->
+        derivePublicKey k >>? \() -> do
+        rc <- c_EC_KEY_check_key k
+        requireSuccess rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_check_key failed")
+      case result of
+        Left err -> return (Left err)
+        Right () -> return (Right (ECKeyPair fptr))
+  where
+    setPrivateKey kp =
       withByteString privBytes $ \privPtr privLen -> do
         bn <- c_BN_bin2bn privPtr privLen nullPtr
-        if bn == nullPtr
-          then do
-            c_EC_KEY_free keyPtr
-            return (Left (AllocationFailure "ecKeyPairFromPrivateBytes: BN_bin2bn failed"))
-          else do
-            rc <- c_EC_KEY_set_private_key keyPtr bn
-            c_BN_free bn
-            if rc /= 1
-              then do
-                c_EC_KEY_free keyPtr
-                return (Left (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed"))
-              else do
-                -- Derive public key: pubPoint = privKey * G
-                groupPtr <- c_EC_KEY_get0_group keyPtr
-                privBn <- c_EC_KEY_get0_private_key keyPtr
-                pubPoint <- c_EC_POINT_new groupPtr
-                rc2 <- c_EC_POINT_mul groupPtr pubPoint privBn nullPtr nullPtr nullPtr
-                if rc2 /= 1
-                  then do
-                    c_EC_POINT_free pubPoint
-                    c_EC_KEY_free keyPtr
-                    return (Left (OperationFailed "ecKeyPairFromPrivateBytes: EC_POINT_mul failed"))
-                  else do
-                    rc3 <- c_EC_KEY_set_public_key keyPtr pubPoint
-                    c_EC_POINT_free pubPoint
-                    if rc3 /= 1
-                      then do
-                        c_EC_KEY_free keyPtr
-                        return (Left (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_public_key failed"))
-                      else do
-                        rc4 <- c_EC_KEY_check_key keyPtr
-                        if rc4 /= 1
-                          then do
-                            c_EC_KEY_free keyPtr
-                            return (Left (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_check_key failed"))
-                          else do
-                            fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
-                            return (Right (ECKeyPair fptr))
+        requireNonNull bn (AllocationFailure "ecKeyPairFromPrivateBytes: BN_bin2bn failed")
+          >>? \b -> do
+            rc <- c_EC_KEY_set_private_key kp b
+            c_BN_free b
+            requireSuccess rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed")
+
+    derivePublicKey kp = do
+      groupPtr <- c_EC_KEY_get0_group kp
+      requireNonNull groupPtr (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_get0_group returned NULL")
+        >>? \grp -> do
+          privBn <- c_EC_KEY_get0_private_key kp
+          requireNonNull privBn (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_get0_private_key returned NULL")
+            >>? \bn -> do
+              pubPoint <- c_EC_POINT_new grp
+              requireNonNull pubPoint (AllocationFailure "ecKeyPairFromPrivateBytes: EC_POINT_new failed")
+                >>? \pt ->
+                  (do rc <- c_EC_POINT_mul grp pt bn nullPtr nullPtr nullPtr
+                      requireSuccess rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_POINT_mul failed")
+                        >>? \() -> do
+                          rc2 <- c_EC_KEY_set_public_key kp pt
+                          requireSuccess rc2 (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_public_key failed")
+                  ) `finally` c_EC_POINT_free pt
 
 -- | Parse an EC public key from uncompressed point bytes.
 ecPublicKeyFromBytes :: ECCurve -> ByteString -> IO (Either CryptoError ECPublicKey)
 ecPublicKeyFromBytes curve pubBytes = mask_ $ do
+  clearBoringSSLError
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
-  if keyPtr == nullPtr
-    then return (Left (AllocationFailure "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed"))
-    else do
-      groupPtr <- c_EC_KEY_get0_group keyPtr
-      pubPoint <- c_EC_POINT_new groupPtr
-      withByteString pubBytes $ \bufPtr bufLen -> do
-        rc <- c_EC_POINT_oct2point groupPtr pubPoint bufPtr bufLen nullPtr
-        if rc /= 1
-          then do
-            c_EC_POINT_free pubPoint
-            c_EC_KEY_free keyPtr
-            return (Left (DecodeError "ecPublicKeyFromBytes: EC_POINT_oct2point failed"))
-          else do
-            rc2 <- c_EC_KEY_set_public_key keyPtr pubPoint
-            c_EC_POINT_free pubPoint
-            if rc2 /= 1
-              then do
-                c_EC_KEY_free keyPtr
-                return (Left (OperationFailed "ecPublicKeyFromBytes: EC_KEY_set_public_key failed"))
-              else do
-                rc3 <- c_EC_KEY_check_key keyPtr
-                if rc3 /= 1
-                  then do
-                    c_EC_KEY_free keyPtr
-                    return (Left (DecodeError "ecPublicKeyFromBytes: EC_KEY_check_key failed (point not on curve)"))
-                  else do
-                    fptr <- newForeignPtr c_EC_KEY_free_funptr keyPtr
-                    return (Right (ECPublicKey fptr))
+  requireNonNull keyPtr (AllocationFailure "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed")
+    >>? \kp -> do
+      -- Attach finalizer early: EC_KEY cleanup is now automatic on all paths.
+      fptr <- newForeignPtr c_EC_KEY_free_funptr kp
+      result <- withForeignPtr fptr $ \k -> do
+        groupPtr <- c_EC_KEY_get0_group k
+        requireNonNull groupPtr (OperationFailed "ecPublicKeyFromBytes: EC_KEY_get0_group returned NULL")
+          >>? \grp -> do
+            pubPoint <- c_EC_POINT_new grp
+            requireNonNull pubPoint (AllocationFailure "ecPublicKeyFromBytes: EC_POINT_new failed")
+              >>? \pt ->
+                (withByteString pubBytes $ \bufPtr bufLen -> do
+                  rc <- c_EC_POINT_oct2point grp pt bufPtr bufLen nullPtr
+                  requireSuccess rc (DecodeError "ecPublicKeyFromBytes: EC_POINT_oct2point failed")
+                    >>? \() -> do
+                      rc2 <- c_EC_KEY_set_public_key k pt
+                      requireSuccess rc2 (OperationFailed "ecPublicKeyFromBytes: EC_KEY_set_public_key failed")
+                        >>? \() -> do
+                          rc3 <- c_EC_KEY_check_key k
+                          requireSuccess rc3 (DecodeError "ecPublicKeyFromBytes: EC_KEY_check_key failed (point not on curve)")
+                ) `finally` c_EC_POINT_free pt
+      case result of
+        Left err -> return (Left err)
+        Right () -> return (Right (ECPublicKey fptr))
+
+------------------------------------------------------------------------
+-- Key extraction
+------------------------------------------------------------------------
 
 -- | Extract the public key from a key pair.
 ecPublicKeyOfPair :: ECKeyPair -> IO (Either CryptoError ECPublicKey)
 ecPublicKeyOfPair kp = do
-  pubBytes <- ecPublicKeyBytes kp
-  -- Determine curve from uncompressed point size
-  case BS.length pubBytes of
-    65  -> ecPublicKeyFromBytes P256 pubBytes  -- 1 + 2*32
-    97  -> ecPublicKeyFromBytes P384 pubBytes  -- 1 + 2*48
-    133 -> ecPublicKeyFromBytes P521 pubBytes  -- 1 + 2*66
-    n   -> return (Left (OperationFailed ("ecPublicKeyOfPair: unexpected public key size " ++ show n)))
+  result <- ecPublicKeyBytes kp
+  case result of
+    Left err -> return (Left err)
+    Right pubBytes ->
+      -- Determine curve from uncompressed point size
+      case BS.length pubBytes of
+        65  -> ecPublicKeyFromBytes P256 pubBytes  -- 1 + 2*32
+        97  -> ecPublicKeyFromBytes P384 pubBytes  -- 1 + 2*48
+        133 -> ecPublicKeyFromBytes P521 pubBytes  -- 1 + 2*66
+        n   -> return (Left (OperationFailed ("ecPublicKeyOfPair: unexpected public key size " ++ show n)))

@@ -52,9 +52,9 @@ import Foreign.Ptr
 foreign import ccall unsafe "ERR_get_error"
   c_ERR_get_error :: IO CUInt
 
--- | char *ERR_error_string_n(uint32_t packed_error, char *buf, size_t len)
+-- | void ERR_error_string_n(uint32_t packed_error, char *buf, size_t len)
 foreign import ccall unsafe "ERR_error_string_n"
-  c_ERR_error_string_n :: CUInt -> Ptr CChar -> CSize -> IO (Ptr CChar)
+  c_ERR_error_string_n :: CUInt -> Ptr CChar -> CSize -> IO ()
 
 -- | void ERR_clear_error(void)
 foreign import ccall unsafe "ERR_clear_error"

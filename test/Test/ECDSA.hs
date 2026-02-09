@@ -36,11 +36,11 @@ tests = testGroup "ECDSA"
         assertBool "wrong digest should not verify" (not valid)
     , testCase "key serialization round-trip" $ do
         Right kp <- generateKeyPair P256
-        pubBytes <- ecPublicKeyBytes kp
-        privBytes <- ecPrivateKeyBytes kp
+        Right pubBytes <- ecPublicKeyBytes kp
+        Right privBytes <- ecPrivateKeyBytes kp
         -- Round-trip private key
         Right kp2 <- ecKeyPairFromPrivateBytes P256 privBytes
-        privBytes2 <- ecPrivateKeyBytes kp2
+        Right privBytes2 <- ecPrivateKeyBytes kp2
         privBytes2 @?= privBytes
         -- Round-trip public key
         Right pub <- ecPublicKeyFromBytes P256 pubBytes
@@ -59,10 +59,10 @@ tests = testGroup "ECDSA"
         assertBool "signature should verify" valid
     , testCase "key serialization round-trip" $ do
         Right kp <- generateKeyPair P384
-        pubBytes <- ecPublicKeyBytes kp
-        privBytes <- ecPrivateKeyBytes kp
+        Right pubBytes <- ecPublicKeyBytes kp
+        Right privBytes <- ecPrivateKeyBytes kp
         Right kp2 <- ecKeyPairFromPrivateBytes P384 privBytes
-        privBytes2 <- ecPrivateKeyBytes kp2
+        Right privBytes2 <- ecPrivateKeyBytes kp2
         privBytes2 @?= privBytes
         Right pub <- ecPublicKeyFromBytes P384 pubBytes
         let digest = hashSHA384 "round-trip test"
@@ -80,10 +80,10 @@ tests = testGroup "ECDSA"
         assertBool "signature should verify" valid
     , testCase "key serialization round-trip" $ do
         Right kp <- generateKeyPair P521
-        pubBytes <- ecPublicKeyBytes kp
-        privBytes <- ecPrivateKeyBytes kp
+        Right pubBytes <- ecPublicKeyBytes kp
+        Right privBytes <- ecPrivateKeyBytes kp
         Right kp2 <- ecKeyPairFromPrivateBytes P521 privBytes
-        privBytes2 <- ecPrivateKeyBytes kp2
+        Right privBytes2 <- ecPrivateKeyBytes kp2
         privBytes2 @?= privBytes
         Right pub <- ecPublicKeyFromBytes P521 pubBytes
         let digest = hashSHA512 "round-trip test"

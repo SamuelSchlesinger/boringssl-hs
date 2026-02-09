@@ -36,8 +36,8 @@ tests = testGroup "ECDH"
       Right kpA <- generateECKeyPair P256
       Right kpB <- generateECKeyPair P256
       -- Serialize and deserialize public keys
-      pubBytesA <- ecPublicKeyBytes kpA
-      pubBytesB <- ecPublicKeyBytes kpB
+      Right pubBytesA <- ecPublicKeyBytes kpA
+      Right pubBytesB <- ecPublicKeyBytes kpB
       Right pubA <- ecPublicKeyFromBytes P256 pubBytesA
       Right pubB <- ecPublicKeyFromBytes P256 pubBytesB
       -- Shared secret should still agree
@@ -47,7 +47,7 @@ tests = testGroup "ECDH"
   , testCase "P-256 private key serialization round-trip" $ do
       Right kpA <- generateECKeyPair P256
       Right kpB <- generateECKeyPair P256
-      privBytesA <- ecPrivateKeyBytes kpA
+      Right privBytesA <- ecPrivateKeyBytes kpA
       Right pubB <- ecPublicKeyOfPair kpB
       -- Reconstruct key pair from private bytes
       Right kpA2 <- ecKeyPairFromPrivateBytes P256 privBytesA
