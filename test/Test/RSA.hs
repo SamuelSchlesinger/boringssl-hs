@@ -2,6 +2,7 @@
 module Test.RSA (tests) where
 
 import qualified Data.ByteString as BS
+import Control.Exception (try, SomeException)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -64,6 +65,18 @@ tests = testGroup "RSA"
         Right ct <- rsaEncrypt pub plaintext
         Right recovered <- rsaDecrypt kp ct
         recovered @?= plaintext
+    ]
+  , testGroup "Safety"
+    [ testCase "rejects key size below 2048" $ do
+        result <- try (generateRSAKeyPair 1024) :: IO (Either SomeException RSAKeyPair)
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject 1024-bit key"
+    , testCase "rejects key size of 512" $ do
+        result <- try (generateRSAKeyPair 512) :: IO (Either SomeException RSAKeyPair)
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject 512-bit key"
     ]
   , testGroup "Serialization"
     [ testCase "public key round-trip" $ do

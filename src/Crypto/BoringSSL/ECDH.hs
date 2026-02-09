@@ -34,7 +34,10 @@ import Crypto.BoringSSL.Internal.FFI.ECDH
 -- length determines which hash is used internally:
 -- 32 -> SHA-256, 48 -> SHA-384, 64 -> SHA-512.
 ecdhComputeSecret :: ECKeyPair -> ECPublicKey -> Int -> IO (Either BoringSSLError ByteString)
-ecdhComputeSecret myKey peerPub outLen =
+ecdhComputeSecret myKey peerPub outLen
+  | outLen `notElem` [32, 48, 64] =
+      return (Left (BoringSSLError 0 "ecdhComputeSecret: output length must be 32, 48, or 64"))
+  | otherwise =
   withECKeyPair myKey $ \myKeyPtr ->
     withECPublicKey peerPub $ \peerKeyPtr -> do
       peerPoint <- c_EC_KEY_get0_public_key peerKeyPtr

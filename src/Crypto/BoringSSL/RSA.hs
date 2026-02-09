@@ -53,9 +53,11 @@ newtype RSAPublicKey = RSAPublicKey (ForeignPtr RSA_C)
 rsaPKCS1OAEPPadding :: CInt
 rsaPKCS1OAEPPadding = 4
 
--- | Generate a new RSA key pair.
+-- | Generate a new RSA key pair. The key size must be at least 2048 bits.
 generateRSAKeyPair :: Int -> IO RSAKeyPair
-generateRSAKeyPair bits = mask $ \restore -> do
+generateRSAKeyPair bits
+  | bits < 2048 = fail "generateRSAKeyPair: key size must be at least 2048 bits"
+  | otherwise = mask $ \restore -> do
   rsa <- c_RSA_new
   if rsa == nullPtr
     then fail "generateRSAKeyPair: RSA_new failed"

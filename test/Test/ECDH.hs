@@ -54,4 +54,22 @@ tests = testGroup "ECDH"
       Right secret1 <- ecdhComputeSecret kpA pubB 32
       Right secret2 <- ecdhComputeSecret kpA2 pubB 32
       secret1 @?= secret2
+  , testGroup "Safety"
+    [ testCase "rejects invalid output length 16" $ do
+        kpA <- generateECKeyPair P256
+        kpB <- generateECKeyPair P256
+        pubB <- ecPublicKeyOfPair kpB
+        result <- ecdhComputeSecret kpA pubB 16
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject output length 16"
+    , testCase "rejects invalid output length 0" $ do
+        kpA <- generateECKeyPair P256
+        kpB <- generateECKeyPair P256
+        pubB <- ecPublicKeyOfPair kpB
+        result <- ecdhComputeSecret kpA pubB 0
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject output length 0"
+    ]
   ]
