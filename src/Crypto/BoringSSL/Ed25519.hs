@@ -1,11 +1,18 @@
 module Crypto.BoringSSL.Ed25519
-  ( PublicKey(..)
-  , PrivateKey(..)
-  , Signature(..)
+  ( PublicKey
+  , PrivateKey
+  , Signature
   , generateKeyPair
   , keyPairFromSeed
   , sign
   , verify
+    -- * Serialization
+  , publicKeyToBytes
+  , privateKeyToBytes
+  , signatureToBytes
+  , publicKeyFromBytes
+  , privateKeyFromBytes
+  , signatureFromBytes
   ) where
 
 import Data.ByteString (ByteString)
@@ -32,6 +39,36 @@ instance Show PrivateKey where
 -- | An Ed25519 signature (64 bytes).
 newtype Signature = Signature ByteString
   deriving (Eq, Show)
+
+-- | Extract the raw bytes from a public key.
+publicKeyToBytes :: PublicKey -> ByteString
+publicKeyToBytes (PublicKey bs) = bs
+
+-- | Extract the raw bytes from a private key.
+privateKeyToBytes :: PrivateKey -> ByteString
+privateKeyToBytes (PrivateKey bs) = bs
+
+-- | Extract the raw bytes from a signature.
+signatureToBytes :: Signature -> ByteString
+signatureToBytes (Signature bs) = bs
+
+-- | Construct a public key from exactly 32 bytes.
+publicKeyFromBytes :: ByteString -> Maybe PublicKey
+publicKeyFromBytes bs
+  | BS.length bs == 32 = Just (PublicKey bs)
+  | otherwise = Nothing
+
+-- | Construct a private key from exactly 64 bytes.
+privateKeyFromBytes :: ByteString -> Maybe PrivateKey
+privateKeyFromBytes bs
+  | BS.length bs == 64 = Just (PrivateKey bs)
+  | otherwise = Nothing
+
+-- | Construct a signature from exactly 64 bytes.
+signatureFromBytes :: ByteString -> Maybe Signature
+signatureFromBytes bs
+  | BS.length bs == 64 = Just (Signature bs)
+  | otherwise = Nothing
 
 -- | Generate a random Ed25519 key pair.
 generateKeyPair :: IO (PublicKey, PrivateKey)

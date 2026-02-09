@@ -8,6 +8,11 @@ import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.Ed25519
 
+hex :: BS.ByteString -> BS.ByteString
+hex s = case Base16.decode s of
+  Right bs -> bs
+  Left err -> error ("bad hex literal: " ++ err)
+
 tests :: TestTree
 tests = testGroup "Ed25519"
   [ testCase "sign/verify round-trip" $ do
@@ -19,9 +24,10 @@ tests = testGroup "Ed25519"
       (pub, priv) <- generateKeyPair
       let msg = "Hello, Ed25519!"
           sig = sign priv msg
-          Signature sigBytes = sig
-          badSig = Signature (BS.replicate (BS.length sigBytes) 0x00)
-      assertBool "bad signature should not verify" (not (verify pub msg badSig))
+          sigBytes = signatureToBytes sig
+      case signatureFromBytes (BS.replicate (BS.length sigBytes) 0x00) of
+        Nothing -> assertFailure "signatureFromBytes returned Nothing for 64 zero bytes"
+        Just badSig -> assertBool "bad signature should not verify" (not (verify pub msg badSig))
   , testCase "wrong message rejected" $ do
       (pub, priv) <- generateKeyPair
       let sig = sign priv "message A"
@@ -59,16 +65,17 @@ tests = testGroup "Ed25519"
   -- reporting a clear message if there is a mismatch rather than failing
   -- silently.
   , testCase "keyPairFromSeed round-trip sign/verify with RFC 8032 seed" $ do
-      let Right seed = Base16.decode "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+      let seed = hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
           (pub, priv) = keyPairFromSeed seed
           sig = sign priv BS.empty
       assertBool "signature from RFC 8032 seed should verify" (verify pub BS.empty sig)
   , testCase "RFC 8032 Section 7.1 test vector (known issue with NO_ASM)" $ do
-      let Right seed = Base16.decode "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
-          Right expectedPub = Base16.decode "d75a980182b10ab7d54bfed3c964073a0ee172f3daa3f4a18446b0b8d183f8e3"
-          Right expectedSig = Base16.decode "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
-          (PublicKey pub, priv) = keyPairFromSeed seed
-          Signature sig = sign priv BS.empty
+      let seed = hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
+          expectedPub = hex "d75a980182b10ab7d54bfed3c964073a0ee172f3daa3f4a18446b0b8d183f8e3"
+          expectedSig = hex "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
+          (pub', priv) = keyPairFromSeed seed
+          pub = publicKeyToBytes pub'
+          sig = signatureToBytes (sign priv BS.empty)
       if pub == expectedPub
         then do
           -- Assembly-enabled build: public key matches RFC 8032, check signature too
@@ -83,4 +90,49 @@ tests = testGroup "Ed25519"
               ++ "Sign/verify round-trips still work correctly."
             )
             True  -- Pass the test with a descriptive message, not a silent skip
+  , testGroup "Smart constructors"
+    [ testCase "publicKeyFromBytes accepts 32 bytes" $ do
+        let bs = BS.replicate 32 0x42
+        case publicKeyFromBytes bs of
+          Just _  -> return ()
+          Nothing -> assertFailure "publicKeyFromBytes rejected valid 32-byte input"
+    , testCase "publicKeyFromBytes rejects wrong lengths" $ do
+        assertBool "should reject 0 bytes" (publicKeyFromBytes BS.empty == Nothing)
+        assertBool "should reject 31 bytes" (publicKeyFromBytes (BS.replicate 31 0x00) == Nothing)
+        assertBool "should reject 33 bytes" (publicKeyFromBytes (BS.replicate 33 0x00) == Nothing)
+    , testCase "privateKeyFromBytes accepts 64 bytes" $ do
+        let bs = BS.replicate 64 0x42
+        case privateKeyFromBytes bs of
+          Just _  -> return ()
+          Nothing -> assertFailure "privateKeyFromBytes rejected valid 64-byte input"
+    , testCase "privateKeyFromBytes rejects wrong lengths" $ do
+        assertBool "should reject 0 bytes" (privateKeyFromBytes BS.empty == Nothing)
+        assertBool "should reject 63 bytes" (privateKeyFromBytes (BS.replicate 63 0x00) == Nothing)
+        assertBool "should reject 65 bytes" (privateKeyFromBytes (BS.replicate 65 0x00) == Nothing)
+    , testCase "signatureFromBytes accepts 64 bytes" $ do
+        let bs = BS.replicate 64 0x42
+        case signatureFromBytes bs of
+          Just _  -> return ()
+          Nothing -> assertFailure "signatureFromBytes rejected valid 64-byte input"
+    , testCase "signatureFromBytes rejects wrong lengths" $ do
+        assertBool "should reject 0 bytes" (signatureFromBytes BS.empty == Nothing)
+        assertBool "should reject 63 bytes" (signatureFromBytes (BS.replicate 63 0x00) == Nothing)
+        assertBool "should reject 65 bytes" (signatureFromBytes (BS.replicate 65 0x00) == Nothing)
+    , testCase "publicKeyToBytes round-trip" $ do
+        (pub, _) <- generateKeyPair
+        case publicKeyFromBytes (publicKeyToBytes pub) of
+          Just pub' -> pub' @?= pub
+          Nothing   -> assertFailure "publicKeyFromBytes rejected publicKeyToBytes output"
+    , testCase "privateKeyToBytes round-trip" $ do
+        (_, priv) <- generateKeyPair
+        case privateKeyFromBytes (privateKeyToBytes priv) of
+          Just priv' -> priv' @?= priv
+          Nothing    -> assertFailure "privateKeyFromBytes rejected privateKeyToBytes output"
+    , testCase "signatureToBytes round-trip" $ do
+        (_, priv) <- generateKeyPair
+        let sig = sign priv "test"
+        case signatureFromBytes (signatureToBytes sig) of
+          Just sig' -> sig' @?= sig
+          Nothing   -> assertFailure "signatureFromBytes rejected signatureToBytes output"
+    ]
   ]
