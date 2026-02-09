@@ -3,6 +3,7 @@ module Crypto.BoringSSL.Internal.Error
   , getBoringSSLError
   ) where
 
+import Control.Exception (Exception)
 import Crypto.BoringSSL.Internal.FFI
 import Foreign.C.String
 import Foreign.Marshal.Array
@@ -16,6 +17,8 @@ data BoringSSLError = BoringSSLError
 instance Show BoringSSLError where
   show (BoringSSLError code msg) =
     "BoringSSLError " ++ show code ++ ": " ++ msg
+
+instance Exception BoringSSLError
 
 -- | Drain the BoringSSL error queue and return the first error, if any.
 getBoringSSLError :: IO (Maybe BoringSSLError)

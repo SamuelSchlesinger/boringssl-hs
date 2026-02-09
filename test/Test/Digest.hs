@@ -34,11 +34,78 @@ tests = testGroup "Digest"
         hexHash SHA512 (BS8.pack "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq") @?=
           "204a8fc6dda82f0a0ced7beb8e08a41657c16ef468b228a8279be331a703c33596fd15c13b1b07f9aa1d3bea57789ca031ad85c7a71dd70354ec631238ca3445"
     ]
+  , testGroup "SHA-1"
+    [ testCase "empty string" $
+        hexHash SHA1 BS.empty @?=
+          "da39a3ee5e6b4b0d3255bfef95601890afd80709"
+    , testCase "abc" $
+        hexHash SHA1 (BS8.pack "abc") @?=
+          "a9993e364706816aba3e25717850c26c9cd0d89d"
+    ]
+  , testGroup "SHA-224"
+    [ testCase "abc" $
+        hexHash SHA224 (BS8.pack "abc") @?=
+          "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7"
+    ]
+  , testGroup "SHA-384"
+    [ testCase "abc" $
+        hexHash SHA384 (BS8.pack "abc") @?=
+          "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"
+    ]
+  , testGroup "SHA-512/256"
+    [ testCase "empty string" $
+        hexHash SHA512_256 BS.empty @?=
+          "c672b8d1ef56ed28ab87c3622c5114069bdd3ad7b8f9737498d0c01ecef0967a"
+    ]
+  , testGroup "MD5"
+    [ testCase "empty string" $
+        hexHash MD5 BS.empty @?=
+          "d41d8cd98f00b204e9800998ecf8427e"
+    , testCase "abc" $
+        hexHash MD5 (BS8.pack "abc") @?=
+          "900150983cd24fb0d6963f7d28e17f72"
+    ]
   , testGroup "hash function"
     [ testCase "hash SHA256 matches hashSHA256" $
         hash SHA256 (BS8.pack "test") @?= hashSHA256 (BS8.pack "test")
     , testCase "hash SHA512 matches hashSHA512" $
         hash SHA512 (BS8.pack "test") @?= hashSHA512 (BS8.pack "test")
+    , testCase "hash SHA1 matches hashSHA1" $
+        hash SHA1 (BS8.pack "test") @?= hashSHA1 (BS8.pack "test")
+    , testCase "hash MD5 matches hashMD5" $
+        hash MD5 (BS8.pack "test") @?= hashMD5 (BS8.pack "test")
+    ]
+  , testGroup "Streaming"
+    [ testCase "SHA-256 streaming matches one-shot" $ do
+        ctx <- digestInit SHA256
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash SHA256 (BS8.pack "abc")
+    , testCase "SHA-256 streaming multiple updates" $ do
+        ctx <- digestInit SHA256
+        digestUpdate ctx (BS8.pack "ab")
+        digestUpdate ctx (BS8.pack "c")
+        result <- digestFinalize ctx
+        result @?= hash SHA256 (BS8.pack "abc")
+    , testCase "SHA-512 streaming matches one-shot" $ do
+        ctx <- digestInit SHA512
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash SHA512 (BS8.pack "abc")
+    , testCase "MD5 streaming matches one-shot" $ do
+        ctx <- digestInit MD5
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash MD5 (BS8.pack "abc")
+    ]
+  , testGroup "digestSize"
+    [ testCase "SHA-1 = 20" $ digestSize SHA1 @?= 20
+    , testCase "SHA-224 = 28" $ digestSize SHA224 @?= 28
+    , testCase "SHA-256 = 32" $ digestSize SHA256 @?= 32
+    , testCase "SHA-384 = 48" $ digestSize SHA384 @?= 48
+    , testCase "SHA-512 = 64" $ digestSize SHA512 @?= 64
+    , testCase "SHA-512/256 = 32" $ digestSize SHA512_256 @?= 32
+    , testCase "MD5 = 16" $ digestSize MD5 @?= 16
     ]
   ]
 
