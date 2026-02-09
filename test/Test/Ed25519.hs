@@ -13,36 +13,41 @@ hex s = case Base16.decode s of
   Right bs -> bs
   Left err -> error ("bad hex literal: " ++ err)
 
+-- | Extract Right or fail the test.
+unwrap :: Show e => Either e a -> IO a
+unwrap (Right x) = return x
+unwrap (Left err) = assertFailure ("unexpected error: " ++ show err) >> error "unreachable"
+
 tests :: TestTree
 tests = testGroup "Ed25519"
   [ testCase "sign/verify round-trip" $ do
       (pub, priv) <- generateKeyPair
       let msg = "Hello, Ed25519!"
-          sig = sign priv msg
+      sig <- unwrap $ sign priv msg
       assertBool "signature should verify" (verify pub msg sig)
   , testCase "invalid signature rejected" $ do
       (pub, priv) <- generateKeyPair
       let msg = "Hello, Ed25519!"
-          sig = sign priv msg
-          sigBytes = signatureToBytes sig
+      sig <- unwrap $ sign priv msg
+      let sigBytes = signatureToBytes sig
       case signatureFromBytes (BS.replicate (BS.length sigBytes) 0x00) of
         Nothing -> assertFailure "signatureFromBytes returned Nothing for 64 zero bytes"
         Just badSig -> assertBool "bad signature should not verify" (not (verify pub msg badSig))
   , testCase "wrong message rejected" $ do
       (pub, priv) <- generateKeyPair
-      let sig = sign priv "message A"
+      sig <- unwrap $ sign priv "message A"
       assertBool "wrong message should not verify" (not (verify pub "message B" sig))
   , testCase "keyPairFromSeed is deterministic" $ do
       let seed = BS.replicate 32 0x42
-      Right (pub1, priv1) <- return (keyPairFromSeed seed)
-      Right (pub2, priv2) <- return (keyPairFromSeed seed)
+      (pub1, priv1) <- unwrap $ keyPairFromSeed seed
+      (pub2, priv2) <- unwrap $ keyPairFromSeed seed
       pub1 @?= pub2
       priv1 @?= priv2
   , testCase "keyPairFromSeed sign/verify" $ do
       let seed = BS.replicate 32 0xAB
-      Right (pub, priv) <- return (keyPairFromSeed seed)
+      (pub, priv) <- unwrap $ keyPairFromSeed seed
       let msg = "deterministic test"
-          sig = sign priv msg
+      sig <- unwrap $ sign priv msg
       assertBool "signature should verify" (verify pub msg sig)
   , testCase "keyPairFromSeed rejects wrong seed length" $ do
       case keyPairFromSeed (BS.replicate 31 0x42) of
@@ -61,8 +66,8 @@ tests = testGroup "Ed25519"
   , testCase "sign is deterministic" $ do
       (_, priv) <- generateKeyPair
       let msg = "determinism test"
-          sig1 = sign priv msg
-          sig2 = sign priv msg
+      sig1 <- unwrap $ sign priv msg
+      sig2 <- unwrap $ sign priv msg
       sig1 @?= sig2
   , testCase "key sizes from generateKeyPair" $ do
       (pub, priv) <- generateKeyPair
@@ -70,7 +75,7 @@ tests = testGroup "Ed25519"
       BS.length (privateKeyToBytes priv) @?= 64
   , testCase "signature size is 64 bytes" $ do
       (_, priv) <- generateKeyPair
-      let sig = sign priv "test"
+      sig <- unwrap $ sign priv "test"
       BS.length (signatureToBytes sig) @?= 64
   -- KNOWN ISSUE: RFC 8032 Section 7.1 test vector compliance
   --
@@ -94,16 +99,17 @@ tests = testGroup "Ed25519"
   -- silently.
   , testCase "keyPairFromSeed round-trip sign/verify with RFC 8032 seed" $ do
       let seed = hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
-      Right (pub, priv) <- return (keyPairFromSeed seed)
-      let sig = sign priv BS.empty
+      (pub, priv) <- unwrap $ keyPairFromSeed seed
+      sig <- unwrap $ sign priv BS.empty
       assertBool "signature from RFC 8032 seed should verify" (verify pub BS.empty sig)
   , testCase "RFC 8032 Section 7.1 test vector (known issue with NO_ASM)" $ do
       let seed = hex "9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60"
           expectedPub = hex "d75a980182b10ab7d54bfed3c964073a0ee172f3daa3f4a18446b0b8d183f8e3"
           expectedSig = hex "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b"
-      Right (pub', priv) <- return (keyPairFromSeed seed)
+      (pub', priv) <- unwrap $ keyPairFromSeed seed
       let pub = publicKeyToBytes pub'
-          sig = signatureToBytes (sign priv BS.empty)
+      sig' <- unwrap $ sign priv BS.empty
+      let sig = signatureToBytes sig'
       if pub == expectedPub
         then do
           -- Assembly-enabled build: public key matches RFC 8032, check signature too
@@ -158,7 +164,7 @@ tests = testGroup "Ed25519"
           Nothing    -> assertFailure "privateKeyFromBytes rejected privateKeyToBytes output"
     , testCase "signatureToBytes round-trip" $ do
         (_, priv) <- generateKeyPair
-        let sig = sign priv "test"
+        sig <- unwrap $ sign priv "test"
         case signatureFromBytes (signatureToBytes sig) of
           Just sig' -> sig' @?= sig
           Nothing   -> assertFailure "signatureFromBytes rejected signatureToBytes output"

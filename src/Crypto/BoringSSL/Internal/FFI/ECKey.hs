@@ -37,6 +37,7 @@ module Crypto.BoringSSL.Internal.FFI.ECKey
   , c_EC_GROUP_get_degree
     -- * EC_POINT arithmetic
   , c_EC_POINT_mul
+  , c_EC_POINT_get_affine_coordinates_GFp
   ) where
 
 import Foreign.C.Types
@@ -170,3 +171,9 @@ foreign import ccall unsafe "BN_bin2bn"
 -- To compute r = n * G (generator), pass q=NULL, m=NULL.
 foreign import ccall safe "EC_POINT_mul"
   c_EC_POINT_mul :: Ptr EC_GROUP -> Ptr EC_POINT -> Ptr BIGNUM -> Ptr EC_POINT -> Ptr BIGNUM -> Ptr () -> IO CInt
+
+-- | int EC_POINT_get_affine_coordinates_GFp(const EC_GROUP *group,
+--     const EC_POINT *point, BIGNUM *x, BIGNUM *y, BN_CTX *ctx)
+foreign import ccall unsafe "EC_POINT_get_affine_coordinates_GFp"
+  c_EC_POINT_get_affine_coordinates_GFp
+    :: Ptr EC_GROUP -> Ptr EC_POINT -> Ptr BIGNUM -> Ptr BIGNUM -> Ptr () -> IO CInt

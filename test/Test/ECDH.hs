@@ -93,6 +93,42 @@ tests = testGroup "ECDH"
         Right secret <- ecdhComputeSecret kpA pubB 64
         BS.length secret @?= 64
     ]
+  , testGroup "raw ECDH"
+    [ testCase "P-256 raw symmetry" $ do
+        Right kpA <- generateECKeyPair P256
+        Right kpB <- generateECKeyPair P256
+        Right pubA <- ecPublicKeyOfPair kpA
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right rawAB <- ecdhComputeRawSecret kpA pubB
+        Right rawBA <- ecdhComputeRawSecret kpB pubA
+        rawAB @?= rawBA
+    , testCase "P-384 raw symmetry" $ do
+        Right kpA <- generateECKeyPair P384
+        Right kpB <- generateECKeyPair P384
+        Right pubA <- ecPublicKeyOfPair kpA
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right rawAB <- ecdhComputeRawSecret kpA pubB
+        Right rawBA <- ecdhComputeRawSecret kpB pubA
+        rawAB @?= rawBA
+    , testCase "P-256 raw output is 32 bytes" $ do
+        Right kpA <- generateECKeyPair P256
+        Right kpB <- generateECKeyPair P256
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right raw <- ecdhComputeRawSecret kpA pubB
+        BS.length raw @?= 32
+    , testCase "P-384 raw output is 48 bytes" $ do
+        Right kpA <- generateECKeyPair P384
+        Right kpB <- generateECKeyPair P384
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right raw <- ecdhComputeRawSecret kpA pubB
+        BS.length raw @?= 48
+    , testCase "P-521 raw output is 66 bytes" $ do
+        Right kpA <- generateECKeyPair P521
+        Right kpB <- generateECKeyPair P521
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right raw <- ecdhComputeRawSecret kpA pubB
+        BS.length raw @?= 66
+    ]
   , testCase "different key pairs produce different secrets" $ do
       Right kpA <- generateECKeyPair P256
       Right kpB <- generateECKeyPair P256

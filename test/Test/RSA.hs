@@ -127,6 +127,50 @@ tests = testGroup "RSA"
           Left _ -> return ()
           Right _ -> assertFailure "should reject garbage bytes"
     ]
+  , testGroup "PKCS#1 v1.5 encryption"
+    [ testCase "encrypt/decrypt round-trip" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        let plaintext = "Hello, PKCS1!"
+        Right ct <- rsaEncryptPKCS1 pub plaintext
+        Right recovered <- rsaDecryptPKCS1 kp ct
+        recovered @?= plaintext
+    , testCase "max plaintext (245 bytes for 2048-bit key)" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        -- PKCS#1 v1.5: max = modulus_size - 11 = 256 - 11 = 245
+        let plaintext = BS.replicate 245 0x42
+        Right ct <- rsaEncryptPKCS1 pub plaintext
+        Right recovered <- rsaDecryptPKCS1 kp ct
+        recovered @?= plaintext
+    , testCase "too-long plaintext returns Left" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        let plaintext = BS.replicate 246 0x42
+        result <- rsaEncryptPKCS1 pub plaintext
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject too-long plaintext"
+    ]
+  , testGroup "public key properties"
+    [ testCase "rsaPublicBits matches rsaBits" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        bits <- rsaBits kp
+        pubBits <- rsaPublicBits pub
+        pubBits @?= bits
+    , testCase "rsaPublicSize matches rsaSize" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        size <- rsaSize kp
+        pubSize <- rsaPublicSize pub
+        pubSize @?= size
+    ]
   , testGroup "signature size"
     [ testCase "PKCS#1 v1.5 signature is rsaSize bytes" $ do
         Right kp <- generateRSAKeyPair 2048

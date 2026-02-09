@@ -72,7 +72,6 @@ tests = testGroup "X509"
         Right _ -> assertFailure "parseDER should reject empty input"
 
   , testCase "parseDER rejects truncated DER" $ do
-      -- A truncated DER sequence tag
       let result = parseDER "\x30\x82\x01\x00"
       case result of
         Left _  -> return ()
@@ -104,6 +103,110 @@ tests = testGroup "X509"
           let subj = subjectName cert
               iss  = issuerName cert
           subj @?= iss
+
+    -- Feature 6: public key extraction
+  , testCase "certPublicKey extracts RSA key from test cert" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          result <- certPublicKey cert
+          case result of
+            Right (CertPubKeyRSA _) -> return ()
+            Right other -> assertFailure ("expected RSA key, got: " ++ show other)
+            Left err -> assertFailure ("certPublicKey failed: " ++ show err)
+
+  , testCase "certPublicKey RSA key matches verifySelfSigned" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          assertBool "test cert should be self-signed" (verifySelfSigned cert)
+          result <- certPublicKey cert
+          case result of
+            Right (CertPubKeyRSA _) -> return ()
+            _ -> assertFailure "expected RSA key"
+
+    -- Feature 7: certificate extensions
+  , testCase "certKeyUsage on test cert (CA)" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          case certKeyUsage cert of
+            Nothing -> return ()  -- test cert may not have key usage
+            Just flags -> assertBool "key usage should be non-empty" (not (null flags))
+
+  , testCase "certBasicConstraints on test cert (CA:TRUE)" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          case certBasicConstraints cert of
+            Nothing -> assertFailure "test cert should have basic constraints"
+            Just (isCA, _) -> assertBool "test cert should be CA" isCA
+
+  , testCase "certSubjectAltNames on test cert" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          let sans = certSubjectAltNames cert
+          -- Our test cert doesn't have SANs, so empty is expected
+          length sans `seq` return ()
+
+    -- Feature 8: chain verification
+  , testCase "self-signed cert verifies against itself" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          store <- newX509Store
+          addTrustAnchor store cert
+          result <- verifyCertChain store cert []
+          case result of
+            VerifyOK -> return ()
+            VerifyFailed code msg -> assertFailure
+              ("verification should succeed but got: " ++ show code ++ " " ++ msg)
+
+  , testCase "untrusted cert fails against empty store" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          store <- newX509Store  -- empty store
+          result <- verifyCertChain store cert []
+          case result of
+            VerifyFailed _ _ -> return ()
+            VerifyOK -> assertFailure "verification should fail against empty store"
+
+    -- Feature 9: signature algorithm
+  , testCase "certSignatureAlgorithm on test cert" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          result <- certSignatureAlgorithm cert
+          case result of
+            Nothing -> assertFailure "should have a signature algorithm"
+            Just info -> do
+              assertBool "NID should be positive" (sigAlgNID info > 0)
+              assertBool "short name should be non-empty" (not (null (sigAlgShortName info)))
+
+    -- Feature 10: DN as DER
+  , testCase "certSubjectDER non-empty" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          der <- certSubjectDER cert
+          assertBool "subject DER should be non-empty" (not (BS.null der))
+
+  , testCase "certSubjectDER == certIssuerDER for self-signed" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          subjDER <- certSubjectDER cert
+          issDER <- certIssuerDER cert
+          subjDER @?= issDER
+
+  , testCase "certSubjectDER starts with SEQUENCE tag 0x30" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER failed: " ++ show err)
+        Right cert -> do
+          der <- certSubjectDER cert
+          assertBool "should start with 0x30" (not (BS.null der) && BS.head der == 0x30)
   ]
 
 -- Simple infix check for String

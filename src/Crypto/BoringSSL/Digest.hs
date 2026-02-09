@@ -21,6 +21,7 @@ module Crypto.BoringSSL.Digest
   , digestInit
   , digestUpdate
   , digestFinalize
+  , digestCopy
   ) where
 
 import Data.ByteString (ByteString)
@@ -146,6 +147,24 @@ digestUpdate (DigestCtx fptr) bs =
       if rc /= 1
         then fail "digestUpdate: EVP_DigestUpdate failed"
         else return ()
+
+-- | Create a copy of a digest context. The copy is independent:
+-- updating or finalizing one does not affect the other.
+digestCopy :: DigestCtx -> IO DigestCtx
+digestCopy (DigestCtx srcFPtr) = mask_ $
+  withForeignPtr srcFPtr $ \srcCtx -> do
+    dstCtx <- c_EVP_MD_CTX_new
+    if dstCtx == nullPtr
+      then fail "digestCopy: EVP_MD_CTX_new returned NULL"
+      else do
+        rc <- c_EVP_MD_CTX_copy_ex dstCtx srcCtx
+        if rc /= 1
+          then do
+            c_EVP_MD_CTX_free dstCtx
+            fail "digestCopy: EVP_MD_CTX_copy_ex failed"
+          else do
+            dstFPtr <- newForeignPtr c_EVP_MD_CTX_free_funptr dstCtx
+            return (DigestCtx dstFPtr)
 
 -- | Finalize the digest and return the hash. The context should not be
 -- used after this call.

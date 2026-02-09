@@ -268,17 +268,18 @@ prop_hmacDeterministic :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Bool
 prop_hmacDeterministic algo (ArbitraryBS key) (ArbitraryBS msg) =
   HMAC.hmac algo key msg == HMAC.hmac algo key msg
 
-prop_hmacLength :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Bool
+prop_hmacLength :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hmacLength algo (ArbitraryBS key) (ArbitraryBS msg) =
-  BS.length (HMAC.hmac algo key msg) == Digest.digestSize algo
+  case HMAC.hmac algo key msg of
+    Left err -> counterexample ("hmac failed: " ++ show err) False
+    Right result -> BS.length result === Digest.digestSize algo
 
 prop_hmacStreamingMatchesOneShot :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hmacStreamingMatchesOneShot algo (ArbitraryBS key) (ArbitraryBS msg) = ioProperty $ do
   ctx <- HMAC.hmacInit algo key
   HMAC.hmacUpdate ctx msg
   streamResult <- HMAC.hmacFinalize ctx
-  let oneShotResult = HMAC.hmac algo key msg
-  return (streamResult === oneShotResult)
+  return (Right streamResult === HMAC.hmac algo key msg)
 
 prop_hmacDifferentKeys :: Algorithm -> NonEmptyBS -> Property
 prop_hmacDifferentKeys algo (NonEmptyBS msg) = ioProperty $ do
@@ -391,15 +392,17 @@ ed25519Properties = testGroup "Ed25519"
 prop_ed25519SignVerify :: ArbitraryBS -> Property
 prop_ed25519SignVerify (ArbitraryBS msg) = ioProperty $ do
   (pub, priv) <- Ed25519.generateKeyPair
-  let sig = Ed25519.sign priv msg
-  return $ Ed25519.verify pub msg sig === True
+  case Ed25519.sign priv msg of
+    Left err -> return $ counterexample ("sign failed: " ++ show err) False
+    Right sig -> return $ Ed25519.verify pub msg sig === True
 
 prop_ed25519WrongMessage :: ArbitraryBS -> ArbitraryBS -> Property
 prop_ed25519WrongMessage (ArbitraryBS msg1) (ArbitraryBS msg2) =
   msg1 /= msg2 ==> ioProperty $ do
     (pub, priv) <- Ed25519.generateKeyPair
-    let sig = Ed25519.sign priv msg1
-    return $ Ed25519.verify pub msg2 sig === False
+    case Ed25519.sign priv msg1 of
+      Left err -> return $ counterexample ("sign failed: " ++ show err) False
+      Right sig -> return $ Ed25519.verify pub msg2 sig === False
 
 prop_ed25519DeterministicSign :: ArbitraryBS -> Property
 prop_ed25519DeterministicSign (ArbitraryBS msg) = ioProperty $ do
@@ -591,17 +594,19 @@ base64Properties = testGroup "Base64"
 
 prop_base64RoundTrip :: ArbitraryBS -> Property
 prop_base64RoundTrip (ArbitraryBS bs) =
-  let encoded = Base64.encode bs
-  in case Base64.decode encoded of
-       Left err -> counterexample ("decode failed: " ++ show err) False
-       Right decoded -> decoded === bs
+  case Base64.encode bs of
+    Left err -> counterexample ("encode failed: " ++ show err) False
+    Right encoded -> case Base64.decode encoded of
+      Left err -> counterexample ("decode failed: " ++ show err) False
+      Right decoded -> decoded === bs
 
 prop_base64EncodedLength :: ArbitraryBS -> Property
 prop_base64EncodedLength (ArbitraryBS bs) =
-  let encoded = Base64.encode bs
-  in case Base64.decode encoded of
-       Left err -> counterexample ("decode of encoded data failed: " ++ show err) False
-       Right _  -> property True
+  case Base64.encode bs of
+    Left err -> counterexample ("encode failed: " ++ show err) False
+    Right encoded -> case Base64.decode encoded of
+      Left err -> counterexample ("decode of encoded data failed: " ++ show err) False
+      Right _  -> property True
 
 -- ---------------------------------------------------------------------------
 -- Random Properties

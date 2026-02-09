@@ -28,6 +28,7 @@ import qualified Test.XWing
 import qualified Test.Scrypt
 import qualified Test.SipHash
 import qualified Test.TLSPRF
+import qualified Test.PrivateKey
 
 main :: IO ()
 main = defaultMain $ testGroup "BoringSSL"
@@ -58,4 +59,5 @@ main = defaultMain $ testGroup "BoringSSL"
   , Test.Scrypt.tests
   , Test.SipHash.tests
   , Test.TLSPRF.tests
+  , Test.PrivateKey.tests
   ]

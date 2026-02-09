@@ -13,6 +13,8 @@ module Crypto.BoringSSL.HMAC
     -- * Verification
   , hmacVerify
   , constTimeEq
+    -- * Error type
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -27,26 +29,29 @@ import System.IO.Unsafe (unsafePerformIO)
 import Crypto.BoringSSL.Internal.Buffer (withByteString, constTimeEq)
 import Crypto.BoringSSL.Internal.Digest (Algorithm(..))
 import qualified Crypto.BoringSSL.Internal.Digest as ID
+import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.HMAC
 
 -- | Compute HMAC in one shot (pure, deterministic).
 --
 -- @hmac algo key message@ computes the HMAC of @message@ using @key@
 -- with the specified hash algorithm.
-hmac :: Algorithm -> ByteString -> ByteString -> ByteString
+hmac :: Algorithm -> ByteString -> ByteString -> Either CryptoError ByteString
 hmac algo key msg = unsafePerformIO $
   withByteString key $ \keyPtr keyLen ->
     withByteString msg $ \msgPtr msgLen -> do
       let md = ID.evpMD algo
           outSize = ID.digestSize algo
       fptr <- BSI.mallocByteString outSize
-      actualLen <- withForeignPtr fptr $ \outPtr ->
+      result <- withForeignPtr fptr $ \outPtr ->
         alloca $ \outLenPtr -> do
           ret <- c_HMAC md keyPtr keyLen msgPtr msgLen (castPtr outPtr) outLenPtr
           if ret == nullPtr
-            then error "hmac: HMAC returned NULL (should never happen)"
-            else fromIntegral <$> peek outLenPtr
-      return (BSI.BS fptr actualLen)
+            then return Nothing
+            else Just . fromIntegral <$> peek outLenPtr
+      case result of
+        Nothing -> return (Left (OperationFailed "hmac: HMAC returned NULL"))
+        Just actualLen -> return (Right (BSI.BS fptr actualLen))
 {-# NOINLINE hmac #-}
 
 -- | An incremental HMAC context.
@@ -96,5 +101,10 @@ hmacFinalize (HMACCtx fptr) =
 -- | Verify an HMAC in constant time.
 -- Computes HMAC of @message@ using @key@ and compares with @expected@
 -- using constant-time comparison to prevent timing attacks.
-hmacVerify :: Algorithm -> ByteString -> ByteString -> ByteString -> Bool
-hmacVerify algo key msg expected = constTimeEq (hmac algo key msg) expected
+-- Returns 'Left' if HMAC computation fails, or 'Right' with the
+-- comparison result.
+hmacVerify :: Algorithm -> ByteString -> ByteString -> ByteString -> Either CryptoError Bool
+hmacVerify algo key msg expected =
+  case hmac algo key msg of
+    Left err -> Left err
+    Right computed -> Right (constTimeEq computed expected)

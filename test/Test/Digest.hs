@@ -176,6 +176,30 @@ tests = testGroup "Digest"
     , testCase "MD5" $ BS.length (hash MD5 "abc") @?= digestSize MD5
     , testCase "BLAKE2b-256" $ BS.length (hash BLAKE2b256 "abc") @?= digestSize BLAKE2b256
     ]
+  , testGroup "digestCopy"
+    [ testCase "copy-then-finalize produces same result" $ do
+        ctx <- digestInit SHA256
+        digestUpdate ctx (BS8.pack "abc")
+        ctx2 <- digestCopy ctx
+        result1 <- digestFinalize ctx
+        result2 <- digestFinalize ctx2
+        result1 @?= result2
+    , testCase "copy-then-diverge produces different results" $ do
+        ctx <- digestInit SHA256
+        digestUpdate ctx (BS8.pack "abc")
+        ctx2 <- digestCopy ctx
+        digestUpdate ctx (BS8.pack "def")
+        digestUpdate ctx2 (BS8.pack "xyz")
+        result1 <- digestFinalize ctx
+        result2 <- digestFinalize ctx2
+        assertBool "diverged contexts should produce different hashes" (result1 /= result2)
+    , testCase "copy of fresh context works" $ do
+        ctx <- digestInit SHA256
+        ctx2 <- digestCopy ctx
+        digestUpdate ctx2 (BS8.pack "abc")
+        result <- digestFinalize ctx2
+        result @?= hash SHA256 (BS8.pack "abc")
+    ]
   , testGroup "large input"
     [ testCase "SHA-256 1MB input produces 32 bytes" $ do
         let big = BS.replicate (1024 * 1024) 0x42

@@ -25,6 +25,12 @@ module Crypto.BoringSSL.RSA
     -- * OAEP encryption
   , rsaEncrypt
   , rsaDecrypt
+    -- * PKCS#1 v1.5 encryption
+  , rsaEncryptPKCS1
+  , rsaDecryptPKCS1
+    -- * Public key properties
+  , rsaPublicBits
+  , rsaPublicSize
     -- * Error type
   , CryptoError(..)
   ) where
@@ -51,9 +57,13 @@ newtype RSAKeyPair = RSAKeyPair (ForeignPtr RSA_C)
 -- | An RSA public key only.
 newtype RSAPublicKey = RSAPublicKey (ForeignPtr RSA_C)
 
--- | RSA_PKCS1_AEP_PADDING = 4
+-- | RSA_PKCS1_OAEP_PADDING = 4
 rsaPKCS1OAEPPadding :: CInt
 rsaPKCS1OAEPPadding = 4
+
+-- | RSA_PKCS1_PADDING = 1
+rsaPKCS1Padding :: CInt
+rsaPKCS1Padding = 1
 
 -- | Generate a new RSA key pair. The key size must be at least 2048 bits.
 generateRSAKeyPair :: Int -> IO (Either CryptoError RSAKeyPair)
@@ -284,3 +294,57 @@ rsaDecrypt (RSAKeyPair fptr) ciphertext =
     case result of
       Left err  -> return (Left err)
       Right len -> return (Right (BSI.BS outFPtr len))
+
+-- | RSA PKCS#1 v1.5 encrypt plaintext with a public key.
+rsaEncryptPKCS1 :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
+rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext =
+  withForeignPtr fptr $ \rsa -> do
+    modSize <- fromIntegral <$> c_RSA_size rsa
+    outFPtr <- BSI.mallocByteString modSize
+    result <- withForeignPtr outFPtr $ \outPtr ->
+      withByteString plaintext $ \inPtr inLen ->
+        alloca $ \outLenPtr -> do
+          rc <- c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+                  inPtr inLen rsaPKCS1Padding
+          if rc /= 1
+            then do
+              merr <- getBoringSSLError
+              return (Left (maybe (OperationFailed "rsaEncryptPKCS1: failed") id merr))
+            else do
+              actualLen <- peek outLenPtr
+              return (Right (fromIntegral actualLen))
+    case result of
+      Left err  -> return (Left err)
+      Right len -> return (Right (BSI.BS outFPtr len))
+
+-- | RSA PKCS#1 v1.5 decrypt ciphertext with a private key.
+rsaDecryptPKCS1 :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
+rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext =
+  withForeignPtr fptr $ \rsa -> do
+    modSize <- fromIntegral <$> c_RSA_size rsa
+    outFPtr <- BSI.mallocByteString modSize
+    result <- withForeignPtr outFPtr $ \outPtr ->
+      withByteString ciphertext $ \inPtr inLen ->
+        alloca $ \outLenPtr -> do
+          rc <- c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+                  inPtr inLen rsaPKCS1Padding
+          if rc /= 1
+            then do
+              merr <- getBoringSSLError
+              return (Left (maybe (OperationFailed "rsaDecryptPKCS1: failed") id merr))
+            else do
+              actualLen <- peek outLenPtr
+              return (Right (fromIntegral actualLen))
+    case result of
+      Left err  -> return (Left err)
+      Right len -> return (Right (BSI.BS outFPtr len))
+
+-- | Get the RSA key size in bits from a public key.
+rsaPublicBits :: RSAPublicKey -> IO Int
+rsaPublicBits (RSAPublicKey fptr) = withForeignPtr fptr $ \rsa ->
+  fromIntegral <$> c_RSA_bits rsa
+
+-- | Get the RSA modulus size in bytes from a public key.
+rsaPublicSize :: RSAPublicKey -> IO Int
+rsaPublicSize (RSAPublicKey fptr) = withForeignPtr fptr $ \rsa ->
+  fromIntegral <$> c_RSA_size rsa

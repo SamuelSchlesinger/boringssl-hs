@@ -23,7 +23,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Control.Exception (mask_)
-import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
 import Foreign.Ptr
@@ -98,8 +97,7 @@ seal (AEADCtx algo fptr) nonce plaintext ad =
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString plaintext $ \inPtr inLen ->
   withByteString ad $ \adPtr adLen -> do
-    let overhead = maxOverhead algo
-        maxOutLen = fromIntegral (fromIntegral inLen + overhead :: Int) :: CSize
+    let maxOutLen = inLen + fromIntegral (maxOverhead algo)
     outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
     alloca $ \outLenPtr -> do
       poke outLenPtr 0

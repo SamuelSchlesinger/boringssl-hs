@@ -21,20 +21,20 @@ import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Base64
 
 -- | Base64-encode a ByteString (pure, deterministic).
-encode :: ByteString -> ByteString
+encode :: ByteString -> Either CryptoError ByteString
 encode bs = unsafePerformIO $
   withByteString bs $ \srcPtr srcLen -> do
     alloca $ \outLenPtr -> do
       rc <- c_EVP_EncodedLength outLenPtr srcLen
       if rc /= 1
-        then error "Base64.encode: EVP_EncodedLength failed (input too large)"
-        else return ()
-      maxLen <- peek outLenPtr
-      -- EVP_EncodeBlock returns the number of bytes written (not including NUL)
-      fptr <- BSI.mallocByteString (fromIntegral maxLen)
-      actualLen <- withForeignPtr fptr $ \dstPtr ->
-        c_EVP_EncodeBlock (castPtr dstPtr) srcPtr srcLen
-      return (BSI.BS fptr (fromIntegral actualLen))
+        then return (Left (OperationFailed "Base64.encode: EVP_EncodedLength failed (input too large)"))
+        else do
+          maxLen <- peek outLenPtr
+          -- EVP_EncodeBlock returns the number of bytes written (not including NUL)
+          fptr <- BSI.mallocByteString (fromIntegral maxLen)
+          actualLen <- withForeignPtr fptr $ \dstPtr ->
+            c_EVP_EncodeBlock (castPtr dstPtr) srcPtr srcLen
+          return (Right (BSI.BS fptr (fromIntegral actualLen)))
 {-# NOINLINE encode #-}
 
 -- | Base64-decode a ByteString (pure, deterministic).

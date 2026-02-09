@@ -125,15 +125,15 @@ main = do
       , bench "ChaCha20-Poly1305 open 1KB" $ nfIO $ unwrapRight "o" =<< AEAD.open chachaCtx chachaNonce chachaCt ""
       ]
     , bgroup "HMAC"
-      [ bench "HMAC-SHA-256 1KB" $ nf (HMAC.hmac SHA256 "key") input1KB
+      [ bench "HMAC-SHA-256 1KB" $ nf (unsafeUnwrap "hmac" . HMAC.hmac SHA256 "key") input1KB
       ]
     , bgroup "HKDF"
       [ bench "HKDF-SHA-256 32B output" $ nf (\s -> unsafeUnwrap "hkdf" $ HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
       ]
     , bgroup "Ed25519"
       [ bench "generateKeyPair" $ nfIO (Ed25519.generateKeyPair >>= \(p, _) -> return (Ed25519.publicKeyToBytes p))
-      , bench "sign 1KB" $ nf (Ed25519.signatureToBytes . Ed25519.sign ed25519Priv) input1KB
-      , bench "verify 1KB" $ nf (\sig -> Ed25519.verify ed25519Pub input1KB sig) (Ed25519.sign ed25519Priv input1KB)
+      , bench "sign 1KB" $ nf (\m -> case Ed25519.sign ed25519Priv m of Right s -> Ed25519.signatureToBytes s; Left _ -> error "sign") input1KB
+      , bench "verify 1KB" $ nf (\sig -> Ed25519.verify ed25519Pub input1KB sig) (unsafeUnwrap "sign" $ Ed25519.sign ed25519Priv input1KB)
       ]
     , bgroup "X25519"
       [ bench "generateKeyPair" $ nfIO (X25519.generateKeyPair >>= \(p, _) -> return (X25519.publicKeyToBytes p))

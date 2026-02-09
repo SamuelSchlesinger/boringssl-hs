@@ -1,4 +1,4 @@
-cabal-version:   3.14
+cabal-version:   3.0
 name:            boringssl
 version:         0.1.0.0
 license:         Apache-2.0
@@ -7,10 +7,36 @@ author:          Samuel Schlesinger
 maintainer:      sgschlesinger@gmail.com
 build-type:      Simple
 extra-doc-files: CHANGELOG.md
-synopsis:        Bindings to Google's BoringSSL library
-description:     Bindings to Google's BoringSSL library.
+category:        Cryptography
+synopsis:        Haskell bindings to Google's BoringSSL cryptography library
+description:
+    Idiomatic Haskell bindings to Google's BoringSSL cryptography library
+    via the FFI. Provides pure interfaces where possible and @ByteString@-based
+    data types throughout.
+    .
+    Supported primitives include:
+    .
+    * Hash functions (SHA-1, SHA-2, MD5, BLAKE2b-256)
+    * HMAC, HKDF, PBKDF2, Scrypt
+    * AEAD (AES-GCM, ChaCha20-Poly1305, AES-GCM-SIV, and more)
+    * Symmetric ciphers (AES in CBC\/CTR\/ECB\/OFB modes)
+    * Ed25519, X25519, ECDSA, ECDH, RSA
+    * Post-quantum: ML-KEM, ML-DSA, SLH-DSA, X-Wing
+    * HPKE (RFC 9180), SPAKE2, TrustToken
+    * Base64, PEM, X.509 parsing
+    .
+    BoringSSL is compiled from source (included as a Git submodule), so no
+    system-level installation is required. A C++17 compiler is needed.
+homepage:        https://github.com/SamuelSchlesinger/boringssl-hs
+bug-reports:     https://github.com/SamuelSchlesinger/boringssl-hs/issues
+
+source-repository head
+    type:     git
+    location: https://github.com/SamuelSchlesinger/boringssl-hs.git
 
 common warnings
+    -- TODO: Remove -Werror before publishing to Hackage. It causes downstream
+    -- build failures when new GHC versions introduce new warnings.
     ghc-options: -Wall -Werror
 
 library
@@ -42,6 +68,7 @@ library
         Crypto.BoringSSL.Scrypt
         Crypto.BoringSSL.SipHash
         Crypto.BoringSSL.TLSPRF
+        Crypto.BoringSSL.PrivateKey
     other-modules:
         Crypto.BoringSSL.Internal.FFI
         Crypto.BoringSSL.Internal.FFI.Digest
@@ -75,13 +102,15 @@ library
         Crypto.BoringSSL.Internal.ECKey
         Crypto.BoringSSL.Internal.Buffer
         Crypto.BoringSSL.Internal.Error
+        Crypto.BoringSSL.Internal.ExceptT
     build-depends:
-        base ^>=4.18.3.0,
+        base >=4.16 && <4.22,
         bytestring >=0.11 && <0.13
     hs-source-dirs:   src
     default-language: Haskell2010
     include-dirs:     third_party/boringssl/include
     c-sources:        cbits/trust_token_helpers.c
+                      cbits/x509_helpers.c
     cc-options:       -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION
     cxx-options:      -std=c++17 -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION -fno-exceptions -fno-rtti
     if os(darwin)
@@ -365,8 +394,9 @@ test-suite boringssl-test
         Test.Scrypt
         Test.SipHash
         Test.TLSPRF
+        Test.PrivateKey
     build-depends:
-        base ^>=4.18.3.0,
+        base >=4.16 && <4.22,
         bytestring >=0.11 && <0.13,
         boringssl,
         tasty >=1.4,
@@ -382,7 +412,7 @@ benchmark boringssl-bench
     main-is:          Main.hs
     hs-source-dirs:   bench
     build-depends:
-        base ^>=4.18.3.0,
+        base >=4.16 && <4.22,
         bytestring >=0.11 && <0.13,
         boringssl,
         criterion >=1.5

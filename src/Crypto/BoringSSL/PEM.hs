@@ -5,6 +5,7 @@
 module Crypto.BoringSSL.PEM
   ( pemEncode
   , pemDecode
+  , pemDecodeMany
   , CryptoError(..)
   ) where
 
@@ -22,14 +23,16 @@ import qualified Crypto.BoringSSL.Base64 as Base64
 -- > -----BEGIN CERTIFICATE-----
 -- > <base64 data with line breaks every 64 characters>
 -- > -----END CERTIFICATE-----
-pemEncode :: String -> ByteString -> ByteString
+pemEncode :: String -> ByteString -> Either CryptoError ByteString
 pemEncode label derBytes =
-  let b64 = Base64.encode derBytes
-      header = BS8.pack ("-----BEGIN " ++ label ++ "-----\n")
-      footer = BS8.pack ("\n-----END " ++ label ++ "-----\n")
-      -- Insert line breaks every 64 characters
-      wrapped = wrapLines 64 b64
-  in BS.concat [header, wrapped, footer]
+  case Base64.encode derBytes of
+    Left err -> Left err
+    Right b64 ->
+      let header = BS8.pack ("-----BEGIN " ++ label ++ "-----\n")
+          footer = BS8.pack ("\n-----END " ++ label ++ "-----\n")
+          -- Insert line breaks every 64 characters
+          wrapped = wrapLines 64 b64
+      in Right (BS.concat [header, wrapped, footer])
 
 -- | Decode a PEM-encoded ByteString.
 -- Returns @Right (label, derBytes)@ on success, or @Left err@ if the
@@ -82,6 +85,36 @@ wrapLines n bs
       in if BS.null rest
          then chunk
          else BS.concat [chunk, BS8.pack "\n", wrapLines n rest]
+
+-- | Decode all PEM blocks from a ByteString.
+-- Returns @Right [(label, derBytes)]@ on success.
+-- Returns @Left@ if no blocks are found or if any block has
+-- invalid base64 or a missing footer. Junk between blocks is skipped.
+pemDecodeMany :: ByteString -> Either CryptoError [(String, ByteString)]
+pemDecodeMany pem =
+  let ls = BS8.lines (stripCR pem)
+      blocks = decodeBlocks ls
+  in case blocks of
+    Left err -> Left err
+    Right [] -> Left (DecodeError "pemDecodeMany: no PEM blocks found")
+    Right xs -> Right xs
+  where
+    decodeBlocks :: [ByteString] -> Either CryptoError [(String, ByteString)]
+    decodeBlocks [] = Right []
+    decodeBlocks (l:rest) =
+      case parseHeader l of
+        Nothing -> decodeBlocks rest  -- skip junk lines
+        Just label ->
+          let (bodyLines, trailerAndRest) = break (isFooter label) rest
+              body = BS.concat bodyLines
+          in case trailerAndRest of
+            [] -> Left (DecodeError ("pemDecodeMany: missing footer for " ++ label))
+            (_:remaining) ->
+              case Base64.decode body of
+                Left err -> Left err
+                Right decoded -> do
+                  moreBlocks <- decodeBlocks remaining
+                  Right ((label, decoded) : moreBlocks)
 
 -- | Strip carriage return characters for cross-platform compatibility.
 stripCR :: ByteString -> ByteString

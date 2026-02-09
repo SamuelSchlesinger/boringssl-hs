@@ -31,7 +31,7 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)
 
-import Crypto.BoringSSL.Internal.Buffer (withByteString, createByteString, constTimeEq)
+import Crypto.BoringSSL.Internal.Buffer (withByteString, constTimeEq)
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Ed25519
 
@@ -107,16 +107,16 @@ keyPairFromSeed seed
 {-# NOINLINE keyPairFromSeed #-}
 
 -- | Sign a message with an Ed25519 private key (pure, RFC 8032 deterministic).
-sign :: PrivateKey -> ByteString -> Signature
-sign (PrivateKey privKey) msg = unsafePerformIO $ do
-  sig <- createByteString 64 $ \sigPtr ->
-    withByteString msg $ \msgPtr msgLen ->
-      withByteString privKey $ \privPtr _ -> do
-        rc <- c_ED25519_sign sigPtr msgPtr msgLen privPtr
-        if rc /= 1
-          then error "Ed25519.sign: ED25519_sign failed (should never happen with valid key)"
-          else return ()
-  return (Signature sig)
+sign :: PrivateKey -> ByteString -> Either CryptoError Signature
+sign (PrivateKey privKey) msg = unsafePerformIO $
+  withByteString msg $ \msgPtr msgLen ->
+    withByteString privKey $ \privPtr _ -> do
+      sigFPtr <- BSI.mallocByteString 64
+      rc <- withForeignPtr sigFPtr $ \sigPtr ->
+        c_ED25519_sign (castPtr sigPtr) msgPtr msgLen privPtr
+      if rc /= 1
+        then return (Left (OperationFailed "Ed25519.sign: ED25519_sign failed"))
+        else return (Right (Signature (BSI.BS sigFPtr 64)))
 {-# NOINLINE sign #-}
 
 -- | Verify an Ed25519 signature (pure).

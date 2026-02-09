@@ -28,6 +28,7 @@ module Crypto.BoringSSL.Internal.FFI.Digest
   , c_EVP_DigestInit_ex
   , c_EVP_DigestUpdate
   , c_EVP_DigestFinal_ex
+  , c_EVP_MD_CTX_copy_ex
   ) where
 
 import Foreign.C.Types
@@ -132,3 +133,7 @@ foreign import ccall unsafe "EVP_DigestUpdate"
 -- | int EVP_DigestFinal_ex(EVP_MD_CTX *ctx, uint8_t *md_out, unsigned int *out_size)
 foreign import ccall unsafe "EVP_DigestFinal_ex"
   c_EVP_DigestFinal_ex :: Ptr EVP_MD_CTX -> Ptr CUChar -> Ptr CUInt -> IO CInt
+
+-- | int EVP_MD_CTX_copy_ex(EVP_MD_CTX *out, const EVP_MD_CTX *in)
+foreign import ccall unsafe "EVP_MD_CTX_copy_ex"
+  c_EVP_MD_CTX_copy_ex :: Ptr EVP_MD_CTX -> Ptr EVP_MD_CTX -> IO CInt
