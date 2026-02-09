@@ -66,7 +66,6 @@ tests = testGroup "PEM"
 
   , testCase "encode produces correct header/footer" $ do
       let pem = pemEncode "MY TYPE" "data"
-          pemStr = BS8.unpack pem
       assertBool "should start with BEGIN header"
         (BS8.isPrefixOf "-----BEGIN MY TYPE-----" pem)
       assertBool "should contain END footer"

@@ -53,7 +53,9 @@ testCertHex = BS.concat
   ]
 
 testCertDER :: BS.ByteString
-testCertDER = let Right bs = Base16.decode testCertHex in bs
+testCertDER = case Base16.decode testCertHex of
+  Right bs -> bs
+  Left err -> error ("bad hex literal: " ++ err)
 
 tests :: TestTree
 tests = testGroup "X509"
