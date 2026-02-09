@@ -5,7 +5,6 @@ module Crypto.BoringSSL.Base64
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
-import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr

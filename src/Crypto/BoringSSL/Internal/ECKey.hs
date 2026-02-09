@@ -23,7 +23,7 @@ import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.FFI.ECKey
 
 -- | Supported elliptic curves.
-data ECCurve = P256 | P384
+data ECCurve = P256 | P384 | P521
   deriving (Eq, Show)
 
 -- | An EC key pair (private + public).
@@ -36,6 +36,7 @@ newtype ECPublicKey = ECPublicKey (ForeignPtr EC_KEY)
 curveNID :: ECCurve -> CInt
 curveNID P256 = 415   -- NID_X9_62_prime256v1
 curveNID P384 = 715   -- NID_secp384r1
+curveNID P521 = 716   -- NID_secp521r1
 
 -- | Use an ECKeyPair's raw pointer.
 withECKeyPair :: ECKeyPair -> (Ptr EC_KEY -> IO a) -> IO a
@@ -156,9 +157,10 @@ ecPublicKeyFromBytes curve pubBytes = do
 ecPublicKeyOfPair :: ECKeyPair -> IO ECPublicKey
 ecPublicKeyOfPair kp = do
   pubBytes <- ecPublicKeyBytes kp
-  -- Determine curve from point size
+  -- Determine curve from uncompressed point size
   let curve = case BS.length pubBytes of
-        65 -> P256
-        97 -> P384
-        _  -> P256
+        65  -> P256   -- 1 + 2*32
+        97  -> P384   -- 1 + 2*48
+        133 -> P521   -- 1 + 2*66
+        _   -> error $ "ecPublicKeyOfPair: unexpected public key size " ++ show (BS.length pubBytes)
   ecPublicKeyFromBytes curve pubBytes

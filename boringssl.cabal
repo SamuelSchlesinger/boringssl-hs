@@ -1,7 +1,8 @@
 cabal-version:   3.14
 name:            boringssl
 version:         0.1.0.0
-license:         NONE
+license:         Apache-2.0
+license-file:    LICENSE
 author:          Samuel Schlesinger
 maintainer:      sgschlesinger@gmail.com
 build-type:      Simple
@@ -30,6 +31,11 @@ library
         Crypto.BoringSSL.ECDH
         Crypto.BoringSSL.RSA
         Crypto.BoringSSL.Base64
+        Crypto.BoringSSL.PBKDF2
+        Crypto.BoringSSL.MLKEM
+        Crypto.BoringSSL.MLDSA
+        Crypto.BoringSSL.X509
+        Crypto.BoringSSL.PEM
     other-modules:
         Crypto.BoringSSL.Internal.FFI
         Crypto.BoringSSL.Internal.FFI.Digest
@@ -46,6 +52,10 @@ library
         Crypto.BoringSSL.Internal.FFI.RSA
         Crypto.BoringSSL.Internal.FFI.Base64
         Crypto.BoringSSL.Internal.FFI.Memory
+        Crypto.BoringSSL.Internal.FFI.PBKDF2
+        Crypto.BoringSSL.Internal.FFI.MLKEM
+        Crypto.BoringSSL.Internal.FFI.MLDSA
+        Crypto.BoringSSL.Internal.FFI.X509
         Crypto.BoringSSL.Internal.Digest
         Crypto.BoringSSL.Internal.ECKey
         Crypto.BoringSSL.Internal.Buffer
@@ -323,12 +333,19 @@ test-suite boringssl-test
         Test.ECDH
         Test.RSA
         Test.Base64
+        Test.PBKDF2
+        Test.MLKEM
+        Test.MLDSA
+        Test.X509
+        Test.PEM
+        Test.Properties
     build-depends:
         base ^>=4.18.3.0,
         bytestring >=0.11 && <0.13,
         boringssl,
         tasty >=1.4,
         tasty-hunit >=0.10,
+        tasty-quickcheck >=0.10,
         base16-bytestring >=1.0
     hs-source-dirs:   test
     default-language: Haskell2010

@@ -5,13 +5,18 @@ module Crypto.BoringSSL.ECDH
   , ecPublicKeyOfPair
   , generateECKeyPair
   , ecdhComputeSecret
+    -- * Key serialization
+  , ecPublicKeyBytes
+  , ecPrivateKeyBytes
+  , ecKeyPairFromPrivateBytes
+  , ecPublicKeyFromBytes
   ) where
 
 import Data.ByteString (ByteString)
-import Foreign.C.Types
+import qualified Data.ByteString.Internal as BSI
+import Foreign.ForeignPtr
 import Foreign.Ptr
 
-import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECKey (c_EC_KEY_get0_public_key)
@@ -26,9 +31,12 @@ ecdhComputeSecret myKey peerPub outLen =
   withECKeyPair myKey $ \myKeyPtr ->
     withECPublicKey peerPub $ \peerKeyPtr -> do
       peerPoint <- c_EC_KEY_get0_public_key peerKeyPtr
-      bs <- createByteString outLen $ \outPtr -> do
-        rc <- c_ECDH_compute_key_fips outPtr (fromIntegral outLen) peerPoint myKeyPtr
-        if rc /= 1
-          then fail "ecdhComputeSecret: ECDH_compute_key_fips failed"
-          else return ()
-      return (Right bs)
+      fptr <- BSI.mallocByteString outLen
+      rc <- withForeignPtr fptr $ \ptr ->
+        c_ECDH_compute_key_fips (castPtr ptr) (fromIntegral outLen) peerPoint myKeyPtr
+      if rc /= 1
+        then do
+          merr <- getBoringSSLError
+          return (Left (maybe (BoringSSLError 0 "ecdhComputeSecret: ECDH_compute_key_fips failed") id merr))
+        else
+          return (Right (BSI.BS fptr outLen))

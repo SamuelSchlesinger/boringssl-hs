@@ -11,6 +11,7 @@ module Crypto.BoringSSL.Internal.FFI.Digest
   , c_SHA512
   , c_SHA512_256
   , c_MD5
+  , c_BLAKE2B256
     -- * EVP_MD selectors
   , c_EVP_sha1
   , c_EVP_sha224
@@ -19,6 +20,7 @@ module Crypto.BoringSSL.Internal.FFI.Digest
   , c_EVP_sha512
   , c_EVP_sha512_256
   , c_EVP_md5
+  , c_EVP_blake2b256
     -- * Streaming digest
   , c_EVP_MD_CTX_new
   , c_EVP_MD_CTX_free
@@ -67,6 +69,10 @@ foreign import ccall unsafe "SHA512_256"
 foreign import ccall unsafe "MD5"
   c_MD5 :: Ptr CUChar -> CSize -> Ptr CUChar -> IO (Ptr CUChar)
 
+-- | void BLAKE2B256(const uint8_t *data, size_t len, uint8_t out[32])
+foreign import ccall unsafe "BLAKE2B256"
+  c_BLAKE2B256 :: Ptr CUChar -> CSize -> Ptr CUChar -> IO ()
+
 -- EVP_MD selectors (pure, return const pointer)
 
 -- | const EVP_MD *EVP_sha1(void)
@@ -96,6 +102,10 @@ foreign import ccall unsafe "EVP_sha512_256"
 -- | const EVP_MD *EVP_md5(void)
 foreign import ccall unsafe "EVP_md5"
   c_EVP_md5 :: Ptr EVP_MD
+
+-- | const EVP_MD *EVP_blake2b256(void)
+foreign import ccall unsafe "EVP_blake2b256"
+  c_EVP_blake2b256 :: Ptr EVP_MD
 
 -- Streaming digest context
 

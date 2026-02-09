@@ -13,6 +13,12 @@ import qualified Test.ECDSA
 import qualified Test.ECDH
 import qualified Test.RSA
 import qualified Test.Base64
+import qualified Test.PBKDF2
+import qualified Test.MLKEM
+import qualified Test.MLDSA
+import qualified Test.X509
+import qualified Test.PEM
+import qualified Test.Properties
 
 main :: IO ()
 main = defaultMain $ testGroup "BoringSSL"
@@ -28,4 +34,10 @@ main = defaultMain $ testGroup "BoringSSL"
   , Test.ECDH.tests
   , Test.RSA.tests
   , Test.Base64.tests
+  , Test.PBKDF2.tests
+  , Test.MLKEM.tests
+  , Test.MLDSA.tests
+  , Test.X509.tests
+  , Test.PEM.tests
+  , Test.Properties.tests
   ]

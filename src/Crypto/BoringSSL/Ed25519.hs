@@ -11,7 +11,6 @@ module Crypto.BoringSSL.Ed25519
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)

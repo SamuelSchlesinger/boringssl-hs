@@ -13,6 +13,8 @@ module Crypto.BoringSSL.Internal.FFI
   , c_EVP_aead_aes_128_gcm
   , c_EVP_aead_aes_256_gcm
   , c_EVP_aead_chacha20_poly1305
+  , c_EVP_aead_aes_128_gcm_siv
+  , c_EVP_aead_aes_256_gcm_siv
     -- * AEAD context lifecycle
   , c_EVP_AEAD_CTX_new
   , c_EVP_AEAD_CTX_free

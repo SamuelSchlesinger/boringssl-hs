@@ -52,7 +52,9 @@ foreign import ccall unsafe "&RSA_free"
 -- Key generation
 
 -- | int RSA_generate_key_ex(RSA *rsa, int bits, const BIGNUM *e, BN_GENCB *cb)
-foreign import ccall unsafe "RSA_generate_key_ex"
+-- This is imported as 'safe' (not 'unsafe') because RSA key generation
+-- can take a significant amount of time and should not block the Haskell RTS.
+foreign import ccall safe "RSA_generate_key_ex"
   c_RSA_generate_key_ex :: Ptr RSA_C -> CInt -> Ptr BIGNUM -> Ptr () -> IO CInt
 
 -- Properties

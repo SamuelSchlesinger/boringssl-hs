@@ -35,7 +35,7 @@ import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.Digest (Algorithm(..))
 import qualified Crypto.BoringSSL.Internal.Digest as ID
 import Crypto.BoringSSL.Internal.FFI.RSA
-import Crypto.BoringSSL.Internal.FFI.ECKey (BIGNUM, c_BN_new, c_BN_free, c_BN_set_word)
+import Crypto.BoringSSL.Internal.FFI.ECKey (c_BN_new, c_BN_free, c_BN_set_word)
 
 -- | An RSA key pair (private + public).
 newtype RSAKeyPair = RSAKeyPair (ForeignPtr RSA_C)

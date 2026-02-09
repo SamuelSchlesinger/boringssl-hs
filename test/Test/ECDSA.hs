@@ -5,7 +5,7 @@ import qualified Data.ByteString as BS
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.Digest (hashSHA256, hashSHA384)
+import Crypto.BoringSSL.Digest (hashSHA256, hashSHA384, hashSHA512)
 import Crypto.BoringSSL.ECDSA
 
 tests :: TestTree
@@ -34,6 +34,20 @@ tests = testGroup "ECDSA"
         Right sig <- ecdsaSign kp digest1
         valid <- ecdsaVerify pub digest2 sig
         assertBool "wrong digest should not verify" (not valid)
+    , testCase "key serialization round-trip" $ do
+        kp <- generateKeyPair P256
+        pubBytes <- ecPublicKeyBytes kp
+        privBytes <- ecPrivateKeyBytes kp
+        -- Round-trip private key
+        kp2 <- ecKeyPairFromPrivateBytes P256 privBytes
+        privBytes2 <- ecPrivateKeyBytes kp2
+        privBytes2 @?= privBytes
+        -- Round-trip public key
+        pub <- ecPublicKeyFromBytes P256 pubBytes
+        let digest = hashSHA256 "round-trip test"
+        Right sig <- ecdsaSign kp digest
+        valid <- ecdsaVerify pub digest sig
+        assertBool "signature from original key should verify with deserialized public key" valid
     ]
   , testGroup "P-384"
     [ testCase "sign/verify round-trip" $ do
@@ -43,5 +57,38 @@ tests = testGroup "ECDSA"
         Right sig <- ecdsaSign kp digest
         valid <- ecdsaVerify pub digest sig
         assertBool "signature should verify" valid
+    , testCase "key serialization round-trip" $ do
+        kp <- generateKeyPair P384
+        pubBytes <- ecPublicKeyBytes kp
+        privBytes <- ecPrivateKeyBytes kp
+        kp2 <- ecKeyPairFromPrivateBytes P384 privBytes
+        privBytes2 <- ecPrivateKeyBytes kp2
+        privBytes2 @?= privBytes
+        pub <- ecPublicKeyFromBytes P384 pubBytes
+        let digest = hashSHA384 "round-trip test"
+        Right sig <- ecdsaSign kp digest
+        valid <- ecdsaVerify pub digest sig
+        assertBool "signature should verify with deserialized public key" valid
+    ]
+  , testGroup "P-521"
+    [ testCase "sign/verify round-trip" $ do
+        kp <- generateKeyPair P521
+        pub <- ecPublicKeyOfPair kp
+        let digest = hashSHA512 "Hello, ECDSA P-521!"
+        Right sig <- ecdsaSign kp digest
+        valid <- ecdsaVerify pub digest sig
+        assertBool "signature should verify" valid
+    , testCase "key serialization round-trip" $ do
+        kp <- generateKeyPair P521
+        pubBytes <- ecPublicKeyBytes kp
+        privBytes <- ecPrivateKeyBytes kp
+        kp2 <- ecKeyPairFromPrivateBytes P521 privBytes
+        privBytes2 <- ecPrivateKeyBytes kp2
+        privBytes2 @?= privBytes
+        pub <- ecPublicKeyFromBytes P521 pubBytes
+        let digest = hashSHA512 "round-trip test"
+        Right sig <- ecdsaSign kp digest
+        valid <- ecdsaVerify pub digest sig
+        assertBool "signature should verify with deserialized public key" valid
     ]
   ]

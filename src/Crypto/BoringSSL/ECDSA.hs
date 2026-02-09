@@ -6,6 +6,11 @@ module Crypto.BoringSSL.ECDSA
   , ecPublicKeyOfPair
   , ecdsaSign
   , ecdsaVerify
+    -- * Key serialization
+  , ecPublicKeyBytes
+  , ecPrivateKeyBytes
+  , ecKeyPairFromPrivateBytes
+  , ecPublicKeyFromBytes
   ) where
 
 import Data.ByteString (ByteString)

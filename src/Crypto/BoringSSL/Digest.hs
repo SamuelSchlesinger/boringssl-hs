@@ -8,6 +8,7 @@ module Crypto.BoringSSL.Digest
   , hashSHA384
   , hashSHA512_256
   , hashMD5
+  , hashBLAKE2b256
     -- * Streaming
   , DigestCtx
   , digestInit
@@ -17,11 +18,9 @@ module Crypto.BoringSSL.Digest
   ) where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import Foreign.C.Types
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca, allocaBytes)
+import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
@@ -40,6 +39,7 @@ hash SHA224     = hashSHA224
 hash SHA384     = hashSHA384
 hash SHA512_256 = hashSHA512_256
 hash MD5        = hashMD5
+hash BLAKE2b256 = hashBLAKE2b256
 
 -- | Compute the SHA-256 hash of a ByteString (32 bytes).
 hashSHA256 :: ByteString -> ByteString
@@ -96,6 +96,14 @@ hashMD5 bs = unsafePerformIO $
     createByteString 16 $ \outPtr ->
       c_MD5 dataPtr dataLen outPtr >> return ()
 {-# NOINLINE hashMD5 #-}
+
+-- | Compute the BLAKE2b-256 hash of a ByteString (32 bytes).
+hashBLAKE2b256 :: ByteString -> ByteString
+hashBLAKE2b256 bs = unsafePerformIO $
+  withByteString bs $ \dataPtr dataLen ->
+    createByteString 32 $ \outPtr ->
+      c_BLAKE2B256 dataPtr dataLen outPtr
+{-# NOINLINE hashBLAKE2b256 #-}
 
 -- | Output size in bytes for each algorithm.
 digestSize :: Algorithm -> Int

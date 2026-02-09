@@ -11,7 +11,7 @@ import Foreign.Ptr (Ptr)
 import Crypto.BoringSSL.Internal.FFI.Digest
 
 -- | Supported hash algorithms.
-data Algorithm = SHA1 | SHA224 | SHA256 | SHA384 | SHA512 | SHA512_256 | MD5
+data Algorithm = SHA1 | SHA224 | SHA256 | SHA384 | SHA512 | SHA512_256 | MD5 | BLAKE2b256
   deriving (Eq, Show)
 
 -- | Map a hash algorithm to its EVP_MD pointer.
@@ -23,6 +23,7 @@ evpMD SHA384     = c_EVP_sha384
 evpMD SHA512     = c_EVP_sha512
 evpMD SHA512_256 = c_EVP_sha512_256
 evpMD MD5        = c_EVP_md5
+evpMD BLAKE2b256 = c_EVP_blake2b256
 
 -- | Output size in bytes for each algorithm.
 digestSize :: Algorithm -> Int
@@ -33,6 +34,7 @@ digestSize SHA384     = 48
 digestSize SHA512     = 64
 digestSize SHA512_256 = 32
 digestSize MD5        = 16
+digestSize BLAKE2b256 = 32
 
 -- | NID value for each algorithm (used by RSA_sign etc.).
 algorithmNID :: Algorithm -> CInt
@@ -43,3 +45,4 @@ algorithmNID SHA384     = 673
 algorithmNID SHA512     = 674
 algorithmNID SHA512_256 = 962
 algorithmNID MD5        = 4
+algorithmNID BLAKE2b256 = 0  -- BLAKE2b256 has no NID in BoringSSL

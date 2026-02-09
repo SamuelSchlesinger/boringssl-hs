@@ -65,6 +65,14 @@ tests = testGroup "Digest"
         hexHash MD5 (BS8.pack "abc") @?=
           "900150983cd24fb0d6963f7d28e17f72"
     ]
+  , testGroup "BLAKE2b-256"
+    [ testCase "empty string" $
+        hexHash BLAKE2b256 BS.empty @?=
+          "0e5751c026e543b2e8ab2eb06099daa1d1e5df47778f7787faab45cdf12fe3a8"
+    , testCase "abc" $
+        hexHash BLAKE2b256 (BS8.pack "abc") @?=
+          "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319"
+    ]
   , testGroup "hash function"
     [ testCase "hash SHA256 matches hashSHA256" $
         hash SHA256 (BS8.pack "test") @?= hashSHA256 (BS8.pack "test")
@@ -74,6 +82,8 @@ tests = testGroup "Digest"
         hash SHA1 (BS8.pack "test") @?= hashSHA1 (BS8.pack "test")
     , testCase "hash MD5 matches hashMD5" $
         hash MD5 (BS8.pack "test") @?= hashMD5 (BS8.pack "test")
+    , testCase "hash BLAKE2b256 matches hashBLAKE2b256" $
+        hash BLAKE2b256 (BS8.pack "test") @?= hashBLAKE2b256 (BS8.pack "test")
     ]
   , testGroup "Streaming"
     [ testCase "SHA-256 streaming matches one-shot" $ do
@@ -106,6 +116,7 @@ tests = testGroup "Digest"
     , testCase "SHA-512 = 64" $ digestSize SHA512 @?= 64
     , testCase "SHA-512/256 = 32" $ digestSize SHA512_256 @?= 32
     , testCase "MD5 = 16" $ digestSize MD5 @?= 16
+    , testCase "BLAKE2b-256 = 32" $ digestSize BLAKE2b256 @?= 32
     ]
   ]
 

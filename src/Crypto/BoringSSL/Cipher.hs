@@ -9,7 +9,6 @@ module Crypto.BoringSSL.Cipher
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
-import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
@@ -60,8 +59,8 @@ encrypt algo key iv plaintext =
           then return (Left (BoringSSLError 0 "encrypt: EVP_CIPHER_CTX_new failed"))
           else do
             -- Max output: input + one block of padding
-            let maxOutLen = fromIntegral inLen + 16
-            fptr <- BSI.mallocByteString (fromIntegral maxOutLen)
+            let maxOutLen = fromIntegral inLen + (16 :: Int)
+            fptr <- BSI.mallocByteString maxOutLen
             result <- withForeignPtr fptr $ \outPtr -> do
               rc1 <- c_EVP_EncryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
               if rc1 /= 1
@@ -110,8 +109,8 @@ decrypt algo key iv ciphertext =
           then return (Left (BoringSSLError 0 "decrypt: EVP_CIPHER_CTX_new failed"))
           else do
             -- Max output: same as input (padding is removed)
-            let maxOutLen = fromIntegral inLen + 16
-            fptr <- BSI.mallocByteString (fromIntegral maxOutLen)
+            let maxOutLen = fromIntegral inLen + (16 :: Int)
+            fptr <- BSI.mallocByteString maxOutLen
             result <- withForeignPtr fptr $ \outPtr -> do
               rc1 <- c_EVP_DecryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
               if rc1 /= 1

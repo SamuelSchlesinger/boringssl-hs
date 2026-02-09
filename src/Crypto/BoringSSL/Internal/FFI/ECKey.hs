@@ -19,6 +19,7 @@ module Crypto.BoringSSL.Internal.FFI.ECKey
     -- * EC_GROUP
   , c_EC_group_p256
   , c_EC_group_p384
+  , c_EC_group_p521
     -- * EC_POINT
   , c_EC_POINT_new
   , c_EC_POINT_free
@@ -93,6 +94,10 @@ foreign import ccall unsafe "EC_group_p256"
 -- | const EC_GROUP *EC_group_p384(void)
 foreign import ccall unsafe "EC_group_p384"
   c_EC_group_p384 :: IO (Ptr EC_GROUP)
+
+-- | const EC_GROUP *EC_group_p521(void)
+foreign import ccall unsafe "EC_group_p521"
+  c_EC_group_p521 :: IO (Ptr EC_GROUP)
 
 -- EC_POINT
 

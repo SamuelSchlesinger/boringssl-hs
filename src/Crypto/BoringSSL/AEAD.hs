@@ -24,7 +24,7 @@ import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI
 
 -- | Supported AEAD algorithms.
-data AEADAlgorithm = AES128GCM | AES256GCM | ChaCha20Poly1305
+data AEADAlgorithm = AES128GCM | AES256GCM | ChaCha20Poly1305 | AES128GCMSIV | AES256GCMSIV
   deriving (Eq, Show)
 
 -- | An AEAD context wrapping a BoringSSL EVP_AEAD_CTX.
@@ -36,6 +36,8 @@ aeadPtr :: AEADAlgorithm -> Ptr EVP_AEAD
 aeadPtr AES128GCM        = c_EVP_aead_aes_128_gcm
 aeadPtr AES256GCM        = c_EVP_aead_aes_256_gcm
 aeadPtr ChaCha20Poly1305 = c_EVP_aead_chacha20_poly1305
+aeadPtr AES128GCMSIV     = c_EVP_aead_aes_128_gcm_siv
+aeadPtr AES256GCMSIV     = c_EVP_aead_aes_256_gcm_siv
 
 -- | Create a new AEAD context for the given algorithm and key.
 -- The key length must match the algorithm's expected key length.

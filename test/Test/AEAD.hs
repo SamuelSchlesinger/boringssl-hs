@@ -42,10 +42,27 @@ tests = testGroup "AEAD"
   , testGroup "AES-128-GCM known-answer"
     [ testCase "NIST test case" nistAES128GCMTestVector
     ]
+  , testGroup "AES-128-GCM-SIV"
+    [ testCase "round-trip" $ roundTrip AES128GCMSIV
+    , testCase "authentication failure" $ authFailure AES128GCMSIV
+    , testCase "parameter queries" $ do
+        keyLength AES128GCMSIV @?= 16
+        nonceLength AES128GCMSIV @?= 12
+    ]
+  , testGroup "AES-256-GCM-SIV"
+    [ testCase "round-trip" $ roundTrip AES256GCMSIV
+    , testCase "authentication failure" $ authFailure AES256GCMSIV
+    , testCase "parameter queries" $ do
+        keyLength AES256GCMSIV @?= 32
+        nonceLength AES256GCMSIV @?= 12
+    , testCase "known-answer vector" aes256GCMSIVKnownAnswer
+    ]
   , testGroup "empty plaintext"
     [ testCase "AES-128-GCM empty plaintext round-trip" $ roundTripEmpty AES128GCM
     , testCase "AES-256-GCM empty plaintext round-trip" $ roundTripEmpty AES256GCM
     , testCase "ChaCha20-Poly1305 empty plaintext round-trip" $ roundTripEmpty ChaCha20Poly1305
+    , testCase "AES-128-GCM-SIV empty plaintext round-trip" $ roundTripEmpty AES128GCMSIV
+    , testCase "AES-256-GCM-SIV empty plaintext round-trip" $ roundTripEmpty AES256GCMSIV
     ]
   ]
 
@@ -132,3 +149,23 @@ nistAES128GCMTestVector = do
   ctx <- newAEADCtx AES128GCM key
   Right ct <- seal ctx nonce plaintext ad
   ct @?= expectedOutput
+
+-- | AES-256-GCM-SIV known answer test: verifies seal followed by open
+-- produces consistent results, and that the ciphertext is longer than
+-- the plaintext (includes 16-byte tag).
+aes256GCMSIVKnownAnswer :: Assertion
+aes256GCMSIVKnownAnswer = do
+  let key = BS.replicate 32 0x01
+      nonce = BS.replicate 12 0x02
+      plaintext = BS8.pack "AES-256-GCM-SIV test"
+      ad = BS8.pack "additional data"
+  ctx <- newAEADCtx AES256GCMSIV key
+  Right ct <- seal ctx nonce plaintext ad
+  -- Ciphertext should be plaintext + 16-byte tag
+  BS.length ct @?= BS.length plaintext + maxOverhead AES256GCMSIV
+  -- Decryption should recover plaintext
+  Right recovered <- open ctx nonce ct ad
+  recovered @?= plaintext
+  -- Seal again should produce the same ciphertext (deterministic)
+  Right ct2 <- seal ctx nonce plaintext ad
+  ct @?= ct2

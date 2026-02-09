@@ -7,6 +7,8 @@ module Crypto.BoringSSL.Internal.FFI.AEAD
   , c_EVP_aead_aes_128_gcm
   , c_EVP_aead_aes_256_gcm
   , c_EVP_aead_chacha20_poly1305
+  , c_EVP_aead_aes_128_gcm_siv
+  , c_EVP_aead_aes_256_gcm_siv
     -- * AEAD context lifecycle
   , c_EVP_AEAD_CTX_new
   , c_EVP_AEAD_CTX_free
@@ -38,6 +40,14 @@ foreign import ccall unsafe "EVP_aead_aes_256_gcm"
 -- | const EVP_AEAD *EVP_aead_chacha20_poly1305(void)
 foreign import ccall unsafe "EVP_aead_chacha20_poly1305"
   c_EVP_aead_chacha20_poly1305 :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_128_gcm_siv(void)
+foreign import ccall unsafe "EVP_aead_aes_128_gcm_siv"
+  c_EVP_aead_aes_128_gcm_siv :: Ptr EVP_AEAD
+
+-- | const EVP_AEAD *EVP_aead_aes_256_gcm_siv(void)
+foreign import ccall unsafe "EVP_aead_aes_256_gcm_siv"
+  c_EVP_aead_aes_256_gcm_siv :: Ptr EVP_AEAD
 
 -- | EVP_AEAD_CTX *EVP_AEAD_CTX_new(const EVP_AEAD *aead, const uint8_t *key, size_t key_len, size_t tag_len)
 foreign import ccall unsafe "EVP_AEAD_CTX_new"
