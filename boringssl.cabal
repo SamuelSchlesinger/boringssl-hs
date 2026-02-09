@@ -108,7 +108,7 @@ library
         bytestring >=0.11 && <0.13
     hs-source-dirs:   src
     default-language: Haskell2010
-    include-dirs:     third_party/boringssl/include
+    include-dirs:     third_party/boringssl/include cbits
     c-sources:        cbits/trust_token_helpers.c
                       cbits/x509_helpers.c
     cc-options:       -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION

@@ -1,5 +1,4 @@
-#include <openssl/x509.h>
-#include <openssl/x509v3.h>
+#include "x509_helpers.h"
 #include <openssl/evp.h>
 #include <openssl/bio.h>
 #include <openssl/pem.h>

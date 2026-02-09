@@ -1,6 +1,4 @@
-#include <openssl/trust_token.h>
-#include <openssl/stack.h>
-#include <stddef.h>
+#include "trust_token_helpers.h"
 
 size_t boringssl_sk_TRUST_TOKEN_num(const STACK_OF(TRUST_TOKEN) *sk) {
     return sk_TRUST_TOKEN_num(sk);

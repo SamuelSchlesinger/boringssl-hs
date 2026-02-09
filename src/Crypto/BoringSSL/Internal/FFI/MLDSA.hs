@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CApiFFI #-}
 module Crypto.BoringSSL.Internal.FFI.MLDSA
   ( -- * Opaque struct types
     MLDSA44_private_key
@@ -126,7 +126,7 @@ mldsa87PublicKeySize = 8288
 --     uint8_t out_encoded_public_key[1312],
 --     uint8_t out_seed[32],
 --     struct MLDSA44_private_key *out_private_key)
-foreign import ccall safe "MLDSA44_generate_key"
+foreign import capi safe "openssl/mldsa.h MLDSA44_generate_key"
   c_MLDSA44_generate_key
     :: Ptr CUChar                    -- out_encoded_public_key
     -> Ptr CUChar                    -- out_seed
@@ -136,7 +136,7 @@ foreign import ccall safe "MLDSA44_generate_key"
 -- | int MLDSA44_private_key_from_seed(
 --     struct MLDSA44_private_key *out_private_key,
 --     const uint8_t *seed, size_t seed_len)
-foreign import ccall safe "MLDSA44_private_key_from_seed"
+foreign import capi safe "openssl/mldsa.h MLDSA44_private_key_from_seed"
   c_MLDSA44_private_key_from_seed
     :: Ptr MLDSA44_private_key       -- out_private_key
     -> Ptr CUChar                    -- seed
@@ -146,7 +146,7 @@ foreign import ccall safe "MLDSA44_private_key_from_seed"
 -- | int MLDSA44_public_from_private(
 --     struct MLDSA44_public_key *out_public_key,
 --     const struct MLDSA44_private_key *private_key)
-foreign import ccall safe "MLDSA44_public_from_private"
+foreign import capi safe "openssl/mldsa.h MLDSA44_public_from_private"
   c_MLDSA44_public_from_private
     :: Ptr MLDSA44_public_key        -- out_public_key
     -> Ptr MLDSA44_private_key       -- private_key
@@ -157,7 +157,7 @@ foreign import ccall safe "MLDSA44_public_from_private"
 --     const struct MLDSA44_private_key *private_key,
 --     const uint8_t *msg, size_t msg_len,
 --     const uint8_t *context, size_t context_len)
-foreign import ccall safe "MLDSA44_sign"
+foreign import capi safe "openssl/mldsa.h MLDSA44_sign"
   c_MLDSA44_sign
     :: Ptr CUChar                    -- out_encoded_signature
     -> Ptr MLDSA44_private_key       -- private_key
@@ -172,7 +172,7 @@ foreign import ccall safe "MLDSA44_sign"
 --     const uint8_t *signature, size_t signature_len,
 --     const uint8_t *msg, size_t msg_len,
 --     const uint8_t *context, size_t context_len)
-foreign import ccall safe "MLDSA44_verify"
+foreign import capi safe "openssl/mldsa.h MLDSA44_verify"
   c_MLDSA44_verify
     :: Ptr MLDSA44_public_key        -- public_key
     -> Ptr CUChar                    -- signature
@@ -185,7 +185,7 @@ foreign import ccall safe "MLDSA44_verify"
 
 -- | int MLDSA44_parse_public_key(
 --     struct MLDSA44_public_key *public_key, CBS *in)
-foreign import ccall unsafe "MLDSA44_parse_public_key"
+foreign import capi unsafe "openssl/mldsa.h MLDSA44_parse_public_key"
   c_MLDSA44_parse_public_key
     :: Ptr MLDSA44_public_key        -- out_public_key
     -> Ptr ()                        -- CBS *in
@@ -198,7 +198,7 @@ foreign import ccall unsafe "MLDSA44_parse_public_key"
 --     uint8_t out_encoded_public_key[1952],
 --     uint8_t out_seed[32],
 --     struct MLDSA65_private_key *out_private_key)
-foreign import ccall safe "MLDSA65_generate_key"
+foreign import capi safe "openssl/mldsa.h MLDSA65_generate_key"
   c_MLDSA65_generate_key
     :: Ptr CUChar                    -- out_encoded_public_key
     -> Ptr CUChar                    -- out_seed
@@ -208,7 +208,7 @@ foreign import ccall safe "MLDSA65_generate_key"
 -- | int MLDSA65_private_key_from_seed(
 --     struct MLDSA65_private_key *out_private_key,
 --     const uint8_t *seed, size_t seed_len)
-foreign import ccall safe "MLDSA65_private_key_from_seed"
+foreign import capi safe "openssl/mldsa.h MLDSA65_private_key_from_seed"
   c_MLDSA65_private_key_from_seed
     :: Ptr MLDSA65_private_key       -- out_private_key
     -> Ptr CUChar                    -- seed
@@ -218,7 +218,7 @@ foreign import ccall safe "MLDSA65_private_key_from_seed"
 -- | int MLDSA65_public_from_private(
 --     struct MLDSA65_public_key *out_public_key,
 --     const struct MLDSA65_private_key *private_key)
-foreign import ccall safe "MLDSA65_public_from_private"
+foreign import capi safe "openssl/mldsa.h MLDSA65_public_from_private"
   c_MLDSA65_public_from_private
     :: Ptr MLDSA65_public_key        -- out_public_key
     -> Ptr MLDSA65_private_key       -- private_key
@@ -229,7 +229,7 @@ foreign import ccall safe "MLDSA65_public_from_private"
 --     const struct MLDSA65_private_key *private_key,
 --     const uint8_t *msg, size_t msg_len,
 --     const uint8_t *context, size_t context_len)
-foreign import ccall safe "MLDSA65_sign"
+foreign import capi safe "openssl/mldsa.h MLDSA65_sign"
   c_MLDSA65_sign
     :: Ptr CUChar                    -- out_encoded_signature
     -> Ptr MLDSA65_private_key       -- private_key
@@ -244,7 +244,7 @@ foreign import ccall safe "MLDSA65_sign"
 --     const uint8_t *signature, size_t signature_len,
 --     const uint8_t *msg, size_t msg_len,
 --     const uint8_t *context, size_t context_len)
-foreign import ccall safe "MLDSA65_verify"
+foreign import capi safe "openssl/mldsa.h MLDSA65_verify"
   c_MLDSA65_verify
     :: Ptr MLDSA65_public_key        -- public_key
     -> Ptr CUChar                    -- signature
@@ -257,7 +257,7 @@ foreign import ccall safe "MLDSA65_verify"
 
 -- | int MLDSA65_parse_public_key(
 --     struct MLDSA65_public_key *public_key, CBS *in)
-foreign import ccall unsafe "MLDSA65_parse_public_key"
+foreign import capi unsafe "openssl/mldsa.h MLDSA65_parse_public_key"
   c_MLDSA65_parse_public_key
     :: Ptr MLDSA65_public_key        -- out_public_key
     -> Ptr ()                        -- CBS *in
@@ -270,7 +270,7 @@ foreign import ccall unsafe "MLDSA65_parse_public_key"
 --     uint8_t out_encoded_public_key[2592],
 --     uint8_t out_seed[32],
 --     struct MLDSA87_private_key *out_private_key)
-foreign import ccall safe "MLDSA87_generate_key"
+foreign import capi safe "openssl/mldsa.h MLDSA87_generate_key"
   c_MLDSA87_generate_key
     :: Ptr CUChar                    -- out_encoded_public_key
     -> Ptr CUChar                    -- out_seed
@@ -280,7 +280,7 @@ foreign import ccall safe "MLDSA87_generate_key"
 -- | int MLDSA87_private_key_from_seed(
 --     struct MLDSA87_private_key *out_private_key,
 --     const uint8_t *seed, size_t seed_len)
-foreign import ccall safe "MLDSA87_private_key_from_seed"
+foreign import capi safe "openssl/mldsa.h MLDSA87_private_key_from_seed"
   c_MLDSA87_private_key_from_seed
     :: Ptr MLDSA87_private_key       -- out_private_key
     -> Ptr CUChar                    -- seed
@@ -290,7 +290,7 @@ foreign import ccall safe "MLDSA87_private_key_from_seed"
 -- | int MLDSA87_public_from_private(
 --     struct MLDSA87_public_key *out_public_key,
 --     const struct MLDSA87_private_key *private_key)
-foreign import ccall safe "MLDSA87_public_from_private"
+foreign import capi safe "openssl/mldsa.h MLDSA87_public_from_private"
   c_MLDSA87_public_from_private
     :: Ptr MLDSA87_public_key        -- out_public_key
     -> Ptr MLDSA87_private_key       -- private_key
@@ -301,7 +301,7 @@ foreign import ccall safe "MLDSA87_public_from_private"
 --     const struct MLDSA87_private_key *private_key,
 --     const uint8_t *msg, size_t msg_len,
 --     const uint8_t *context, size_t context_len)
-foreign import ccall safe "MLDSA87_sign"
+foreign import capi safe "openssl/mldsa.h MLDSA87_sign"
   c_MLDSA87_sign
     :: Ptr CUChar                    -- out_encoded_signature
     -> Ptr MLDSA87_private_key       -- private_key
@@ -316,7 +316,7 @@ foreign import ccall safe "MLDSA87_sign"
 --     const uint8_t *signature, size_t signature_len,
 --     const uint8_t *msg, size_t msg_len,
 --     const uint8_t *context, size_t context_len)
-foreign import ccall safe "MLDSA87_verify"
+foreign import capi safe "openssl/mldsa.h MLDSA87_verify"
   c_MLDSA87_verify
     :: Ptr MLDSA87_public_key        -- public_key
     -> Ptr CUChar                    -- signature
@@ -329,7 +329,7 @@ foreign import ccall safe "MLDSA87_verify"
 
 -- | int MLDSA87_parse_public_key(
 --     struct MLDSA87_public_key *public_key, CBS *in)
-foreign import ccall unsafe "MLDSA87_parse_public_key"
+foreign import capi unsafe "openssl/mldsa.h MLDSA87_parse_public_key"
   c_MLDSA87_parse_public_key
     :: Ptr MLDSA87_public_key        -- out_public_key
     -> Ptr ()                        -- CBS *in

@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CApiFFI #-}
 module Crypto.BoringSSL.Internal.FFI.SLHDSA
   ( -- * Constants
     slhdsaSha2128sPublicKeyBytes
@@ -46,19 +46,19 @@ slhdsaShake256fSignatureBytes = 49856
 
 -- | void SLHDSA_SHA2_128S_generate_key(uint8_t out_public_key[32],
 --                                       uint8_t out_private_key[64])
-foreign import ccall safe "SLHDSA_SHA2_128S_generate_key"
+foreign import capi safe "openssl/slhdsa.h SLHDSA_SHA2_128S_generate_key"
   c_SLHDSA_SHA2_128S_generate_key :: Ptr CUChar -> Ptr CUChar -> IO ()
 
 -- | void SLHDSA_SHA2_128S_public_from_private(uint8_t out_public_key[32],
 --                                              const uint8_t private_key[64])
-foreign import ccall unsafe "SLHDSA_SHA2_128S_public_from_private"
+foreign import capi unsafe "openssl/slhdsa.h SLHDSA_SHA2_128S_public_from_private"
   c_SLHDSA_SHA2_128S_public_from_private :: Ptr CUChar -> Ptr CUChar -> IO ()
 
 -- | int SLHDSA_SHA2_128S_sign(uint8_t out_signature[7856],
 --                              const uint8_t private_key[64],
 --                              const uint8_t *msg, size_t msg_len,
 --                              const uint8_t *context, size_t context_len)
-foreign import ccall safe "SLHDSA_SHA2_128S_sign"
+foreign import capi safe "openssl/slhdsa.h SLHDSA_SHA2_128S_sign"
   c_SLHDSA_SHA2_128S_sign :: Ptr CUChar -> Ptr CUChar -> Ptr CUChar -> CSize
                           -> Ptr CUChar -> CSize -> IO CInt
 
@@ -66,7 +66,7 @@ foreign import ccall safe "SLHDSA_SHA2_128S_sign"
 --                                const uint8_t public_key[32],
 --                                const uint8_t *msg, size_t msg_len,
 --                                const uint8_t *context, size_t context_len)
-foreign import ccall safe "SLHDSA_SHA2_128S_verify"
+foreign import capi safe "openssl/slhdsa.h SLHDSA_SHA2_128S_verify"
   c_SLHDSA_SHA2_128S_verify :: Ptr CUChar -> CSize -> Ptr CUChar
                             -> Ptr CUChar -> CSize -> Ptr CUChar -> CSize
                             -> IO CInt
@@ -75,19 +75,19 @@ foreign import ccall safe "SLHDSA_SHA2_128S_verify"
 
 -- | void SLHDSA_SHAKE_256F_generate_key(uint8_t out_public_key[64],
 --                                        uint8_t out_private_key[128])
-foreign import ccall safe "SLHDSA_SHAKE_256F_generate_key"
+foreign import capi safe "openssl/slhdsa.h SLHDSA_SHAKE_256F_generate_key"
   c_SLHDSA_SHAKE_256F_generate_key :: Ptr CUChar -> Ptr CUChar -> IO ()
 
 -- | void SLHDSA_SHAKE_256F_public_from_private(uint8_t out_public_key[64],
 --                                               const uint8_t private_key[128])
-foreign import ccall unsafe "SLHDSA_SHAKE_256F_public_from_private"
+foreign import capi unsafe "openssl/slhdsa.h SLHDSA_SHAKE_256F_public_from_private"
   c_SLHDSA_SHAKE_256F_public_from_private :: Ptr CUChar -> Ptr CUChar -> IO ()
 
 -- | int SLHDSA_SHAKE_256F_sign(uint8_t out_signature[49856],
 --                               const uint8_t private_key[128],
 --                               const uint8_t *msg, size_t msg_len,
 --                               const uint8_t *context, size_t context_len)
-foreign import ccall safe "SLHDSA_SHAKE_256F_sign"
+foreign import capi safe "openssl/slhdsa.h SLHDSA_SHAKE_256F_sign"
   c_SLHDSA_SHAKE_256F_sign :: Ptr CUChar -> Ptr CUChar -> Ptr CUChar -> CSize
                            -> Ptr CUChar -> CSize -> IO CInt
 
@@ -95,7 +95,7 @@ foreign import ccall safe "SLHDSA_SHAKE_256F_sign"
 --                                 const uint8_t public_key[64],
 --                                 const uint8_t *msg, size_t msg_len,
 --                                 const uint8_t *context, size_t context_len)
-foreign import ccall safe "SLHDSA_SHAKE_256F_verify"
+foreign import capi safe "openssl/slhdsa.h SLHDSA_SHAKE_256F_verify"
   c_SLHDSA_SHAKE_256F_verify :: Ptr CUChar -> CSize -> Ptr CUChar
                              -> Ptr CUChar -> CSize -> Ptr CUChar -> CSize
                              -> IO CInt

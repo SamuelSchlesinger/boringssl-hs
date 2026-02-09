@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CApiFFI #-}
 module Crypto.BoringSSL.Internal.FFI.ECDH
   ( c_ECDH_compute_key_fips
   ) where
@@ -9,5 +9,5 @@ import Foreign.Ptr
 
 -- | int ECDH_compute_key_fips(uint8_t *out, size_t out_len,
 --                             const EC_POINT *pub_key, const EC_KEY *priv_key)
-foreign import ccall safe "ECDH_compute_key_fips"
+foreign import capi safe "openssl/ecdh.h ECDH_compute_key_fips"
   c_ECDH_compute_key_fips :: Ptr CUChar -> CSize -> Ptr EC_POINT -> Ptr EC_KEY -> IO CInt

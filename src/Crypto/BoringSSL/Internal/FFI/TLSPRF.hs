@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CApiFFI #-}
 module Crypto.BoringSSL.Internal.FFI.TLSPRF
   ( c_CRYPTO_tls1_prf
   ) where
@@ -12,7 +12,7 @@ import Foreign.Ptr
 --                        const uint8_t *label, size_t label_len,
 --                        const uint8_t *seed1, size_t seed1_len,
 --                        const uint8_t *seed2, size_t seed2_len)
-foreign import ccall unsafe "CRYPTO_tls1_prf"
+foreign import capi unsafe "openssl/tls_prf.h CRYPTO_tls1_prf"
   c_CRYPTO_tls1_prf :: Ptr EVP_MD
                     -> Ptr CUChar -> CSize
                     -> Ptr CUChar -> CSize

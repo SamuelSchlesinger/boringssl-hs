@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE CApiFFI #-}
 module Crypto.BoringSSL.Internal.FFI.XWing
   ( -- * Opaque struct type
     XWING_private_key
@@ -52,7 +52,7 @@ xwingPrivateKeyStructSize = 7840
 -- | int XWING_generate_key(
 --     uint8_t out_encoded_public_key[XWING_PUBLIC_KEY_BYTES],
 --     struct XWING_private_key *out_private_key)
-foreign import ccall safe "XWING_generate_key"
+foreign import capi safe "openssl/xwing.h XWING_generate_key"
   c_XWING_generate_key
     :: Ptr CUChar              -- out_encoded_public_key
     -> Ptr XWING_private_key   -- out_private_key
@@ -61,7 +61,7 @@ foreign import ccall safe "XWING_generate_key"
 -- | int XWING_public_from_private(
 --     uint8_t out_encoded_public_key[XWING_PUBLIC_KEY_BYTES],
 --     const struct XWING_private_key *private_key)
-foreign import ccall safe "XWING_public_from_private"
+foreign import capi safe "openssl/xwing.h XWING_public_from_private"
   c_XWING_public_from_private
     :: Ptr CUChar              -- out_encoded_public_key
     -> Ptr XWING_private_key   -- private_key (const)
@@ -71,7 +71,7 @@ foreign import ccall safe "XWING_public_from_private"
 --     uint8_t out_ciphertext[XWING_CIPHERTEXT_BYTES],
 --     uint8_t out_shared_secret[XWING_SHARED_SECRET_BYTES],
 --     const uint8_t encoded_public_key[XWING_PUBLIC_KEY_BYTES])
-foreign import ccall safe "XWING_encap"
+foreign import capi safe "openssl/xwing.h XWING_encap"
   c_XWING_encap
     :: Ptr CUChar              -- out_ciphertext
     -> Ptr CUChar              -- out_shared_secret
@@ -82,7 +82,7 @@ foreign import ccall safe "XWING_encap"
 --     uint8_t out_shared_secret[XWING_SHARED_SECRET_BYTES],
 --     const uint8_t ciphertext[XWING_CIPHERTEXT_BYTES],
 --     const struct XWING_private_key *private_key)
-foreign import ccall safe "XWING_decap"
+foreign import capi safe "openssl/xwing.h XWING_decap"
   c_XWING_decap
     :: Ptr CUChar              -- out_shared_secret
     -> Ptr CUChar              -- ciphertext (const)
