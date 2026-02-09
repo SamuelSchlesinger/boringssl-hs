@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Test.SPAKE2 (tests) where
 
+import qualified Data.ByteString as BS
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -41,4 +42,16 @@ tests = testGroup "SPAKE2"
       case result of
         Left _  -> return ()
         Right _ -> assertFailure "should reject invalid message"
+  , testCase "agreed key is 64 bytes" $ do
+      Right ctxA <- newContext Alice "a" "b"
+      Right ctxB <- newContext Bob   "b" "a"
+      Right _msgA <- generateMessage ctxA "pw"
+      Right msgB <- generateMessage ctxB "pw"
+      Right keyA <- processMessage ctxA msgB
+      BS.length keyA @?= 64
+  , testCase "message has correct size" $ do
+      Right ctx <- newContext Alice "a" "b"
+      Right msg <- generateMessage ctx "pw"
+      -- SPAKE2 messages are 32 bytes (a point on the curve)
+      BS.length msg @?= 32
   ]

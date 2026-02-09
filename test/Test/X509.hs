@@ -96,6 +96,14 @@ tests = testGroup "X509"
             (isInfixOf' "Test" subj)
           assertBool ("issuerName should contain 'BoringSSL', got: " ++ iss)
             (isInfixOf' "BoringSSL" iss)
+
+  , testCase "self-signed cert: issuer equals subject" $ do
+      case parseDER testCertDER of
+        Left err -> assertFailure ("parseDER should parse: " ++ show err)
+        Right cert -> do
+          let subj = subjectName cert
+              iss  = issuerName cert
+          subj @?= iss
   ]
 
 -- Simple infix check for String

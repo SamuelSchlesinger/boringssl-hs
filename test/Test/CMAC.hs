@@ -104,4 +104,16 @@ tests = testGroup "CMAC"
         Right streamed <- cmacFinalize ctx
         streamed @?= oneShot
     ]
+  , testGroup "Input validation"
+    [ testCase "rejects invalid key length (24 bytes)" $ do
+        let result = cmac (BS.replicate 24 0) "msg"
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject 24-byte key"
+    , testCase "rejects invalid key length (15 bytes)" $ do
+        let result = cmac (BS.replicate 15 0) "msg"
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject 15-byte key"
+    ]
   ]

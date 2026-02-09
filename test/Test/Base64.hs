@@ -25,10 +25,25 @@ tests = testGroup "Base64"
         let bs = BS8.pack ['\x00'..'\xFF']
         decode (encode bs) @?= Right bs
     ]
+  , testGroup "Decode RFC 4648 vectors"
+    [ testCase "empty" $ decode "" @?= Right ""
+    , testCase "Zg==" $ decode "Zg==" @?= Right "f"
+    , testCase "Zm8=" $ decode "Zm8=" @?= Right "fo"
+    , testCase "Zm9v" $ decode "Zm9v" @?= Right "foo"
+    , testCase "Zm9vYmFy" $ decode "Zm9vYmFy" @?= Right "foobar"
+    ]
   , testGroup "Invalid input"
     [ testCase "invalid characters" $
         case decode "!!!!" of
           Left _  -> return ()
           Right _ -> assertFailure "should fail on invalid base64"
+    , testCase "truncated padding" $
+        case decode "Zg=" of
+          Left _  -> return ()
+          Right _ -> assertFailure "should fail on truncated padding"
+    , testCase "single character" $
+        case decode "Z" of
+          Left _  -> return ()
+          Right _ -> assertFailure "should fail on single character"
     ]
   ]

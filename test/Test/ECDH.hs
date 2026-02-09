@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Test.ECDH (tests) where
 
+import qualified Data.ByteString as BS
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -72,4 +73,33 @@ tests = testGroup "ECDH"
           Left _  -> return ()
           Right _ -> assertFailure "should reject output length 0"
     ]
+  , testGroup "output length"
+    [ testCase "P-256 secret is 32 bytes" $ do
+        Right kpA <- generateECKeyPair P256
+        Right kpB <- generateECKeyPair P256
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right secret <- ecdhComputeSecret kpA pubB 32
+        BS.length secret @?= 32
+    , testCase "P-384 secret is 48 bytes" $ do
+        Right kpA <- generateECKeyPair P384
+        Right kpB <- generateECKeyPair P384
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right secret <- ecdhComputeSecret kpA pubB 48
+        BS.length secret @?= 48
+    , testCase "P-521 secret is 64 bytes" $ do
+        Right kpA <- generateECKeyPair P521
+        Right kpB <- generateECKeyPair P521
+        Right pubB <- ecPublicKeyOfPair kpB
+        Right secret <- ecdhComputeSecret kpA pubB 64
+        BS.length secret @?= 64
+    ]
+  , testCase "different key pairs produce different secrets" $ do
+      Right kpA <- generateECKeyPair P256
+      Right kpB <- generateECKeyPair P256
+      Right kpC <- generateECKeyPair P256
+      Right pubB <- ecPublicKeyOfPair kpB
+      Right pubC <- ecPublicKeyOfPair kpC
+      Right secretAB <- ecdhComputeSecret kpA pubB 32
+      Right secretAC <- ecdhComputeSecret kpA pubC 32
+      assertBool "different peers should give different secrets" (secretAB /= secretAC)
   ]

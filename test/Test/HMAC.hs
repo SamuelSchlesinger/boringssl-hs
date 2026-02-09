@@ -6,7 +6,7 @@ import qualified Data.ByteString.Base16 as Base16
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.Digest (Algorithm(..))
+import Crypto.BoringSSL.Digest (Algorithm(..), digestSize)
 import Crypto.BoringSSL.HMAC
 
 tests :: TestTree
@@ -29,6 +29,22 @@ tests = testGroup "HMAC"
             msg = "Hi There"
         Base16.encode (hmac SHA512 key msg) @?=
           "87aa7cdea5ef619d4ff0b4241a1d6cb02379f4e2ce4ec2787ad0b30545e17cdedaa833b7d6b8a702038b274eaea3f4e4be9d914eeb61f1702e696c203a126854"
+    , testCase "Test Case 3 (HMAC-SHA-256) - key=0xaa repeated 20" $ do
+        -- Key = 0xaa repeated 20 times, Data = 0xdd repeated 50 times
+        let key = BS.replicate 20 0xaa
+            msg = BS.replicate 50 0xdd
+        Base16.encode (hmac SHA256 key msg) @?=
+          "773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe"
+    , testCase "Test Case 1 (HMAC-SHA-384)" $ do
+        let key = BS.replicate 20 0x0b
+            msg = "Hi There"
+        Base16.encode (hmac SHA384 key msg) @?=
+          "afd03944d84895626b0825f4ab46907f15f9dadbe4101ec682aa034c7cebc59cfaea9ea9076ede7f4af152e8b2fa9cb6"
+    , testCase "Test Case 1 (HMAC-SHA-1)" $ do
+        let key = BS.replicate 20 0x0b
+            msg = "Hi There"
+        Base16.encode (hmac SHA1 key msg) @?=
+          "b617318655057264e28bc0b6fb378c8ef146be00"
     ]
   , testGroup "Streaming"
     [ testCase "streaming matches one-shot" $ do
@@ -44,6 +60,26 @@ tests = testGroup "HMAC"
         hmacUpdate ctx "want for nothing?"
         result <- hmacFinalize ctx
         result @?= hmac SHA256 key "what do ya want for nothing?"
+    , testCase "SHA-512 streaming matches one-shot" $ do
+        let key = BS.replicate 20 0x0b
+        ctx <- hmacInit SHA512 key
+        hmacUpdate ctx "Hi There"
+        result <- hmacFinalize ctx
+        result @?= hmac SHA512 key "Hi There"
+    , testCase "SHA-384 streaming matches one-shot" $ do
+        let key = BS.replicate 20 0x0b
+        ctx <- hmacInit SHA384 key
+        hmacUpdate ctx "Hi There"
+        result <- hmacFinalize ctx
+        result @?= hmac SHA384 key "Hi There"
+    , testCase "streaming with empty update" $ do
+        let key = BS.replicate 20 0x0b
+        ctx <- hmacInit SHA256 key
+        hmacUpdate ctx BS.empty
+        hmacUpdate ctx "Hi There"
+        hmacUpdate ctx BS.empty
+        result <- hmacFinalize ctx
+        result @?= hmac SHA256 key "Hi There"
     ]
   , testGroup "hmacVerify"
     [ testCase "correct MAC verifies" $ do
@@ -86,5 +122,26 @@ tests = testGroup "HMAC"
         assertBool "different lengths should not be equal" (not (constTimeEq a b))
     , testCase "empty ByteStrings" $ do
         assertBool "two empty should be equal" (constTimeEq BS.empty BS.empty)
+    ]
+  , testGroup "edge cases"
+    [ testCase "empty key" $ do
+        let mac = hmac SHA256 BS.empty "message"
+        BS.length mac @?= digestSize SHA256
+    , testCase "empty message" $ do
+        let mac = hmac SHA256 "key" BS.empty
+        BS.length mac @?= digestSize SHA256
+    , testCase "empty key and message" $ do
+        let mac = hmac SHA256 BS.empty BS.empty
+        BS.length mac @?= digestSize SHA256
+    ]
+  , testGroup "output length"
+    [ testCase "SHA-1 output = 20" $ BS.length (hmac SHA1 "k" "m") @?= digestSize SHA1
+    , testCase "SHA-224 output = 28" $ BS.length (hmac SHA224 "k" "m") @?= digestSize SHA224
+    , testCase "SHA-256 output = 32" $ BS.length (hmac SHA256 "k" "m") @?= digestSize SHA256
+    , testCase "SHA-384 output = 48" $ BS.length (hmac SHA384 "k" "m") @?= digestSize SHA384
+    , testCase "SHA-512 output = 64" $ BS.length (hmac SHA512 "k" "m") @?= digestSize SHA512
+    , testCase "SHA-512/256 output = 32" $ BS.length (hmac SHA512_256 "k" "m") @?= digestSize SHA512_256
+    , testCase "MD5 output = 16" $ BS.length (hmac MD5 "k" "m") @?= digestSize MD5
+    , testCase "BLAKE2b-256 output = 32" $ BS.length (hmac BLAKE2b256 "k" "m") @?= digestSize BLAKE2b256
     ]
   ]

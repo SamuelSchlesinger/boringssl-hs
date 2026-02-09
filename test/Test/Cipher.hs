@@ -78,20 +78,115 @@ tests = testGroup "Cipher"
         Right recovered <- decrypt AES256CTR key iv ct
         recovered @?= pt
     ]
+  , testGroup "AES-128-ECB"
+    [ testCase "round-trip" $ do
+        let key = BS.replicate 16 0x42
+            pt  = BS8.pack "Hello, AES-ECB!!"  -- exactly 16 bytes
+        Right ct <- encrypt AES128ECB key BS.empty pt
+        Right recovered <- decrypt AES128ECB key BS.empty ct
+        recovered @?= pt
+    , testCase "non-block-aligned plaintext" $ do
+        let key = BS.replicate 16 0x42
+            pt  = BS8.pack "short"
+        Right ct <- encrypt AES128ECB key BS.empty pt
+        Right recovered <- decrypt AES128ECB key BS.empty ct
+        recovered @?= pt
+    ]
+  , testGroup "AES-256-ECB"
+    [ testCase "round-trip" $ do
+        let key = BS.replicate 32 0x42
+            pt  = BS8.pack "AES-256-ECB test!"
+        Right ct <- encrypt AES256ECB key BS.empty pt
+        Right recovered <- decrypt AES256ECB key BS.empty ct
+        recovered @?= pt
+    ]
+  , testGroup "AES-128-OFB"
+    [ testCase "round-trip" $ do
+        let key = BS.replicate 16 0x42
+            iv  = BS.replicate 16 0x01
+            pt  = BS8.pack "OFB mode is a stream cipher"
+        Right ct <- encrypt AES128OFB key iv pt
+        Right recovered <- decrypt AES128OFB key iv ct
+        recovered @?= pt
+    , testCase "ciphertext length equals plaintext length" $ do
+        let key = BS.replicate 16 0x42
+            iv  = BS.replicate 16 0x01
+            pt  = BS8.pack "OFB no padding"
+        Right ct <- encrypt AES128OFB key iv pt
+        BS.length ct @?= BS.length pt
+    ]
+  , testGroup "AES-256-OFB"
+    [ testCase "round-trip" $ do
+        let key = BS.replicate 32 0x42
+            iv  = BS.replicate 16 0x01
+            pt  = BS8.pack "AES-256-OFB test!"
+        Right ct <- encrypt AES256OFB key iv pt
+        Right recovered <- decrypt AES256OFB key iv ct
+        recovered @?= pt
+    ]
   , testGroup "Properties"
     [ testCase "key lengths" $ do
         cipherKeyLength AES128CBC @?= 16
         cipherKeyLength AES256CBC @?= 32
         cipherKeyLength AES128CTR @?= 16
         cipherKeyLength AES256CTR @?= 32
+        cipherKeyLength AES128ECB @?= 16
+        cipherKeyLength AES256ECB @?= 32
+        cipherKeyLength AES128OFB @?= 16
+        cipherKeyLength AES256OFB @?= 32
     , testCase "IV lengths" $ do
         cipherIVLength AES128CBC @?= 16
         cipherIVLength AES128CTR @?= 16
+        cipherIVLength AES128ECB @?= 0
+        cipherIVLength AES256ECB @?= 0
+        cipherIVLength AES128OFB @?= 16
+        cipherIVLength AES256OFB @?= 16
     , testCase "block sizes" $ do
         cipherBlockSize AES128CBC @?= 16
         cipherBlockSize AES256CBC @?= 16
         cipherBlockSize AES128CTR @?= 1
         cipherBlockSize AES256CTR @?= 1
+        cipherBlockSize AES128ECB @?= 16
+        cipherBlockSize AES256ECB @?= 16
+        cipherBlockSize AES128OFB @?= 1
+        cipherBlockSize AES256OFB @?= 1
+    ]
+  , testGroup "stream cipher length"
+    [ testCase "CTR ciphertext length equals plaintext" $ do
+        let key = BS.replicate 16 0x42
+            iv  = BS.replicate 16 0x01
+            pt  = BS8.pack "arbitrary length text"
+        Right ct <- encrypt AES128CTR key iv pt
+        BS.length ct @?= BS.length pt
+    , testCase "OFB ciphertext length equals plaintext" $ do
+        let key = BS.replicate 32 0x42
+            iv  = BS.replicate 16 0x01
+            pt  = BS8.pack "arbitrary length text"
+        Right ct <- encrypt AES256OFB key iv pt
+        BS.length ct @?= BS.length pt
+    ]
+  , testGroup "empty plaintext"
+    [ testCase "CBC empty plaintext round-trip" $ do
+        let key = BS.replicate 16 0x42
+            iv  = BS.replicate 16 0x01
+        Right ct <- encrypt AES128CBC key iv BS.empty
+        Right recovered <- decrypt AES128CBC key iv ct
+        recovered @?= BS.empty
+    , testCase "CTR empty plaintext round-trip" $ do
+        let key = BS.replicate 16 0x42
+            iv  = BS.replicate 16 0x01
+        Right ct <- encrypt AES128CTR key iv BS.empty
+        BS.length ct @?= 0
+    ]
+  , testGroup "different IV produces different ciphertext"
+    [ testCase "AES-128-CBC" $ do
+        let key = BS.replicate 16 0x42
+            iv1 = BS.replicate 16 0x01
+            iv2 = BS.replicate 16 0x02
+            pt  = BS8.pack "Hello, AES-CBC!!"
+        Right ct1 <- encrypt AES128CBC key iv1 pt
+        Right ct2 <- encrypt AES128CBC key iv2 pt
+        assertBool "different IVs should produce different ciphertexts" (ct1 /= ct2)
     ]
   , testGroup "Input validation"
     [ testCase "encrypt rejects wrong key length" $ do

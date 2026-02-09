@@ -62,12 +62,86 @@ tests = testGroup "AEAD"
         nonceLength AES256GCMSIV @?= 12
     , testCase "known-answer vector" aes256GCMSIVKnownAnswer
     ]
+  , testGroup "AES-192-GCM"
+    [ testCase "round-trip" $ roundTrip AES192GCM
+    , testCase "authentication failure" $ authFailure AES192GCM
+    , testCase "parameter queries" $ do
+        keyLength AES192GCM @?= 24
+        nonceLength AES192GCM @?= 12
+        maxOverhead AES192GCM @?= 16
+    ]
+  , testGroup "XChaCha20-Poly1305"
+    [ testCase "round-trip" $ roundTrip XChaCha20Poly1305
+    , testCase "authentication failure" $ authFailure XChaCha20Poly1305
+    , testCase "parameter queries" $ do
+        keyLength XChaCha20Poly1305 @?= 32
+        nonceLength XChaCha20Poly1305 @?= 24
+        maxOverhead XChaCha20Poly1305 @?= 16
+    ]
+  , testGroup "AES-128-CTR-HMAC-SHA256"
+    [ testCase "round-trip" $ roundTrip AES128CtrHmacSha256
+    , testCase "authentication failure" $ authFailure AES128CtrHmacSha256
+    ]
+  , testGroup "AES-256-CTR-HMAC-SHA256"
+    [ testCase "round-trip" $ roundTrip AES256CtrHmacSha256
+    , testCase "authentication failure" $ authFailure AES256CtrHmacSha256
+    ]
+  , testGroup "AES-128-EAX"
+    [ testCase "round-trip" $ roundTrip AES128EAX
+    , testCase "authentication failure" $ authFailure AES128EAX
+    ]
+  , testGroup "AES-256-EAX"
+    [ testCase "round-trip" $ roundTrip AES256EAX
+    , testCase "authentication failure" $ authFailure AES256EAX
+    ]
+  , testGroup "AES-128-CCM-Bluetooth"
+    [ testCase "round-trip" $ roundTrip AES128CCMBluetooth
+    , testCase "authentication failure" $ authFailure AES128CCMBluetooth
+    ]
+  , testGroup "AES-128-CCM-Bluetooth-8"
+    [ testCase "round-trip" $ roundTrip AES128CCMBluetooth8
+    , testCase "authentication failure" $ authFailure AES128CCMBluetooth8
+    ]
+  , testGroup "AES-128-CCM-Matter"
+    [ testCase "round-trip" $ roundTrip AES128CCMMatter
+    , testCase "authentication failure" $ authFailure AES128CCMMatter
+    ]
   , testGroup "empty plaintext"
     [ testCase "AES-128-GCM empty plaintext round-trip" $ roundTripEmpty AES128GCM
     , testCase "AES-256-GCM empty plaintext round-trip" $ roundTripEmpty AES256GCM
     , testCase "ChaCha20-Poly1305 empty plaintext round-trip" $ roundTripEmpty ChaCha20Poly1305
     , testCase "AES-128-GCM-SIV empty plaintext round-trip" $ roundTripEmpty AES128GCMSIV
     , testCase "AES-256-GCM-SIV empty plaintext round-trip" $ roundTripEmpty AES256GCMSIV
+    ]
+  , testGroup "input validation"
+    [ testCase "wrong key length returns Left" $ do
+        result <- newAEADCtx AES128GCM (BS.replicate 15 0x42)
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject wrong key length"
+    , testCase "wrong key length (too long) returns Left" $ do
+        result <- newAEADCtx AES128GCM (BS.replicate 17 0x42)
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject wrong key length"
+    ]
+  , testGroup "AD tampering"
+    [ testCase "tampered AD causes open to fail" $ do
+        let key   = BS.replicate (keyLength AES256GCM) 0x42
+            nonce = BS.replicate (nonceLength AES256GCM) 0x01
+            pt    = BS8.pack "secret"
+            ad    = BS8.pack "correct ad"
+        Right ctx <- newAEADCtx AES256GCM key
+        Right ct <- seal ctx nonce pt ad
+        result <- open ctx nonce ct (BS8.pack "wrong ad")
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "open should fail with tampered AD"
+    ]
+  , testGroup "ciphertext length"
+    [ testCase "AES-128-GCM ciphertext length" $ ctLenCheck AES128GCM
+    , testCase "AES-256-GCM ciphertext length" $ ctLenCheck AES256GCM
+    , testCase "ChaCha20-Poly1305 ciphertext length" $ ctLenCheck ChaCha20Poly1305
     ]
   ]
 
@@ -164,3 +238,14 @@ aes256GCMSIVKnownAnswer = do
   -- Seal again should produce the same ciphertext (deterministic)
   Right ct2 <- seal ctx nonce plaintext ad
   ct @?= ct2
+
+-- | Verify ciphertext length equals plaintext length + maxOverhead.
+ctLenCheck :: AEADAlgorithm -> Assertion
+ctLenCheck algo = do
+  let key   = BS.replicate (keyLength algo) 0x42
+      nonce = BS.replicate (nonceLength algo) 0x01
+      pt    = BS8.pack "test plaintext data"
+      ad    = BS.empty
+  Right ctx <- newAEADCtx algo key
+  Right ct <- seal ctx nonce pt ad
+  BS.length ct @?= BS.length pt + maxOverhead algo

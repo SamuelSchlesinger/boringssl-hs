@@ -2,6 +2,7 @@
 module Test.PBKDF2 (tests) where
 
 import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -49,5 +50,16 @@ tests = testGroup "PBKDF2"
         let d1 = unwrap $ pbkdf2 SHA256 (BS8.pack "pw") (BS8.pack "s") 100 32
             d2 = unwrap $ pbkdf2 SHA256 (BS8.pack "pw") (BS8.pack "s") 100 32
         d1 @?= d2
+    , testCase "different passwords produce different output" $ do
+        let d1 = unwrap $ pbkdf2 SHA256 "password1" "salt" 100 32
+            d2 = unwrap $ pbkdf2 SHA256 "password2" "salt" 100 32
+        assertBool "different passwords should differ" (d1 /= d2)
+    , testCase "different salts produce different output" $ do
+        let d1 = unwrap $ pbkdf2 SHA256 "password" "salt1" 100 32
+            d2 = unwrap $ pbkdf2 SHA256 "password" "salt2" 100 32
+        assertBool "different salts should differ" (d1 /= d2)
+    , testCase "output length matches requested" $ do
+        let d = unwrap $ pbkdf2 SHA256 "pw" "s" 100 64
+        BS.length d @?= 64
     ]
   ]

@@ -44,6 +44,15 @@ tests = testGroup "RSA"
         Right sig <- rsaSignPSS kp SHA256 digest
         Right valid <- rsaVerifyPSS pub SHA256 digest sig
         assertBool "PSS signature should verify" valid
+    , testCase "wrong digest rejected" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        let digest1 = hashSHA256 "message A"
+            digest2 = hashSHA256 "message B"
+        Right sig <- rsaSignPSS kp SHA256 digest1
+        Right valid <- rsaVerifyPSS pub SHA256 digest2 sig
+        assertBool "wrong digest should not verify" (not valid)
     ]
   , testGroup "OAEP"
     [ testCase "encrypt/decrypt round-trip" $ do
@@ -64,6 +73,15 @@ tests = testGroup "RSA"
         Right ct <- rsaEncrypt pub plaintext
         Right recovered <- rsaDecrypt kp ct
         recovered @?= plaintext
+    , testCase "too-long plaintext returns Left" $ do
+        Right kp <- generateRSAKeyPair 2048
+        Right pubBytes <- publicKeyToBytes kp
+        Right pub <- publicKeyFromBytes pubBytes
+        let plaintext = BS.replicate 215 0x42  -- one byte over max
+        result <- rsaEncrypt pub plaintext
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject too-long plaintext"
     ]
   , testGroup "Safety"
     [ testCase "rejects key size below 2048" $ do
@@ -98,5 +116,29 @@ tests = testGroup "RSA"
         Right sig <- rsaSign kp2 SHA256 digest
         Right valid <- rsaVerify pub SHA256 digest sig
         assertBool "deserialized private key should work" valid
+    , testCase "publicKeyFromBytes rejects garbage" $ do
+        result <- publicKeyFromBytes (BS.replicate 32 0xFF)
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject garbage bytes"
+    , testCase "privateKeyFromBytes rejects garbage" $ do
+        result <- privateKeyFromBytes (BS.replicate 32 0xFF)
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject garbage bytes"
+    ]
+  , testGroup "signature size"
+    [ testCase "PKCS#1 v1.5 signature is rsaSize bytes" $ do
+        Right kp <- generateRSAKeyPair 2048
+        size <- rsaSize kp
+        let digest = hashSHA256 "test"
+        Right sig <- rsaSign kp SHA256 digest
+        BS.length sig @?= size
+    , testCase "PSS signature is rsaSize bytes" $ do
+        Right kp <- generateRSAKeyPair 2048
+        size <- rsaSize kp
+        let digest = hashSHA256 "test"
+        Right sig <- rsaSignPSS kp SHA256 digest
+        BS.length sig @?= size
     ]
   ]

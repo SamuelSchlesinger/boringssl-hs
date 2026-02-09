@@ -58,10 +58,17 @@ instance Arbitrary Algorithm where
   arbitrary = elements [SHA1, SHA224, SHA256, SHA384, SHA512, SHA512_256, MD5, BLAKE2b256]
 
 instance Arbitrary AEADAlgorithm where
-  arbitrary = elements [AES128GCM, AES256GCM, ChaCha20Poly1305, AES128GCMSIV, AES256GCMSIV]
+  arbitrary = elements
+    [ AES128GCM, AES192GCM, AES256GCM
+    , ChaCha20Poly1305, XChaCha20Poly1305
+    , AES128GCMSIV, AES256GCMSIV
+    , AES128CtrHmacSha256, AES256CtrHmacSha256
+    , AES128EAX, AES256EAX
+    , AES128CCMBluetooth, AES128CCMBluetooth8, AES128CCMMatter
+    ]
 
 instance Arbitrary CipherAlgorithm where
-  arbitrary = elements [AES128CBC, AES256CBC, AES128CTR, AES256CTR]
+  arbitrary = elements [AES128CBC, AES256CBC, AES128CTR, AES256CTR, AES128ECB, AES256ECB, AES128OFB, AES256OFB]
 
 instance Arbitrary ECCurve where
   arbitrary = elements [P256, P384, P521]
@@ -338,7 +345,9 @@ cipherProperties = testGroup "Cipher"
 prop_cipherRoundTrip :: CipherAlgorithm -> NonEmptyBS -> Property
 prop_cipherRoundTrip algo (NonEmptyBS plaintext) = ioProperty $ do
   key <- Random.randomBytes (Cipher.cipherKeyLength algo)
-  iv  <- Random.randomBytes (Cipher.cipherIVLength algo)
+  iv  <- if Cipher.cipherIVLength algo == 0
+           then return BS.empty
+           else Random.randomBytes (Cipher.cipherIVLength algo)
   encResult <- Cipher.encrypt algo key iv plaintext
   case encResult of
     Left err -> return $ counterexample ("encrypt failed: " ++ show err) False
@@ -352,7 +361,9 @@ prop_cipherDifferentKeys :: CipherAlgorithm -> NonEmptyBS -> Property
 prop_cipherDifferentKeys algo (NonEmptyBS plaintext) = ioProperty $ do
   key1 <- Random.randomBytes (Cipher.cipherKeyLength algo)
   key2 <- Random.randomBytes (Cipher.cipherKeyLength algo)
-  iv   <- Random.randomBytes (Cipher.cipherIVLength algo)
+  iv   <- if Cipher.cipherIVLength algo == 0
+             then return BS.empty
+             else Random.randomBytes (Cipher.cipherIVLength algo)
   if key1 == key2
     then return $ property True
     else do

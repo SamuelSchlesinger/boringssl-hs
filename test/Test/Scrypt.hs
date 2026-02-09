@@ -40,4 +40,12 @@ tests = testGroup "Scrypt"
       case result of
         Left _  -> return ()
         Right _ -> assertFailure "scrypt should reject invalid N"
+  , testCase "different salts produce different output" $ do
+      let d1 = scrypt "password" "salt1" 16 1 1 32
+          d2 = scrypt "password" "salt2" 16 1 1 32
+      assertBool "different salts should differ" (d1 /= d2)
+  , testCase "output length matches requested" $ do
+      case scrypt "pw" "s" 16 1 1 64 of
+        Left err -> assertFailure ("scrypt failed: " ++ show err)
+        Right d -> BS.length d @?= 64
   ]

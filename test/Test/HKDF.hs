@@ -6,7 +6,7 @@ import qualified Data.ByteString.Base16 as Base16
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.Digest (Algorithm(..))
+import Crypto.BoringSSL.Digest (Algorithm(..), digestSize)
 import Crypto.BoringSSL.HKDF
 
 hex :: BS.ByteString -> BS.ByteString
@@ -48,5 +48,67 @@ tests = testGroup "HKDF"
             info = BS.empty
             expectedOKM = hex "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8"
         Base16.encode (unwrap $ hkdf SHA256 ikm salt info 42) @?= Base16.encode expectedOKM
+    , testCase "Test Case 4 (SHA-1)" $ do
+        let ikm  = hex "0b0b0b0b0b0b0b0b0b0b0b"
+            salt = hex "000102030405060708090a0b0c"
+            info = hex "f0f1f2f3f4f5f6f7f8f9"
+            expectedPRK = hex "9b6c18c432a7bf8f0e71c8eb88f4b30baa2ba243"
+            expectedOKM = hex "085a01ea1b10f36933068b56efa5ad81a4f14b822f5b091568a9cdd4f155fda2c22e422478d305f3f896"
+        let prk = unwrap $ hkdfExtract SHA1 ikm salt
+        Base16.encode prk @?= Base16.encode expectedPRK
+        let okm = unwrap $ hkdfExpand SHA1 prk info 42
+        Base16.encode okm @?= Base16.encode expectedOKM
+        Base16.encode (unwrap $ hkdf SHA1 ikm salt info 42) @?= Base16.encode expectedOKM
+    , testCase "Test Case 7 (SHA-1, empty salt and info)" $ do
+        let ikm  = hex "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+            salt = BS.empty
+            info = BS.empty
+            expectedOKM = hex "2c91117204d745f3500d636a62f64f0ab3bae548aa53d423b0d1f27ebba6f5e5673a081d70cce7acfc48"
+        Base16.encode (unwrap $ hkdf SHA1 ikm salt info 42) @?= Base16.encode expectedOKM
+    ]
+  , testGroup "extract output length"
+    [ testCase "SHA-256 extract = 32 bytes" $ do
+        let prk = unwrap $ hkdfExtract SHA256 "secret" "salt"
+        BS.length prk @?= digestSize SHA256
+    , testCase "SHA-512 extract = 64 bytes" $ do
+        let prk = unwrap $ hkdfExtract SHA512 "secret" "salt"
+        BS.length prk @?= digestSize SHA512
+    , testCase "SHA-1 extract = 20 bytes" $ do
+        let prk = unwrap $ hkdfExtract SHA1 "secret" "salt"
+        BS.length prk @?= digestSize SHA1
+    ]
+  , testGroup "output length"
+    [ testCase "hkdf returns requested length" $ do
+        let okm = unwrap $ hkdf SHA256 "secret" "salt" "info" 64
+        BS.length okm @?= 64
+    , testCase "hkdfExpand returns requested length" $ do
+        let prk = unwrap $ hkdfExtract SHA256 "secret" "salt"
+            okm = unwrap $ hkdfExpand SHA256 prk "info" 100
+        BS.length okm @?= 100
+    ]
+  , testGroup "SHA-512"
+    [ testCase "SHA-512 full round-trip" $ do
+        let ikm = "input keying material"
+            salt = "salt value"
+            info = "context info"
+            okm = unwrap $ hkdf SHA512 ikm salt info 64
+        BS.length okm @?= 64
+    , testCase "SHA-512 extract then expand matches full" $ do
+        let ikm = "input keying material"
+            salt = "salt value"
+            info = "context info"
+        let prk = unwrap $ hkdfExtract SHA512 ikm salt
+            okm1 = unwrap $ hkdfExpand SHA512 prk info 64
+            okm2 = unwrap $ hkdf SHA512 ikm salt info 64
+        okm1 @?= okm2
+    ]
+  , testGroup "error cases"
+    [ testCase "expand rejects too-long output" $ do
+        -- max output for SHA-256 is 255 * 32 = 8160
+        let prk = unwrap $ hkdfExtract SHA256 "secret" "salt"
+            result = hkdfExpand SHA256 prk "info" 8161
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject output > 255*hashLen"
     ]
   ]

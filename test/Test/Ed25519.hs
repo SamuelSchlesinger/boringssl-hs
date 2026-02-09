@@ -44,6 +44,34 @@ tests = testGroup "Ed25519"
       let msg = "deterministic test"
           sig = sign priv msg
       assertBool "signature should verify" (verify pub msg sig)
+  , testCase "keyPairFromSeed rejects wrong seed length" $ do
+      case keyPairFromSeed (BS.replicate 31 0x42) of
+        Left _ -> return ()
+        Right _ -> assertFailure "should reject 31-byte seed"
+      case keyPairFromSeed (BS.replicate 33 0x42) of
+        Left _ -> return ()
+        Right _ -> assertFailure "should reject 33-byte seed"
+      case keyPairFromSeed BS.empty of
+        Left _ -> return ()
+        Right _ -> assertFailure "should reject empty seed"
+  , testCase "generateKeyPair produces unique keys" $ do
+      (pub1, _) <- generateKeyPair
+      (pub2, _) <- generateKeyPair
+      assertBool "two key pairs should differ" (pub1 /= pub2)
+  , testCase "sign is deterministic" $ do
+      (_, priv) <- generateKeyPair
+      let msg = "determinism test"
+          sig1 = sign priv msg
+          sig2 = sign priv msg
+      sig1 @?= sig2
+  , testCase "key sizes from generateKeyPair" $ do
+      (pub, priv) <- generateKeyPair
+      BS.length (publicKeyToBytes pub) @?= 32
+      BS.length (privateKeyToBytes priv) @?= 64
+  , testCase "signature size is 64 bytes" $ do
+      (_, priv) <- generateKeyPair
+      let sig = sign priv "test"
+      BS.length (signatureToBytes sig) @?= 64
   -- KNOWN ISSUE: RFC 8032 Section 7.1 test vector compliance
   --
   -- When BoringSSL is compiled with -DOPENSSL_NO_ASM (as we currently do in

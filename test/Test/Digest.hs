@@ -43,12 +43,18 @@ tests = testGroup "Digest"
           "a9993e364706816aba3e25717850c26c9cd0d89d"
     ]
   , testGroup "SHA-224"
-    [ testCase "abc" $
+    [ testCase "empty string" $
+        hexHash SHA224 BS.empty @?=
+          "d14a028c2a3a2bc9476102bb288234c415a2b01f828ea62ac5b3e42f"
+    , testCase "abc" $
         hexHash SHA224 (BS8.pack "abc") @?=
           "23097d223405d8228642a477bda255b32aadbce4bda0b3f7e36c9da7"
     ]
   , testGroup "SHA-384"
-    [ testCase "abc" $
+    [ testCase "empty string" $
+        hexHash SHA384 BS.empty @?=
+          "38b060a751ac96384cd9327eb1b1e36a21fdb71114be07434c0cc7bf63f6e1da274edebfe76f65fbd51ad2f14898b95b"
+    , testCase "abc" $
         hexHash SHA384 (BS8.pack "abc") @?=
           "cb00753f45a35e8bb5a03d699ac65007272c32ab0eded1631a8b605a43ff5bed8086072ba1e7cc2358baeca134c825a7"
     ]
@@ -84,6 +90,12 @@ tests = testGroup "Digest"
         hash MD5 (BS8.pack "test") @?= hashMD5 (BS8.pack "test")
     , testCase "hash BLAKE2b256 matches hashBLAKE2b256" $
         hash BLAKE2b256 (BS8.pack "test") @?= hashBLAKE2b256 (BS8.pack "test")
+    , testCase "hash SHA224 matches hashSHA224" $
+        hash SHA224 (BS8.pack "test") @?= hashSHA224 (BS8.pack "test")
+    , testCase "hash SHA384 matches hashSHA384" $
+        hash SHA384 (BS8.pack "test") @?= hashSHA384 (BS8.pack "test")
+    , testCase "hash SHA512_256 matches hashSHA512_256" $
+        hash SHA512_256 (BS8.pack "test") @?= hashSHA512_256 (BS8.pack "test")
     ]
   , testGroup "Streaming"
     [ testCase "SHA-256 streaming matches one-shot" $ do
@@ -107,6 +119,42 @@ tests = testGroup "Digest"
         digestUpdate ctx (BS8.pack "abc")
         result <- digestFinalize ctx
         result @?= hash MD5 (BS8.pack "abc")
+    , testCase "SHA-1 streaming matches one-shot" $ do
+        ctx <- digestInit SHA1
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash SHA1 (BS8.pack "abc")
+    , testCase "SHA-224 streaming matches one-shot" $ do
+        ctx <- digestInit SHA224
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash SHA224 (BS8.pack "abc")
+    , testCase "SHA-384 streaming matches one-shot" $ do
+        ctx <- digestInit SHA384
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash SHA384 (BS8.pack "abc")
+    , testCase "SHA-512/256 streaming matches one-shot" $ do
+        ctx <- digestInit SHA512_256
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash SHA512_256 (BS8.pack "abc")
+    , testCase "BLAKE2b-256 streaming matches one-shot" $ do
+        ctx <- digestInit BLAKE2b256
+        digestUpdate ctx (BS8.pack "abc")
+        result <- digestFinalize ctx
+        result @?= hash BLAKE2b256 (BS8.pack "abc")
+    , testCase "SHA-256 streaming with empty update" $ do
+        ctx <- digestInit SHA256
+        digestUpdate ctx BS.empty
+        digestUpdate ctx (BS8.pack "abc")
+        digestUpdate ctx BS.empty
+        result <- digestFinalize ctx
+        result @?= hash SHA256 (BS8.pack "abc")
+    , testCase "SHA-256 streaming empty input" $ do
+        ctx <- digestInit SHA256
+        result <- digestFinalize ctx
+        result @?= hash SHA256 BS.empty
     ]
   , testGroup "digestSize"
     [ testCase "SHA-1 = 20" $ digestSize SHA1 @?= 20
@@ -118,7 +166,35 @@ tests = testGroup "Digest"
     , testCase "MD5 = 16" $ digestSize MD5 @?= 16
     , testCase "BLAKE2b-256 = 32" $ digestSize BLAKE2b256 @?= 32
     ]
+  , testGroup "output length matches digestSize"
+    [ testCase "SHA-1" $ BS.length (hash SHA1 "abc") @?= digestSize SHA1
+    , testCase "SHA-224" $ BS.length (hash SHA224 "abc") @?= digestSize SHA224
+    , testCase "SHA-256" $ BS.length (hash SHA256 "abc") @?= digestSize SHA256
+    , testCase "SHA-384" $ BS.length (hash SHA384 "abc") @?= digestSize SHA384
+    , testCase "SHA-512" $ BS.length (hash SHA512 "abc") @?= digestSize SHA512
+    , testCase "SHA-512/256" $ BS.length (hash SHA512_256 "abc") @?= digestSize SHA512_256
+    , testCase "MD5" $ BS.length (hash MD5 "abc") @?= digestSize MD5
+    , testCase "BLAKE2b-256" $ BS.length (hash BLAKE2b256 "abc") @?= digestSize BLAKE2b256
+    ]
+  , testGroup "large input"
+    [ testCase "SHA-256 1MB input produces 32 bytes" $ do
+        let big = BS.replicate (1024 * 1024) 0x42
+        BS.length (hash SHA256 big) @?= 32
+    , testCase "SHA-256 1MB streaming matches one-shot" $ do
+        let big = BS.replicate (1024 * 1024) 0x42
+        ctx <- digestInit SHA256
+        -- feed in 4KB chunks
+        mapM_ (digestUpdate ctx) (chunksOf 4096 big)
+        result <- digestFinalize ctx
+        result @?= hash SHA256 big
+    ]
   ]
+
+-- | Split a ByteString into chunks of the given size.
+chunksOf :: Int -> ByteString -> [ByteString]
+chunksOf n bs
+  | BS.null bs = []
+  | otherwise  = let (h, t) = BS.splitAt n bs in h : chunksOf n t
 
 hexHash :: Algorithm -> ByteString -> ByteString
 hexHash algo = Base16.encode . hash algo

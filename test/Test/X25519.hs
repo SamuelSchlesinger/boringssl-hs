@@ -26,6 +26,23 @@ tests = testGroup "X25519"
   , testCase "publicFromPrivate matches generated" $ do
       (pub, priv) <- generateKeyPair
       publicFromPrivate priv @?= pub
+  , testCase "generateKeyPair produces unique keys" $ do
+      (pub1, _) <- generateKeyPair
+      (pub2, _) <- generateKeyPair
+      assertBool "two key pairs should differ" (pub1 /= pub2)
+  , testCase "key sizes" $ do
+      (pub, priv) <- generateKeyPair
+      BS.length (publicKeyToBytes pub) @?= 32
+      BS.length (privateKeyToBytes priv) @?= 32
+  , testCase "shared secret is 32 bytes" $ do
+      (pubA, _) <- generateKeyPair
+      (_, privB) <- generateKeyPair
+      case computeSharedSecret privB pubA of
+        Right secret -> BS.length secret @?= 32
+        Left err -> assertFailure ("unexpected error: " ++ show err)
+  , testCase "publicFromPrivate is deterministic" $ do
+      (_, priv) <- generateKeyPair
+      publicFromPrivate priv @?= publicFromPrivate priv
   , testCase "RFC 7748 Section 6.1 test vector" $ do
       -- Alice's private key
       let alicePriv = hex "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a"

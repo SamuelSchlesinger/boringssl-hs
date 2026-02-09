@@ -22,4 +22,10 @@ tests = testGroup "Random"
       a <- randomBytes 32
       b <- randomBytes 32
       assertBool "random bytes should differ" (a /= b)
+  , testCase "negative input returns empty" $ do
+      bs <- randomBytes (-1)
+      BS.length bs @?= 0
+  , testCase "not all zeros (entropy sanity)" $ do
+      bs <- randomBytes 256
+      assertBool "256 random bytes should not be all zeros" (bs /= BS.replicate 256 0)
   ]

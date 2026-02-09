@@ -38,6 +38,18 @@ tests = testGroup "MLKEM"
         -- (with overwhelming probability)
         assertBool "different keypairs should differ" (ss1 /= ss2 || ct1 /= ct2)
     ]
+  , testGroup "ML-KEM-768 encapsulatePublic"
+    [ testCase "encapsulatePublic round-trip" $ do
+        (pub, priv) <- generateKeyPair MLKEM768
+        Right (ct, ssEncap) <- encapsulatePublic MLKEM768 pub
+        Right ssDecap <- decapsulate priv ct
+        ssDecap @?= ssEncap
+    , testCase "encapsulatePublic rejects wrong-length key" $ do
+        result <- encapsulatePublic MLKEM768 "short"
+        case result of
+          Left _ -> return ()
+          Right _ -> assertFailure "should reject wrong-length public key"
+    ]
   , testGroup "ML-KEM-1024"
     [ testCase "keygen produces correct sizes" $ do
         (pub, _priv) <- generateKeyPair MLKEM1024
@@ -48,6 +60,19 @@ tests = testGroup "MLKEM"
         (ct, ssEncap) <- encapsulate priv
         BS.length ct @?= ciphertextBytes MLKEM1024
         BS.length ssEncap @?= 32
+        Right ssDecap <- decapsulate priv ct
+        ssDecap @?= ssEncap
+
+    , testCase "decap with wrong length ciphertext" $ do
+        (_pub, priv) <- generateKeyPair MLKEM1024
+        result <- decapsulate priv "short"
+        case result of
+          Left _  -> return ()
+          Right _ -> assertFailure "decapsulate should reject wrong-length ciphertext"
+
+    , testCase "encapsulatePublic round-trip" $ do
+        (pub, priv) <- generateKeyPair MLKEM1024
+        Right (ct, ssEncap) <- encapsulatePublic MLKEM1024 pub
         Right ssDecap <- decapsulate priv ct
         ssDecap @?= ssEncap
     ]
