@@ -79,12 +79,12 @@ cipherBlockSize AES256OFB = 1
 -- | Encrypt plaintext. CBC and ECB modes apply PKCS#7 padding automatically.
 -- For ECB mode, pass an empty IV (@BS.empty@).
 encrypt :: CipherAlgorithm -> ByteString -> ByteString -> ByteString
-        -> IO (Either BoringSSLError ByteString)
+        -> IO (Either CryptoError ByteString)
 encrypt algo key iv plaintext
   | BS.length key /= cipherKeyLength algo =
-      return (Left (BoringSSLError 0 ("encrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
+      return (Left (InvalidInput ("encrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
   | BS.length iv /= cipherIVLength algo =
-      return (Left (BoringSSLError 0 ("encrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
+      return (Left (InvalidInput ("encrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
   | otherwise =
       withByteString key $ \keyPtr _ ->
         withByteString plaintext $ \inPtr inLen -> do
@@ -97,7 +97,7 @@ encrypt algo key iv plaintext
                   (\ctx -> when (ctx /= nullPtr) (c_EVP_CIPHER_CTX_free ctx))
                   $ \ctx ->
             if ctx == nullPtr
-              then return (Left (BoringSSLError 0 "encrypt: EVP_CIPHER_CTX_new failed"))
+              then return (Left (AllocationFailure "encrypt: EVP_CIPHER_CTX_new failed"))
               else do
                 let maxOutLen = fromIntegral inLen + (16 :: Int)
                 fptr <- BSI.mallocByteString maxOutLen
@@ -106,7 +106,7 @@ encrypt algo key iv plaintext
                   if rc1 /= 1
                     then do
                       merr <- getBoringSSLError
-                      return (Left (maybe (BoringSSLError 0 "encrypt: EncryptInit failed") id merr))
+                      return (Left (maybe (OperationFailed "encrypt: EncryptInit failed") id merr))
                     else do
                       alloca $ \updateLenPtr ->
                         alloca $ \finalLenPtr -> do
@@ -117,7 +117,7 @@ encrypt algo key iv plaintext
                           if rc2 /= 1
                             then do
                               merr <- getBoringSSLError
-                              return (Left (maybe (BoringSSLError 0 "encrypt: EncryptUpdate failed") id merr))
+                              return (Left (maybe (OperationFailed "encrypt: EncryptUpdate failed") id merr))
                             else do
                               updateLen <- peek updateLenPtr
                               let remaining = fromIntegral maxOutLen - updateLen
@@ -127,7 +127,7 @@ encrypt algo key iv plaintext
                               if rc3 /= 1
                                 then do
                                   merr <- getBoringSSLError
-                                  return (Left (maybe (BoringSSLError 0 "encrypt: EncryptFinal failed") id merr))
+                                  return (Left (maybe (OperationFailed "encrypt: EncryptFinal failed") id merr))
                                 else do
                                   finalLen <- peek finalLenPtr
                                   return (Right (fromIntegral (updateLen + finalLen)))
@@ -139,12 +139,12 @@ encrypt algo key iv plaintext
 -- For ECB mode, pass an empty IV (@BS.empty@).
 -- Returns Left on failure (e.g. bad padding).
 decrypt :: CipherAlgorithm -> ByteString -> ByteString -> ByteString
-        -> IO (Either BoringSSLError ByteString)
+        -> IO (Either CryptoError ByteString)
 decrypt algo key iv ciphertext
   | BS.length key /= cipherKeyLength algo =
-      return (Left (BoringSSLError 0 ("decrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
+      return (Left (InvalidInput ("decrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
   | BS.length iv /= cipherIVLength algo =
-      return (Left (BoringSSLError 0 ("decrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
+      return (Left (InvalidInput ("decrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
   | otherwise =
       withByteString key $ \keyPtr _ ->
         withByteString ciphertext $ \inPtr inLen -> do
@@ -157,7 +157,7 @@ decrypt algo key iv ciphertext
                   (\ctx -> when (ctx /= nullPtr) (c_EVP_CIPHER_CTX_free ctx))
                   $ \ctx ->
             if ctx == nullPtr
-              then return (Left (BoringSSLError 0 "decrypt: EVP_CIPHER_CTX_new failed"))
+              then return (Left (AllocationFailure "decrypt: EVP_CIPHER_CTX_new failed"))
               else do
                 let maxOutLen = fromIntegral inLen + (16 :: Int)
                 fptr <- BSI.mallocByteString maxOutLen
@@ -166,7 +166,7 @@ decrypt algo key iv ciphertext
                   if rc1 /= 1
                     then do
                       merr <- getBoringSSLError
-                      return (Left (maybe (BoringSSLError 0 "decrypt: DecryptInit failed") id merr))
+                      return (Left (maybe (OperationFailed "decrypt: DecryptInit failed") id merr))
                     else do
                       alloca $ \updateLenPtr ->
                         alloca $ \finalLenPtr -> do
@@ -177,7 +177,7 @@ decrypt algo key iv ciphertext
                           if rc2 /= 1
                             then do
                               merr <- getBoringSSLError
-                              return (Left (maybe (BoringSSLError 0 "decrypt: DecryptUpdate failed") id merr))
+                              return (Left (maybe (OperationFailed "decrypt: DecryptUpdate failed") id merr))
                             else do
                               updateLen <- peek updateLenPtr
                               let remaining = fromIntegral maxOutLen - updateLen
@@ -187,7 +187,7 @@ decrypt algo key iv ciphertext
                               if rc3 /= 1
                                 then do
                                   merr <- getBoringSSLError
-                                  return (Left (maybe (BoringSSLError 0 "decrypt: bad padding or corrupted ciphertext") id merr))
+                                  return (Left (maybe (OperationFailed "decrypt: bad padding or corrupted ciphertext") id merr))
                                 else do
                                   finalLen <- peek finalLenPtr
                                   return (Right (fromIntegral (updateLen + finalLen)))

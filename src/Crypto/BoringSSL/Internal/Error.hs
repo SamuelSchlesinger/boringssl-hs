@@ -1,5 +1,5 @@
 module Crypto.BoringSSL.Internal.Error
-  ( BoringSSLError(..)
+  ( CryptoError(..)
   , getBoringSSLError
   , clearBoringSSLError
   ) where
@@ -9,17 +9,36 @@ import Crypto.BoringSSL.Internal.FFI
 import Foreign.C.String
 import Foreign.Marshal.Array
 
--- | An error from the BoringSSL error queue.
-data BoringSSLError = BoringSSLError
-  { errorCode    :: !Int
-  , errorMessage :: !String
-  } deriving (Eq)
+-- | Errors that can occur in the boringssl library.
+data CryptoError
+  = BoringSSLError !Int !String
+    -- ^ A genuine error from the BoringSSL error queue, with the
+    -- packed error code and human-readable message.
+  | InvalidInput !String
+    -- ^ Haskell-side input validation rejected the arguments before
+    -- any C function was called (e.g. wrong key length).
+  | AllocationFailure !String
+    -- ^ A C allocation function (@_new@, @malloc@) returned @NULL@.
+  | OperationFailed !String
+    -- ^ A C operation returned a failure code but the BoringSSL error
+    -- queue was empty or was not consulted.
+  | DecodeError !String
+    -- ^ Parsing or deserialization of input data failed.
+  deriving (Eq)
 
-instance Show BoringSSLError where
+instance Show CryptoError where
   show (BoringSSLError code msg) =
     "BoringSSLError " ++ show code ++ ": " ++ msg
+  show (InvalidInput msg) =
+    "InvalidInput: " ++ msg
+  show (AllocationFailure msg) =
+    "AllocationFailure: " ++ msg
+  show (OperationFailed msg) =
+    "OperationFailed: " ++ msg
+  show (DecodeError msg) =
+    "DecodeError: " ++ msg
 
-instance Exception BoringSSLError
+instance Exception CryptoError
 
 -- | Clear the BoringSSL error queue for the current thread.
 -- Should be called before operations where you want to inspect the
@@ -30,7 +49,7 @@ clearBoringSSLError :: IO ()
 clearBoringSSLError = c_ERR_clear_error
 
 -- | Drain the BoringSSL error queue and return the first error, if any.
-getBoringSSLError :: IO (Maybe BoringSSLError)
+getBoringSSLError :: IO (Maybe CryptoError)
 getBoringSSLError = do
   errCode <- c_ERR_get_error
   if errCode == 0

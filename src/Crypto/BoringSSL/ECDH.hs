@@ -33,10 +33,10 @@ import Crypto.BoringSSL.Internal.FFI.ECDH
 -- The output is a hash of the shared point x-coordinate. The output
 -- length determines which hash is used internally:
 -- 32 -> SHA-256, 48 -> SHA-384, 64 -> SHA-512.
-ecdhComputeSecret :: ECKeyPair -> ECPublicKey -> Int -> IO (Either BoringSSLError ByteString)
+ecdhComputeSecret :: ECKeyPair -> ECPublicKey -> Int -> IO (Either CryptoError ByteString)
 ecdhComputeSecret myKey peerPub outLen
   | outLen `notElem` [32, 48, 64] =
-      return (Left (BoringSSLError 0 "ecdhComputeSecret: output length must be 32, 48, or 64"))
+      return (Left (InvalidInput "ecdhComputeSecret: output length must be 32, 48, or 64"))
   | otherwise =
   withECKeyPair myKey $ \myKeyPtr ->
     withECPublicKey peerPub $ \peerKeyPtr -> do
@@ -47,6 +47,6 @@ ecdhComputeSecret myKey peerPub outLen
       if rc /= 1
         then do
           merr <- getBoringSSLError
-          return (Left (maybe (BoringSSLError 0 "ecdhComputeSecret: ECDH_compute_key_fips failed") id merr))
+          return (Left (maybe (OperationFailed "ecdhComputeSecret: ECDH_compute_key_fips failed") id merr))
         else
           return (Right (BSI.BS fptr outLen))

@@ -17,7 +17,7 @@ module Crypto.BoringSSL.X25519
   , publicKeyFromBytes
   , privateKeyFromBytes
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -86,7 +86,7 @@ publicFromPrivate (PrivateKey privKey) = unsafePerformIO $ do
 -- | Compute a shared secret via X25519 Diffie-Hellman.
 -- Returns 'Left' if the peer's public key is a low-order point.
 -- Pure: X25519 scalar multiplication is deterministic.
-computeSharedSecret :: PrivateKey -> PublicKey -> Either BoringSSLError ByteString
+computeSharedSecret :: PrivateKey -> PublicKey -> Either CryptoError ByteString
 computeSharedSecret (PrivateKey privKey) (PublicKey pubKey) = unsafePerformIO $ do
   outFPtr <- BSI.mallocByteString 32
   rc <- withForeignPtr outFPtr $ \outPtr ->
@@ -95,5 +95,5 @@ computeSharedSecret (PrivateKey privKey) (PublicKey pubKey) = unsafePerformIO $ 
         c_X25519 (castPtr outPtr) privPtr pubPtr
   if rc == 1
     then return (Right (BSI.BS outFPtr 32))
-    else return (Left (BoringSSLError 0 "X25519.computeSharedSecret: low-order point"))
+    else return (Left (OperationFailed "X25519.computeSharedSecret: low-order point"))
 {-# NOINLINE computeSharedSecret #-}

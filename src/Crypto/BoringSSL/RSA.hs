@@ -26,7 +26,7 @@ module Crypto.BoringSSL.RSA
   , rsaEncrypt
   , rsaDecrypt
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -56,19 +56,19 @@ rsaPKCS1OAEPPadding :: CInt
 rsaPKCS1OAEPPadding = 4
 
 -- | Generate a new RSA key pair. The key size must be at least 2048 bits.
-generateRSAKeyPair :: Int -> IO (Either BoringSSLError RSAKeyPair)
+generateRSAKeyPair :: Int -> IO (Either CryptoError RSAKeyPair)
 generateRSAKeyPair bits
-  | bits < 2048 = return (Left (BoringSSLError 0 "generateRSAKeyPair: key size must be at least 2048 bits"))
+  | bits < 2048 = return (Left (InvalidInput "generateRSAKeyPair: key size must be at least 2048 bits"))
   | otherwise = mask $ \restore -> do
   rsa <- c_RSA_new
   if rsa == nullPtr
-    then return (Left (BoringSSLError 0 "generateRSAKeyPair: RSA_new failed"))
+    then return (Left (AllocationFailure "generateRSAKeyPair: RSA_new failed"))
     else do
       e <- c_BN_new
       if e == nullPtr
         then do
           c_RSA_free rsa
-          return (Left (BoringSSLError 0 "generateRSAKeyPair: BN_new failed"))
+          return (Left (AllocationFailure "generateRSAKeyPair: BN_new failed"))
         else do
           _ <- c_BN_set_word e 65537
           rc <- restore (c_RSA_generate_key_ex rsa (fromIntegral bits) e nullPtr)
@@ -78,13 +78,13 @@ generateRSAKeyPair bits
             then do
               c_RSA_free rsa
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "generateRSAKeyPair: RSA_generate_key_ex failed") id merr))
+              return (Left (maybe (OperationFailed "generateRSAKeyPair: RSA_generate_key_ex failed") id merr))
             else do
               fptr <- newForeignPtr c_RSA_free_funptr rsa
               return (Right (RSAKeyPair fptr))
 
 -- | Serialize the public key to DER-encoded PKCS#1 format.
-publicKeyToBytes :: RSAKeyPair -> IO (Either BoringSSLError ByteString)
+publicKeyToBytes :: RSAKeyPair -> IO (Either CryptoError ByteString)
 publicKeyToBytes (RSAKeyPair fptr) =
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
@@ -93,24 +93,24 @@ publicKeyToBytes (RSAKeyPair fptr) =
         if rc /= 1
           then do
             merr <- getBoringSSLError
-            return (Left (maybe (BoringSSLError 0 "publicKeyToBytes: RSA_public_key_to_bytes failed") id merr))
+            return (Left (maybe (OperationFailed "publicKeyToBytes: RSA_public_key_to_bytes failed") id merr))
           else Right <$> packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a public key from DER-encoded PKCS#1 format.
-publicKeyFromBytes :: ByteString -> IO (Either BoringSSLError RSAPublicKey)
+publicKeyFromBytes :: ByteString -> IO (Either CryptoError RSAPublicKey)
 publicKeyFromBytes bs =
   withByteString bs $ \ptr len -> mask_ $ do
     rsa <- c_RSA_public_key_from_bytes ptr len
     if rsa == nullPtr
       then do
         merr <- getBoringSSLError
-        return (Left (maybe (BoringSSLError 0 "publicKeyFromBytes: RSA_public_key_from_bytes failed") id merr))
+        return (Left (maybe (OperationFailed "publicKeyFromBytes: RSA_public_key_from_bytes failed") id merr))
       else do
         fptr <- newForeignPtr c_RSA_free_funptr rsa
         return (Right (RSAPublicKey fptr))
 
 -- | Serialize the private key to DER-encoded PKCS#1 format.
-privateKeyToBytes :: RSAKeyPair -> IO (Either BoringSSLError ByteString)
+privateKeyToBytes :: RSAKeyPair -> IO (Either CryptoError ByteString)
 privateKeyToBytes (RSAKeyPair fptr) =
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
@@ -119,18 +119,18 @@ privateKeyToBytes (RSAKeyPair fptr) =
         if rc /= 1
           then do
             merr <- getBoringSSLError
-            return (Left (maybe (BoringSSLError 0 "privateKeyToBytes: RSA_private_key_to_bytes failed") id merr))
+            return (Left (maybe (OperationFailed "privateKeyToBytes: RSA_private_key_to_bytes failed") id merr))
           else Right <$> packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
-privateKeyFromBytes :: ByteString -> IO (Either BoringSSLError RSAKeyPair)
+privateKeyFromBytes :: ByteString -> IO (Either CryptoError RSAKeyPair)
 privateKeyFromBytes bs =
   withByteString bs $ \ptr len -> mask_ $ do
     rsa <- c_RSA_private_key_from_bytes ptr len
     if rsa == nullPtr
       then do
         merr <- getBoringSSLError
-        return (Left (maybe (BoringSSLError 0 "privateKeyFromBytes: RSA_private_key_from_bytes failed") id merr))
+        return (Left (maybe (OperationFailed "privateKeyFromBytes: RSA_private_key_from_bytes failed") id merr))
       else do
         fptr <- newForeignPtr c_RSA_free_funptr rsa
         return (Right (RSAKeyPair fptr))
@@ -147,10 +147,10 @@ rsaSize (RSAKeyPair fptr) = withForeignPtr fptr $ \rsa ->
 
 -- | PKCS#1 v1.5 sign a pre-hashed digest.
 -- Returns 'Left' if the algorithm has no NID (e.g. BLAKE2b256).
-rsaSign :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either BoringSSLError ByteString)
+rsaSign :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
 rsaSign _ algo _
   | Nothing <- ID.algorithmNID algo =
-      return (Left (BoringSSLError 0 ("rsaSign: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
+      return (Left (InvalidInput ("rsaSign: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
 rsaSign (RSAKeyPair fptr) algo digest = do
   let nid = case ID.algorithmNID algo of
               Just n  -> n
@@ -166,7 +166,7 @@ rsaSign (RSAKeyPair fptr) algo digest = do
           if rc /= 1
             then do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "rsaSign: RSA_sign failed") id merr))
+              return (Left (maybe (OperationFailed "rsaSign: RSA_sign failed") id merr))
             else do
               actualLen <- peek outLenPtr
               return (Right (fromIntegral actualLen))
@@ -177,10 +177,10 @@ rsaSign (RSAKeyPair fptr) algo digest = do
 -- | PKCS#1 v1.5 verify a signature on a pre-hashed digest.
 -- Returns @Left@ if the algorithm has no NID, or @Right False@ for invalid
 -- signatures, or @Right True@ for valid signatures.
-rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
+rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)
 rsaVerify _ algo _ _
   | Nothing <- ID.algorithmNID algo =
-      return (Left (BoringSSLError 0 ("rsaVerify: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
+      return (Left (InvalidInput ("rsaVerify: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
 rsaVerify (RSAPublicKey fptr) algo digest sig = do
   let nid = case ID.algorithmNID algo of
               Just n  -> n
@@ -195,11 +195,11 @@ rsaVerify (RSAPublicKey fptr) algo digest sig = do
             then return (Right False)
             else do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "rsaVerify: internal error") id merr))
+              return (Left (maybe (OperationFailed "rsaVerify: internal error") id merr))
 
 -- | RSA-PSS sign a pre-hashed digest. Uses the same hash for MGF1
 -- and salt length equal to the digest size.
-rsaSignPSS :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either BoringSSLError ByteString)
+rsaSignPSS :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
 rsaSignPSS (RSAKeyPair fptr) algo digest =
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
@@ -214,7 +214,7 @@ rsaSignPSS (RSAKeyPair fptr) algo digest =
           if rc /= 1
             then do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "rsaSignPSS: failed") id merr))
+              return (Left (maybe (OperationFailed "rsaSignPSS: failed") id merr))
             else do
               actualLen <- peek outLenPtr
               return (Right (fromIntegral actualLen))
@@ -225,7 +225,7 @@ rsaSignPSS (RSAKeyPair fptr) algo digest =
 -- | RSA-PSS verify a signature on a pre-hashed digest.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors.
-rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
+rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)
 rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
   withForeignPtr fptr $ \rsa ->
     withByteString digest $ \digestPtr digestLen ->
@@ -239,10 +239,10 @@ rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
             then return (Right False)
             else do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "rsaVerifyPSS: internal error") id merr))
+              return (Left (maybe (OperationFailed "rsaVerifyPSS: internal error") id merr))
 
 -- | RSA-OAEP encrypt plaintext with a public key.
-rsaEncrypt :: RSAPublicKey -> ByteString -> IO (Either BoringSSLError ByteString)
+rsaEncrypt :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
 rsaEncrypt (RSAPublicKey fptr) plaintext =
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
@@ -255,7 +255,7 @@ rsaEncrypt (RSAPublicKey fptr) plaintext =
           if rc /= 1
             then do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "rsaEncrypt: failed") id merr))
+              return (Left (maybe (OperationFailed "rsaEncrypt: failed") id merr))
             else do
               actualLen <- peek outLenPtr
               return (Right (fromIntegral actualLen))
@@ -264,7 +264,7 @@ rsaEncrypt (RSAPublicKey fptr) plaintext =
       Right len -> return (Right (BSI.BS outFPtr len))
 
 -- | RSA-OAEP decrypt ciphertext with a private key.
-rsaDecrypt :: RSAKeyPair -> ByteString -> IO (Either BoringSSLError ByteString)
+rsaDecrypt :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 rsaDecrypt (RSAKeyPair fptr) ciphertext =
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
@@ -277,7 +277,7 @@ rsaDecrypt (RSAKeyPair fptr) ciphertext =
           if rc /= 1
             then do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "rsaDecrypt: failed") id merr))
+              return (Left (maybe (OperationFailed "rsaDecrypt: failed") id merr))
             else do
               actualLen <- peek outLenPtr
               return (Right (fromIntegral actualLen))

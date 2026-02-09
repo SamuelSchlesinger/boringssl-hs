@@ -8,7 +8,7 @@ module Crypto.BoringSSL.AEAD
     AEADAlgorithm(..)
     -- * Context
   , AEADCtx
-  , BoringSSLError(..)
+  , CryptoError(..)
   , newAEADCtx
     -- * Encryption and decryption
   , seal
@@ -67,12 +67,12 @@ aeadPtr AES128CCMMatter      = c_EVP_aead_aes_128_ccm_matter
 -- | Create a new AEAD context for the given algorithm and key.
 -- The key length must match the algorithm's expected key length.
 -- Uses the default tag length (pass 0 to EVP_AEAD_CTX_new).
-newAEADCtx :: AEADAlgorithm -> ByteString -> IO (Either BoringSSLError AEADCtx)
+newAEADCtx :: AEADAlgorithm -> ByteString -> IO (Either CryptoError AEADCtx)
 newAEADCtx algo key = do
   let aead = aeadPtr algo
       expectedKeyLen = keyLength algo
   if BS.length key /= expectedKeyLen
-    then return $ Left $ BoringSSLError 0 $
+    then return $ Left $ InvalidInput $
            "newAEADCtx: key length " ++ show (BS.length key)
            ++ " does not match expected " ++ show expectedKeyLen
     else withByteString key $ \keyPtr keyLen -> mask_ $ do
@@ -82,7 +82,7 @@ newAEADCtx algo key = do
           merr <- getBoringSSLError
           case merr of
             Just e  -> return (Left e)
-            Nothing -> return (Left (BoringSSLError 0 "newAEADCtx: EVP_AEAD_CTX_new returned NULL"))
+            Nothing -> return (Left (AllocationFailure "newAEADCtx: EVP_AEAD_CTX_new returned NULL"))
         else do
           fptr <- newForeignPtr c_EVP_AEAD_CTX_free_funptr ctx
           return (Right (AEADCtx algo fptr))
@@ -92,7 +92,7 @@ newAEADCtx algo key = do
 -- @seal ctx nonce plaintext ad@ encrypts @plaintext@ with the given
 -- @nonce@ and additional data @ad@, returning the ciphertext (which
 -- includes the authentication tag appended).
-seal :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
+seal :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 seal (AEADCtx algo fptr) nonce plaintext ad =
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
@@ -114,14 +114,14 @@ seal (AEADCtx algo fptr) nonce plaintext ad =
           merr <- getBoringSSLError
           case merr of
             Just e  -> return (Left e)
-            Nothing -> return (Left (BoringSSLError 0 "seal failed"))
+            Nothing -> return (Left (OperationFailed "seal failed"))
 
 -- | Decrypt and verify ciphertext.
 --
 -- @open ctx nonce ciphertext ad@ decrypts @ciphertext@ (which includes
 -- the authentication tag) with the given @nonce@ and additional data @ad@.
 -- Returns 'Left' if authentication fails.
-open :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
+open :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 open (AEADCtx _algo fptr) nonce ciphertext ad =
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
@@ -142,7 +142,7 @@ open (AEADCtx _algo fptr) nonce ciphertext ad =
           merr <- getBoringSSLError
           case merr of
             Just e  -> return (Left e)
-            Nothing -> return (Left (BoringSSLError 0 "open failed: authentication error"))
+            Nothing -> return (Left (OperationFailed "open failed: authentication error"))
 
 -- | Query the expected key length for an AEAD algorithm.
 keyLength :: AEADAlgorithm -> Int

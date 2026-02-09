@@ -9,7 +9,7 @@ import Test.Tasty.HUnit
 import Crypto.BoringSSL.Digest (Algorithm(..))
 import Crypto.BoringSSL.PBKDF2
 
-unwrap :: Either BoringSSLError a -> a
+unwrap :: Either CryptoError a -> a
 unwrap (Right x) = x
 unwrap (Left e)  = error ("unexpected error: " ++ show e)
 

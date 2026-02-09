@@ -5,7 +5,7 @@
 module Crypto.BoringSSL.PEM
   ( pemEncode
   , pemDecode
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -36,19 +36,19 @@ pemEncode label derBytes =
 -- PEM format is invalid.
 --
 -- @pemDecode pem@ parses the PEM headers and base64-decodes the body.
-pemDecode :: ByteString -> Either BoringSSLError (String, ByteString)
+pemDecode :: ByteString -> Either CryptoError (String, ByteString)
 pemDecode pem =
   let ls = BS8.lines (stripCR pem)
   in case ls of
-    [] -> Left (BoringSSLError 0 "pemDecode: empty input")
+    [] -> Left (DecodeError "pemDecode: empty input")
     (hdr : rest) ->
       case parseHeader hdr of
-        Nothing -> Left (BoringSSLError 0 "pemDecode: invalid PEM header")
+        Nothing -> Left (DecodeError "pemDecode: invalid PEM header")
         Just label ->
           let (bodyLines, trailerLines) = break (isFooter label) rest
               body = BS.concat bodyLines
           in case trailerLines of
-            [] -> Left (BoringSSLError 0 "pemDecode: missing PEM footer")
+            [] -> Left (DecodeError "pemDecode: missing PEM footer")
             _  -> case Base64.decode body of
                     Right decoded -> Right (label, decoded)
                     Left err      -> Left err

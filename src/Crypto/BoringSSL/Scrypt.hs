@@ -4,7 +4,7 @@
 -- algorithm, as specified in RFC 7914.
 module Crypto.BoringSSL.Scrypt
   ( scrypt
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -26,7 +26,7 @@ import Crypto.BoringSSL.Internal.FFI.Scrypt
 -- (CPU\/memory cost), @r@ (block size), and @p@ (parallelization).
 --
 -- Returns 'Left' on failure (e.g. invalid parameters).
-scrypt :: ByteString -> ByteString -> Word64 -> Word64 -> Word64 -> Int -> Either BoringSSLError ByteString
+scrypt :: ByteString -> ByteString -> Word64 -> Word64 -> Word64 -> Int -> Either CryptoError ByteString
 scrypt password salt n r p keyLen = unsafePerformIO $
   BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
     withByteString salt $ \saltPtr saltLen -> do
@@ -38,6 +38,6 @@ scrypt password salt n r p keyLen = unsafePerformIO $
           n r p 0
           (castPtr outPtr) (fromIntegral keyLen)
       if rc /= 1
-        then return (Left (BoringSSLError 0 "scrypt: derivation failed"))
+        then return (Left (OperationFailed "scrypt: derivation failed"))
         else return (Right (BSI.BS fptr keyLen))
 {-# NOINLINE scrypt #-}

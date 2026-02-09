@@ -4,7 +4,7 @@
 -- HMAC, as specified in RFC 2898.
 module Crypto.BoringSSL.PBKDF2
   ( pbkdf2
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -25,7 +25,7 @@ import Crypto.BoringSSL.Internal.FFI.PBKDF2
 -- @pbkdf2 algo password salt iterations keyLength@ computes @keyLength@ bytes
 -- of key material from @password@ and @salt@ using @iterations@ rounds of
 -- PBKDF2 with HMAC using the specified hash @algo@.
-pbkdf2 :: Algorithm -> ByteString -> ByteString -> Int -> Int -> Either BoringSSLError ByteString
+pbkdf2 :: Algorithm -> ByteString -> ByteString -> Int -> Int -> Either CryptoError ByteString
 pbkdf2 algo password salt iterations keyLen = unsafePerformIO $
   BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
     withByteString salt $ \saltPtr saltLen -> do
@@ -37,6 +37,6 @@ pbkdf2 algo password salt iterations keyLen = unsafePerformIO $
                 (fromIntegral iterations) (ID.evpMD algo)
                 (fromIntegral keyLen) (castPtr outPtr)
       if rc /= 1
-        then return (Left (BoringSSLError 0 "pbkdf2: PKCS5_PBKDF2_HMAC failed"))
+        then return (Left (OperationFailed "pbkdf2: PKCS5_PBKDF2_HMAC failed"))
         else return (Right (BSI.BS fptr keyLen))
 {-# NOINLINE pbkdf2 #-}

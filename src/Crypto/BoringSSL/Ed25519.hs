@@ -21,7 +21,7 @@ module Crypto.BoringSSL.Ed25519
   , privateKeyFromBytes
   , signatureFromBytes
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -93,9 +93,9 @@ generateKeyPair = do
   return (PublicKey (BSI.BS pubFPtr 32), PrivateKey (BSI.BS privFPtr 64))
 
 -- | Deterministically derive a key pair from a 32-byte seed (pure, RFC 8032).
-keyPairFromSeed :: ByteString -> Either BoringSSLError (PublicKey, PrivateKey)
+keyPairFromSeed :: ByteString -> Either CryptoError (PublicKey, PrivateKey)
 keyPairFromSeed seed
-  | BS.length seed /= 32 = Left (BoringSSLError 0 "keyPairFromSeed: seed must be 32 bytes")
+  | BS.length seed /= 32 = Left (InvalidInput "keyPairFromSeed: seed must be 32 bytes")
   | otherwise = unsafePerformIO $ do
       pubFPtr <- BSI.mallocByteString 32
       privFPtr <- BSI.mallocByteString 64

@@ -4,7 +4,7 @@
 -- to derive keying material from a shared secret.
 module Crypto.BoringSSL.TLSPRF
   ( tlsPRF
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -26,7 +26,7 @@ import Crypto.BoringSSL.Internal.FFI.TLSPRF
 -- @secret@, @label@, @seed1@, and @seed2@.
 --
 -- Returns 'Left' on failure.
-tlsPRF :: Algorithm -> Int -> ByteString -> ByteString -> ByteString -> ByteString -> Either BoringSSLError ByteString
+tlsPRF :: Algorithm -> Int -> ByteString -> ByteString -> ByteString -> ByteString -> Either CryptoError ByteString
 tlsPRF algo outLen secret label seed1 seed2 = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->
     withByteString label $ \labelPtr labelLen ->
@@ -41,6 +41,6 @@ tlsPRF algo outLen secret label seed1 seed2 = unsafePerformIO $
               seed1Ptr seed1Len
               seed2Ptr seed2Len
           if rc /= 1
-            then return (Left (BoringSSLError 0 "tlsPRF: derivation failed"))
+            then return (Left (OperationFailed "tlsPRF: derivation failed"))
             else return (Right (BSI.BS fptr outLen))
 {-# NOINLINE tlsPRF #-}

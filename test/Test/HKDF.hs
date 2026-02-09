@@ -14,7 +14,7 @@ hex s = case Base16.decode s of
   Right bs -> bs
   Left err -> error ("bad hex literal: " ++ err)
 
-unwrap :: Either BoringSSLError a -> a
+unwrap :: Either CryptoError a -> a
 unwrap (Right x) = x
 unwrap (Left e)  = error ("unexpected error: " ++ show e)
 

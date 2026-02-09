@@ -5,7 +5,7 @@
 module Crypto.BoringSSL.Base64
   ( encode
   , decode
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -38,14 +38,14 @@ encode bs = unsafePerformIO $
 {-# NOINLINE encode #-}
 
 -- | Base64-decode a ByteString (pure, deterministic).
--- Returns Left with a BoringSSLError on invalid input.
-decode :: ByteString -> Either BoringSSLError ByteString
+-- Returns Left with a CryptoError on invalid input.
+decode :: ByteString -> Either CryptoError ByteString
 decode bs = unsafePerformIO $
   withByteString bs $ \inPtr inLen -> do
     alloca $ \maxOutLenPtr -> do
       rc1 <- c_EVP_DecodedLength maxOutLenPtr inLen
       if rc1 /= 1
-        then return (Left (BoringSSLError 0 "Base64.decode: invalid input length"))
+        then return (Left (DecodeError "Base64.decode: invalid input length"))
         else do
           maxOutLen <- peek maxOutLenPtr
           fptr <- BSI.mallocByteString (fromIntegral maxOutLen)
@@ -53,7 +53,7 @@ decode bs = unsafePerformIO $
             alloca $ \outLenPtr -> do
               rc2 <- c_EVP_DecodeBase64 (castPtr outPtr) outLenPtr maxOutLen inPtr inLen
               if rc2 /= 1
-                then return (Left (BoringSSLError 0 "Base64.decode: invalid base64 input"))
+                then return (Left (DecodeError "Base64.decode: invalid base64 input"))
                 else do
                   actualLen <- peek outLenPtr
                   return (Right (fromIntegral actualLen))

@@ -9,7 +9,7 @@ module Crypto.BoringSSL.HKDF
   , hkdfExtract
   , hkdfExpand
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -29,7 +29,7 @@ import Crypto.BoringSSL.Internal.FFI.HKDF
 -- | Full HKDF (extract-then-expand) in one call (pure, deterministic).
 --
 -- @hkdf hashAlgo secret salt info outputLength@
-hkdf :: Algorithm -> ByteString -> ByteString -> ByteString -> Int -> Either BoringSSLError ByteString
+hkdf :: Algorithm -> ByteString -> ByteString -> ByteString -> Int -> Either CryptoError ByteString
 hkdf algo secret salt info outLen = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->
     withByteString salt $ \saltPtr saltLen ->
@@ -39,14 +39,14 @@ hkdf algo secret salt info outLen = unsafePerformIO $
           c_HKDF (castPtr outPtr) (fromIntegral outLen) (ID.evpMD algo)
                   secretPtr secretLen saltPtr saltLen infoPtr infoLen
         if rc /= 1
-          then return (Left (BoringSSLError 0 "hkdf: HKDF failed"))
+          then return (Left (OperationFailed "hkdf: HKDF failed"))
           else return (Right (BSI.BS fptr outLen))
 {-# NOINLINE hkdf #-}
 
 -- | HKDF-Extract: extract a pseudorandom key from input keying material.
 --
 -- @hkdfExtract hashAlgo secret salt@ returns the PRK.
-hkdfExtract :: Algorithm -> ByteString -> ByteString -> Either BoringSSLError ByteString
+hkdfExtract :: Algorithm -> ByteString -> ByteString -> Either CryptoError ByteString
 hkdfExtract algo secret salt = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->
     withByteString salt $ \saltPtr saltLen -> do
@@ -61,14 +61,14 @@ hkdfExtract algo secret salt = unsafePerformIO $
             then return Nothing
             else Just . fromIntegral <$> peek outLenPtr
       case result of
-        Nothing -> return (Left (BoringSSLError 0 "hkdfExtract: HKDF_extract failed"))
+        Nothing -> return (Left (OperationFailed "hkdfExtract: HKDF_extract failed"))
         Just actualLen -> return (Right (BSI.BS fptr actualLen))
 {-# NOINLINE hkdfExtract #-}
 
 -- | HKDF-Expand: expand a PRK into output keying material.
 --
 -- @hkdfExpand hashAlgo prk info outputLength@
-hkdfExpand :: Algorithm -> ByteString -> ByteString -> Int -> Either BoringSSLError ByteString
+hkdfExpand :: Algorithm -> ByteString -> ByteString -> Int -> Either CryptoError ByteString
 hkdfExpand algo prk info outLen = unsafePerformIO $
   withByteString prk $ \prkPtr prkLen ->
     withByteString info $ \infoPtr infoLen -> do
@@ -77,6 +77,6 @@ hkdfExpand algo prk info outLen = unsafePerformIO $
         c_HKDF_expand (castPtr outPtr) (fromIntegral outLen) (ID.evpMD algo)
                 prkPtr prkLen infoPtr infoLen
       if rc /= 1
-        then return (Left (BoringSSLError 0 "hkdfExpand: HKDF_expand failed"))
+        then return (Left (OperationFailed "hkdfExpand: HKDF_expand failed"))
         else return (Right (BSI.BS fptr outLen))
 {-# NOINLINE hkdfExpand #-}

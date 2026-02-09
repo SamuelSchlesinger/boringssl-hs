@@ -22,7 +22,7 @@ module Crypto.BoringSSL.ECDSA
   , ecKeyPairFromPrivateBytes
   , ecPublicKeyFromBytes
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -38,12 +38,12 @@ import Crypto.BoringSSL.Internal.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECDSA
 
 -- | Generate a new EC key pair for ECDSA.
-generateKeyPair :: ECCurve -> IO (Either BoringSSLError ECKeyPair)
+generateKeyPair :: ECCurve -> IO (Either CryptoError ECKeyPair)
 generateKeyPair = generateECKeyPair
 
 -- | Sign a pre-hashed digest with ECDSA.
 -- Returns a DER-encoded ASN.1 signature.
-ecdsaSign :: ECKeyPair -> ByteString -> IO (Either BoringSSLError ByteString)
+ecdsaSign :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 ecdsaSign kp digest =
   withECKeyPair kp $ \keyPtr -> do
     maxSigLen <- c_ECDSA_size keyPtr
@@ -55,7 +55,7 @@ ecdsaSign kp digest =
           if rc /= 1
             then do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "ecdsaSign: ECDSA_sign failed") id merr))
+              return (Left (maybe (OperationFailed "ecdsaSign: ECDSA_sign failed") id merr))
             else do
               sigLen <- peek sigLenPtr
               return (Right (fromIntegral sigLen))
@@ -66,7 +66,7 @@ ecdsaSign kp digest =
 -- | Verify an ECDSA signature on a pre-hashed digest.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors (e.g. memory allocation failure).
-ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
+ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
 ecdsaVerify pubKey digest sig =
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
@@ -78,13 +78,13 @@ ecdsaVerify pubKey digest sig =
             then return (Right False)
             else do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "ecdsaVerify: internal error") id merr))
+              return (Left (maybe (OperationFailed "ecdsaVerify: internal error") id merr))
 
 -- | Sign a pre-hashed digest with ECDSA, producing a fixed-size P1363
 -- signature (r || s, each zero-padded to the group order size).
 -- The signature length is always @2 * group_order_bytes@
 -- (64 for P-256, 96 for P-384, 132 for P-521).
-ecdsaSignP1363 :: ECKeyPair -> ByteString -> IO (Either BoringSSLError ByteString)
+ecdsaSignP1363 :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 ecdsaSignP1363 kp digest =
   withECKeyPair kp $ \keyPtr -> do
     maxSigLen <- c_ECDSA_size_p1363 keyPtr
@@ -96,7 +96,7 @@ ecdsaSignP1363 kp digest =
           if rc /= 1
             then do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "ecdsaSignP1363: ECDSA_sign_p1363 failed") id merr))
+              return (Left (maybe (OperationFailed "ecdsaSignP1363: ECDSA_sign_p1363 failed") id merr))
             else do
               sigLen <- peek sigLenPtr
               return (Right (fromIntegral sigLen))
@@ -107,7 +107,7 @@ ecdsaSignP1363 kp digest =
 -- | Verify a P1363 fixed-size ECDSA signature on a pre-hashed digest.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors.
-ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO (Either BoringSSLError Bool)
+ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
 ecdsaVerifyP1363 pubKey digest sig =
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
@@ -119,4 +119,4 @@ ecdsaVerifyP1363 pubKey digest sig =
             then return (Right False)
             else do
               merr <- getBoringSSLError
-              return (Left (maybe (BoringSSLError 0 "ecdsaVerifyP1363: internal error") id merr))
+              return (Left (maybe (OperationFailed "ecdsaVerifyP1363: internal error") id merr))

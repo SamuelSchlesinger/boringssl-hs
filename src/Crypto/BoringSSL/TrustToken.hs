@@ -23,7 +23,7 @@ module Crypto.BoringSSL.TrustToken
   , issue
   , redeem
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -62,7 +62,7 @@ methodPtr PstV1VOPRF        = c_TRUST_TOKEN_pst_v1_voprf
 methodPtr PstV1PMB          = c_TRUST_TOKEN_pst_v1_pmb
 
 -- | Generate a Trust Token key pair. Returns @Right (privateKey, publicKey)@.
-generateKey :: TrustTokenMethod -> Word32 -> IO (Either BoringSSLError (ByteString, ByteString))
+generateKey :: TrustTokenMethod -> Word32 -> IO (Either CryptoError (ByteString, ByteString))
 generateKey method keyId = do
   let maxPriv = trustTokenMaxPrivateKeySize
       maxPub  = trustTokenMaxPublicKeySize
@@ -77,7 +77,7 @@ generateKey method keyId = do
             (castPtr pubPtr) pubLenPtr (fromIntegral maxPub)
             keyId
       if rc /= 1
-        then return (Left (BoringSSLError 0 "generateKey: TRUST_TOKEN_generate_key failed"))
+        then return (Left (OperationFailed "generateKey: TRUST_TOKEN_generate_key failed"))
         else do
           privLen <- peek privLenPtr
           pubLen  <- peek pubLenPtr
@@ -85,30 +85,30 @@ generateKey method keyId = do
                          BSI.BS pubFPtr (fromIntegral pubLen)))
 
 -- | Create a new Trust Token client.
-newClient :: TrustTokenMethod -> Int -> IO (Either BoringSSLError TrustTokenClient)
+newClient :: TrustTokenMethod -> Int -> IO (Either CryptoError TrustTokenClient)
 newClient method maxBatchSize = mask_ $ do
   ctx <- c_TRUST_TOKEN_CLIENT_new (methodPtr method) (fromIntegral maxBatchSize)
   if ctx == nullPtr
-    then return (Left (BoringSSLError 0 "newClient: TRUST_TOKEN_CLIENT_new failed"))
+    then return (Left (AllocationFailure "newClient: TRUST_TOKEN_CLIENT_new failed"))
     else do
       fptr <- newForeignPtr c_TRUST_TOKEN_CLIENT_free_funptr ctx
       return (Right (TrustTokenClient fptr))
 
 -- | Add a public key to the client. Returns the key index.
-clientAddKey :: TrustTokenClient -> ByteString -> IO (Either BoringSSLError Int)
+clientAddKey :: TrustTokenClient -> ByteString -> IO (Either CryptoError Int)
 clientAddKey (TrustTokenClient fptr) key =
   withForeignPtr fptr $ \ctx ->
     alloca $ \idxPtr ->
       withByteString key $ \keyPtr keyLen -> do
         rc <- c_TRUST_TOKEN_CLIENT_add_key ctx idxPtr keyPtr keyLen
         if rc /= 1
-          then return (Left (BoringSSLError 0 "clientAddKey: TRUST_TOKEN_CLIENT_add_key failed"))
+          then return (Left (OperationFailed "clientAddKey: TRUST_TOKEN_CLIENT_add_key failed"))
           else do
             idx <- peek idxPtr :: IO CSize
             return (Right (fromIntegral idx))
 
 -- | Begin token issuance. Returns the issuance request to send to the issuer.
-beginIssuance :: TrustTokenClient -> Int -> IO (Either BoringSSLError ByteString)
+beginIssuance :: TrustTokenClient -> Int -> IO (Either CryptoError ByteString)
 beginIssuance (TrustTokenClient fptr) count =
   withForeignPtr fptr $ \ctx ->
     alloca $ \outPtrPtr ->
@@ -116,19 +116,19 @@ beginIssuance (TrustTokenClient fptr) count =
         rc <- c_TRUST_TOKEN_CLIENT_begin_issuance ctx outPtrPtr outLenPtr
                 (fromIntegral count)
         if rc /= 1
-          then return (Left (BoringSSLError 0 "beginIssuance: TRUST_TOKEN_CLIENT_begin_issuance failed"))
+          then return (Left (OperationFailed "beginIssuance: TRUST_TOKEN_CLIENT_begin_issuance failed"))
           else Right <$> packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Finish token issuance by processing the issuer's response.
 -- Returns @Right (tokens, keyIndex)@ on success.
-finishIssuance :: TrustTokenClient -> ByteString -> IO (Either BoringSSLError ([ByteString], Int))
+finishIssuance :: TrustTokenClient -> ByteString -> IO (Either CryptoError ([ByteString], Int))
 finishIssuance (TrustTokenClient fptr) response =
   withForeignPtr fptr $ \ctx ->
     alloca $ \keyIdxPtr ->
       withByteString response $ \respPtr respLen -> do
         stack <- c_TRUST_TOKEN_CLIENT_finish_issuance ctx keyIdxPtr respPtr respLen
         if stack == nullPtr
-          then return (Left (BoringSSLError 0 "finishIssuance: TRUST_TOKEN_CLIENT_finish_issuance failed"))
+          then return (Left (OperationFailed "finishIssuance: TRUST_TOKEN_CLIENT_finish_issuance failed"))
           else do
             result <- extractTokens stack
               `finally` c_boringssl_sk_TRUST_TOKEN_pop_free stack
@@ -149,13 +149,13 @@ extractToken stack i = do
   BS.packCStringLen (castPtr dataPtr, fromIntegral len)
 
 -- | Begin token redemption. Returns the redemption request.
-beginRedemption :: TrustTokenClient -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
+beginRedemption :: TrustTokenClient -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 beginRedemption (TrustTokenClient fptr) tokenData clientData =
   withForeignPtr fptr $ \ctx ->
     withByteString tokenData $ \tokDataPtr tokDataLen -> do
       tok <- c_TRUST_TOKEN_new tokDataPtr tokDataLen
       if tok == nullPtr
-        then return (Left (BoringSSLError 0 "beginRedemption: TRUST_TOKEN_new failed"))
+        then return (Left (AllocationFailure "beginRedemption: TRUST_TOKEN_new failed"))
         else do
           result <- alloca $ \outPtrPtr ->
             alloca $ \outLenPtr ->
@@ -165,7 +165,7 @@ beginRedemption (TrustTokenClient fptr) tokenData clientData =
                 if rc /= 1
                   then do
                     c_TRUST_TOKEN_free tok
-                    return (Left (BoringSSLError 0 "beginRedemption: TRUST_TOKEN_CLIENT_begin_redemption failed"))
+                    return (Left (OperationFailed "beginRedemption: TRUST_TOKEN_CLIENT_begin_redemption failed"))
                   else do
                     c_TRUST_TOKEN_free tok
                     Right <$> packOpenSSLBuffer outPtrPtr outLenPtr
@@ -173,7 +173,7 @@ beginRedemption (TrustTokenClient fptr) tokenData clientData =
 
 -- | Finish redemption by processing the issuer's response.
 -- Returns @Right (rr, sig)@ on success.
-finishRedemption :: TrustTokenClient -> ByteString -> IO (Either BoringSSLError (ByteString, ByteString))
+finishRedemption :: TrustTokenClient -> ByteString -> IO (Either CryptoError (ByteString, ByteString))
 finishRedemption (TrustTokenClient fptr) response =
   withForeignPtr fptr $ \ctx ->
     alloca $ \rrPtrPtr ->
@@ -184,46 +184,46 @@ finishRedemption (TrustTokenClient fptr) response =
               rc <- c_TRUST_TOKEN_CLIENT_finish_redemption ctx rrPtrPtr rrLenPtr
                       sigPtrPtr sigLenPtr respPtr respLen
               if rc /= 1
-                then return (Left (BoringSSLError 0 "finishRedemption: TRUST_TOKEN_CLIENT_finish_redemption failed"))
+                then return (Left (OperationFailed "finishRedemption: TRUST_TOKEN_CLIENT_finish_redemption failed"))
                 else do
                   rr <- packOpenSSLBuffer rrPtrPtr rrLenPtr
                   sig <- packOpenSSLBuffer sigPtrPtr sigLenPtr
                   return (Right (rr, sig))
 
 -- | Create a new Trust Token issuer.
-newIssuer :: TrustTokenMethod -> Int -> IO (Either BoringSSLError TrustTokenIssuer)
+newIssuer :: TrustTokenMethod -> Int -> IO (Either CryptoError TrustTokenIssuer)
 newIssuer method maxBatchSize = mask_ $ do
   ctx <- c_TRUST_TOKEN_ISSUER_new (methodPtr method) (fromIntegral maxBatchSize)
   if ctx == nullPtr
-    then return (Left (BoringSSLError 0 "newIssuer: TRUST_TOKEN_ISSUER_new failed"))
+    then return (Left (AllocationFailure "newIssuer: TRUST_TOKEN_ISSUER_new failed"))
     else do
       fptr <- newForeignPtr c_TRUST_TOKEN_ISSUER_free_funptr ctx
       return (Right (TrustTokenIssuer fptr))
 
 -- | Add a private key to the issuer.
-issuerAddKey :: TrustTokenIssuer -> ByteString -> IO (Either BoringSSLError ())
+issuerAddKey :: TrustTokenIssuer -> ByteString -> IO (Either CryptoError ())
 issuerAddKey (TrustTokenIssuer fptr) key =
   withForeignPtr fptr $ \ctx ->
     withByteString key $ \keyPtr keyLen -> do
       rc <- c_TRUST_TOKEN_ISSUER_add_key ctx keyPtr keyLen
       if rc /= 1
-        then return (Left (BoringSSLError 0 "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed"))
+        then return (Left (OperationFailed "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed"))
         else return (Right ())
 
 -- | Set the metadata key for the issuer.
-issuerSetMetadataKey :: TrustTokenIssuer -> ByteString -> IO (Either BoringSSLError ())
+issuerSetMetadataKey :: TrustTokenIssuer -> ByteString -> IO (Either CryptoError ())
 issuerSetMetadataKey (TrustTokenIssuer fptr) key =
   withForeignPtr fptr $ \ctx ->
     withByteString key $ \keyPtr keyLen -> do
       rc <- c_TRUST_TOKEN_ISSUER_set_metadata_key ctx keyPtr keyLen
       if rc /= 1
-        then return (Left (BoringSSLError 0 "issuerSetMetadataKey: TRUST_TOKEN_ISSUER_set_metadata_key failed"))
+        then return (Left (OperationFailed "issuerSetMetadataKey: TRUST_TOKEN_ISSUER_set_metadata_key failed"))
         else return (Right ())
 
 -- | Issue tokens in response to a client request.
 -- Returns @Right (response, tokensIssued)@ on success.
 issue :: TrustTokenIssuer -> ByteString -> Word32 -> Word8 -> Int
-      -> IO (Either BoringSSLError (ByteString, Int))
+      -> IO (Either CryptoError (ByteString, Int))
 issue (TrustTokenIssuer fptr) request publicMeta privateMeta maxIssuance =
   withForeignPtr fptr $ \ctx ->
     alloca $ \outPtrPtr ->
@@ -234,7 +234,7 @@ issue (TrustTokenIssuer fptr) request publicMeta privateMeta maxIssuance =
                     tokensIssuedPtr reqPtr reqLen publicMeta privateMeta
                     (fromIntegral maxIssuance)
             if rc /= 1
-              then return (Left (BoringSSLError 0 "issue: TRUST_TOKEN_ISSUER_issue failed"))
+              then return (Left (OperationFailed "issue: TRUST_TOKEN_ISSUER_issue failed"))
               else do
                 resp <- packOpenSSLBuffer outPtrPtr outLenPtr
                 issued <- peek tokensIssuedPtr
@@ -243,7 +243,7 @@ issue (TrustTokenIssuer fptr) request publicMeta privateMeta maxIssuance =
 -- | Redeem a token. Returns @Right (publicMetadata, privateMetadata,
 -- tokenData, clientData)@ on success.
 redeem :: TrustTokenIssuer -> ByteString
-       -> IO (Either BoringSSLError (Word32, Word8, ByteString, ByteString))
+       -> IO (Either CryptoError (Word32, Word8, ByteString, ByteString))
 redeem (TrustTokenIssuer fptr) request =
   withForeignPtr fptr $ \ctx ->
     alloca $ \pubPtr ->
@@ -255,7 +255,7 @@ redeem (TrustTokenIssuer fptr) request =
                 rc <- c_TRUST_TOKEN_ISSUER_redeem ctx pubPtr privPtr
                         tokenPtrPtr cdPtrPtr cdLenPtr reqPtr reqLen
                 if rc /= 1
-                  then return (Left (BoringSSLError 0 "redeem: TRUST_TOKEN_ISSUER_redeem failed"))
+                  then return (Left (OperationFailed "redeem: TRUST_TOKEN_ISSUER_redeem failed"))
                   else do
                     pubMeta <- peek pubPtr
                     privMeta <- peek privPtr

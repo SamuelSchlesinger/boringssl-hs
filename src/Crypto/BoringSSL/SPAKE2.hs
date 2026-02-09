@@ -11,7 +11,7 @@ module Crypto.BoringSSL.SPAKE2
   , generateMessage
   , processMessage
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -42,14 +42,14 @@ roleToC Bob   = spake2RoleBob
 
 -- | Create a new SPAKE2 context. @myName@ and @theirName@ are optional
 -- identity strings that are bound into the protocol.
-newContext :: Role -> ByteString -> ByteString -> IO (Either BoringSSLError SPAKE2Ctx)
+newContext :: Role -> ByteString -> ByteString -> IO (Either CryptoError SPAKE2Ctx)
 newContext role myName theirName = mask_ $
   withByteString myName $ \myNamePtr myNameLen ->
     withByteString theirName $ \theirNamePtr theirNameLen -> do
       ctx <- c_SPAKE2_CTX_new (roleToC role) myNamePtr myNameLen
                theirNamePtr theirNameLen
       if ctx == nullPtr
-        then return (Left (BoringSSLError 0 "newContext: SPAKE2_CTX_new failed"))
+        then return (Left (AllocationFailure "newContext: SPAKE2_CTX_new failed"))
         else do
           fptr <- newForeignPtr c_SPAKE2_CTX_free_funptr ctx
           lock <- newMVar ()
@@ -58,7 +58,7 @@ newContext role myName theirName = mask_ $
 -- | Generate a SPAKE2 message from a password. Call once per context.
 -- The resulting message should be sent to the peer.
 -- Thread-safe: concurrent calls are serialized.
-generateMessage :: SPAKE2Ctx -> ByteString -> IO (Either BoringSSLError ByteString)
+generateMessage :: SPAKE2Ctx -> ByteString -> IO (Either CryptoError ByteString)
 generateMessage (SPAKE2Ctx lock fptr) password =
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
@@ -70,7 +70,7 @@ generateMessage (SPAKE2Ctx lock fptr) password =
           c_SPAKE2_generate_msg ctx (castPtr outPtr) outLenPtr
             (fromIntegral maxOut) pwPtr pwLen
       if rc /= 1
-        then return (Left (BoringSSLError 0 "generateMessage: SPAKE2_generate_msg failed"))
+        then return (Left (OperationFailed "generateMessage: SPAKE2_generate_msg failed"))
         else do
           actualLen <- peek outLenPtr
           return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
@@ -79,7 +79,7 @@ generateMessage (SPAKE2Ctx lock fptr) password =
 -- Call once per context, after 'generateMessage'.
 -- Returns 'Left' if the message is invalid.
 -- Thread-safe: concurrent calls are serialized.
-processMessage :: SPAKE2Ctx -> ByteString -> IO (Either BoringSSLError ByteString)
+processMessage :: SPAKE2Ctx -> ByteString -> IO (Either CryptoError ByteString)
 processMessage (SPAKE2Ctx lock fptr) theirMsg =
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
@@ -91,7 +91,7 @@ processMessage (SPAKE2Ctx lock fptr) theirMsg =
           c_SPAKE2_process_msg ctx (castPtr outPtr) outLenPtr
             (fromIntegral maxOut) msgPtr msgLen
       if rc /= 1
-        then return (Left (BoringSSLError 0 "processMessage: SPAKE2_process_msg failed"))
+        then return (Left (OperationFailed "processMessage: SPAKE2_process_msg failed"))
         else do
           actualLen <- peek outLenPtr
           return (Right (BSI.BS outFPtr (fromIntegral actualLen)))

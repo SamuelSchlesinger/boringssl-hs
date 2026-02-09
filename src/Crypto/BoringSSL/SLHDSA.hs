@@ -19,7 +19,7 @@ module Crypto.BoringSSL.SLHDSA
   , privateKeyBytes
   , signatureBytes
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Control.Exception (mask_)
@@ -78,10 +78,10 @@ generateKeyPair variant = mask_ $ do
 --
 -- This function is pure (uses 'unsafePerformIO'). Signing is deterministic
 -- but very slow by design.
-sign :: SLHDSAVariant -> ByteString -> ByteString -> ByteString -> Either BoringSSLError ByteString
+sign :: SLHDSAVariant -> ByteString -> ByteString -> ByteString -> Either CryptoError ByteString
 sign variant privKey msg ctx
   | BS.length privKey /= privateKeyBytes variant =
-      Left (BoringSSLError 0 "SLHDSA.sign: incorrect private key length")
+      Left (InvalidInput "SLHDSA.sign: incorrect private key length")
   | otherwise = unsafePerformIO $ do
       let sigLen = signatureBytes variant
       sigFPtr <- BSI.mallocByteString sigLen
@@ -96,7 +96,7 @@ sign variant privKey msg ctx
                                 (castPtr sigPtr) privPtr msgPtr msgLen ctxPtr ctxLen
       if rc == 1
         then return (Right (BSI.BS sigFPtr sigLen))
-        else return (Left (BoringSSLError 0 "SLHDSA.sign: signing failed"))
+        else return (Left (OperationFailed "SLHDSA.sign: signing failed"))
 {-# NOINLINE sign #-}
 
 -- | Verify an SLH-DSA signature.

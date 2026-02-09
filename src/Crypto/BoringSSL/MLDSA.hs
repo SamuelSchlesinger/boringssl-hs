@@ -23,7 +23,7 @@ module Crypto.BoringSSL.MLDSA
   , signatureBytes
   , seedBytes
     -- * Error type
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Control.Exception (mask_)
@@ -95,7 +95,7 @@ cbsSize = sizeOf (undefined :: Ptr ()) + sizeOf (undefined :: CSize)
 -- Returns @(encodedPublicKey, seed, privateKey)@ where @seed@ is the
 -- 32-byte seed that can be used with 'privateKeyFromSeed' to regenerate
 -- the private key.
-generateKeyPair :: MLDSAVariant -> IO (Either BoringSSLError (ByteString, ByteString, MLDSAPrivateKey))
+generateKeyPair :: MLDSAVariant -> IO (Either CryptoError (ByteString, ByteString, MLDSAPrivateKey))
 generateKeyPair variant = mask_ $ do
   let pkSize = publicKeyBytes variant
       skSize = privateKeySize variant
@@ -111,17 +111,17 @@ generateKeyPair variant = mask_ $ do
         if rc /= 1
           then do
             merr <- getBoringSSLError
-            return (Left (maybe (BoringSSLError 0 "MLDSA_generate_key failed") id merr))
+            return (Left (maybe (OperationFailed "MLDSA_generate_key failed") id merr))
           else do
             seedBs <- BS.packCStringLen (castPtr seedPtr, mldsaSeedBytes)
             return (Right (BSI.BS pubFPtr pkSize, seedBs, MLDSAPrivateKey variant skFPtr))
 
 -- | Regenerate a private key from a seed value that was produced by
 -- 'generateKeyPair'. The seed must be exactly 32 bytes.
-privateKeyFromSeed :: MLDSAVariant -> ByteString -> Either BoringSSLError MLDSAPrivateKey
+privateKeyFromSeed :: MLDSAVariant -> ByteString -> Either CryptoError MLDSAPrivateKey
 privateKeyFromSeed variant seed
   | BS.length seed /= mldsaSeedBytes =
-      Left (BoringSSLError 0 "privateKeyFromSeed: seed must be 32 bytes")
+      Left (InvalidInput "privateKeyFromSeed: seed must be 32 bytes")
   | otherwise = unsafePerformIO $ mask_ $ do
       let skSize = privateKeySize variant
       skFPtr <- mallocForeignPtrBytes skSize
@@ -133,11 +133,11 @@ privateKeyFromSeed variant seed
             MLDSA87 -> c_MLDSA87_private_key_from_seed (castPtr skPtr) seedPtr seedLen
       if rc == 1
         then return (Right (MLDSAPrivateKey variant skFPtr))
-        else return (Left (BoringSSLError 0 "MLDSA_private_key_from_seed failed"))
+        else return (Left (OperationFailed "MLDSA_private_key_from_seed failed"))
 {-# NOINLINE privateKeyFromSeed #-}
 
 -- | Derive the public key struct from a private key.
-publicKeyFromPrivate :: MLDSAPrivateKey -> Either BoringSSLError MLDSAPublicKey
+publicKeyFromPrivate :: MLDSAPrivateKey -> Either CryptoError MLDSAPublicKey
 publicKeyFromPrivate (MLDSAPrivateKey variant skFPtr) = unsafePerformIO $ do
   let pkSize = publicKeySize variant
   pkFPtr <- mallocForeignPtrBytes pkSize
@@ -148,16 +148,16 @@ publicKeyFromPrivate (MLDSAPrivateKey variant skFPtr) = unsafePerformIO $ do
         MLDSA65 -> c_MLDSA65_public_from_private (castPtr pkPtr) (castPtr skPtr)
         MLDSA87 -> c_MLDSA87_public_from_private (castPtr pkPtr) (castPtr skPtr)
   if rc /= 1
-    then return (Left (BoringSSLError 0 "MLDSA_public_from_private failed"))
+    then return (Left (OperationFailed "MLDSA_public_from_private failed"))
     else return (Right (MLDSAPublicKey variant pkFPtr))
 {-# NOINLINE publicKeyFromPrivate #-}
 
 -- | Parse a public key from its encoded byte representation.
 -- The ByteString must be exactly 'publicKeyBytes' for the given variant.
-publicKeyFromBytes :: MLDSAVariant -> ByteString -> Either BoringSSLError MLDSAPublicKey
+publicKeyFromBytes :: MLDSAVariant -> ByteString -> Either CryptoError MLDSAPublicKey
 publicKeyFromBytes variant bs
   | BS.length bs /= publicKeyBytes variant =
-      Left (BoringSSLError 0 "publicKeyFromBytes: incorrect length")
+      Left (InvalidInput "publicKeyFromBytes: incorrect length")
   | otherwise = unsafePerformIO $ do
       let pkSize = publicKeySize variant
       pkFPtr <- mallocForeignPtrBytes pkSize
@@ -173,12 +173,12 @@ publicKeyFromBytes variant bs
               MLDSA87 -> c_MLDSA87_parse_public_key (castPtr pkPtr) (castPtr cbsPtr)
       if rc == 1
         then return (Right (MLDSAPublicKey variant pkFPtr))
-        else return (Left (BoringSSLError 0 "MLDSA_parse_public_key failed"))
+        else return (Left (DecodeError "MLDSA_parse_public_key failed"))
 {-# NOINLINE publicKeyFromBytes #-}
 
 -- | Sign a message with an ML-DSA private key.
 -- Takes a private key, message, and context string.
-sign :: MLDSAPrivateKey -> ByteString -> ByteString -> IO (Either BoringSSLError ByteString)
+sign :: MLDSAPrivateKey -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 sign (MLDSAPrivateKey variant skFPtr) msg context = do
   let sigSize = signatureBytes variant
   sigFPtr <- BSI.mallocByteString sigSize
@@ -197,7 +197,7 @@ sign (MLDSAPrivateKey variant skFPtr) msg context = do
     then return (Right (BSI.BS sigFPtr sigSize))
     else do
       merr <- getBoringSSLError
-      return (Left (maybe (BoringSSLError 0 "MLDSA_sign failed") id merr))
+      return (Left (maybe (OperationFailed "MLDSA_sign failed") id merr))
 
 -- | Verify an ML-DSA signature (pure).
 -- Takes the public key, signature, message, and context.

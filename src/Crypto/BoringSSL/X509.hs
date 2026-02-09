@@ -15,7 +15,7 @@ module Crypto.BoringSSL.X509
   , notBefore
   , notAfter
   , verifySelfSigned
-  , BoringSSLError(..)
+  , CryptoError(..)
   ) where
 
 import Control.Exception (bracket, mask_)
@@ -41,7 +41,7 @@ newtype X509Cert = X509Cert (ForeignPtr X509)
 
 -- | Parse a DER-encoded X.509 certificate.
 -- Returns 'Left' if parsing fails.
-parseDER :: ByteString -> Either BoringSSLError X509Cert
+parseDER :: ByteString -> Either CryptoError X509Cert
 parseDER bs = unsafePerformIO $
   withByteString bs $ \dataPtr dataLen ->
     alloca $ \inpPtr -> do
@@ -51,7 +51,7 @@ parseDER bs = unsafePerformIO $
         mask_ $ do
           cert <- c_d2i_X509 outPtr inpPtr (fromIntegral dataLen)
           if cert == nullPtr
-            then return (Left (BoringSSLError 0 "X509.parseDER: failed to parse DER"))
+            then return (Left (DecodeError "X509.parseDER: failed to parse DER"))
             else do
               fptr <- newForeignPtr c_X509_free_funptr cert
               return (Right (X509Cert fptr))
@@ -62,21 +62,21 @@ parseDER bs = unsafePerformIO $
 -- base64-decodes it, and parses the resulting DER.
 -- Returns 'Left' if the PEM format is invalid or the certificate
 -- cannot be parsed.
-parsePEM :: ByteString -> Either BoringSSLError X509Cert
+parsePEM :: ByteString -> Either CryptoError X509Cert
 parsePEM pem =
   case PEM.pemDecode pem of
     Right ("CERTIFICATE", der) -> parseDER der
-    Right (label, _) -> Left (BoringSSLError 0 ("X509.parsePEM: expected CERTIFICATE, got " ++ label))
+    Right (label, _) -> Left (DecodeError ("X509.parsePEM: expected CERTIFICATE, got " ++ label))
     Left err -> Left err
 
 -- | Serialize an X.509 certificate to DER encoding.
-toDER :: X509Cert -> Either BoringSSLError ByteString
+toDER :: X509Cert -> Either CryptoError ByteString
 toDER (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     -- First call with NULL to get length
     len <- c_i2d_X509 certPtr nullPtr
     if len <= 0
-      then return (Left (BoringSSLError 0 "X509.toDER: i2d_X509 failed to compute length"))
+      then return (Left (OperationFailed "X509.toDER: i2d_X509 failed to compute length"))
       else do
         -- Second call to write
         outFPtr <- BSI.mallocByteString (fromIntegral len)
@@ -85,7 +85,7 @@ toDER (X509Cert fptr) = unsafePerformIO $
             poke outPtrPtr (castPtr outBuf)
             actualLen <- c_i2d_X509 certPtr outPtrPtr
             if actualLen <= 0
-              then return (Left (BoringSSLError 0 "X509.toDER: i2d_X509 failed to serialize"))
+              then return (Left (OperationFailed "X509.toDER: i2d_X509 failed to serialize"))
               else return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
 {-# NOINLINE toDER #-}
 
@@ -152,36 +152,36 @@ serialNumberHex (X509Cert fptr) = unsafePerformIO $
 
 -- | Get the notBefore validity time as a POSIX timestamp (seconds since epoch).
 -- Returns 'Left' if the time cannot be converted.
-notBefore :: X509Cert -> Either BoringSSLError Int64
+notBefore :: X509Cert -> Either CryptoError Int64
 notBefore (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     timePtr <- c_X509_get0_notBefore certPtr
     if timePtr == nullPtr
-      then return (Left (BoringSSLError 0 "X509.notBefore: no notBefore time"))
+      then return (Left (OperationFailed "X509.notBefore: no notBefore time"))
       else alloca $ \outPtr -> do
         rc <- c_ASN1_TIME_to_posix timePtr outPtr
         if rc == 1
           then do
             t <- peek outPtr
             return (Right t)
-          else return (Left (BoringSSLError 0 "X509.notBefore: time conversion failed"))
+          else return (Left (OperationFailed "X509.notBefore: time conversion failed"))
 {-# NOINLINE notBefore #-}
 
 -- | Get the notAfter validity time as a POSIX timestamp (seconds since epoch).
 -- Returns 'Left' if the time cannot be converted.
-notAfter :: X509Cert -> Either BoringSSLError Int64
+notAfter :: X509Cert -> Either CryptoError Int64
 notAfter (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     timePtr <- c_X509_get0_notAfter certPtr
     if timePtr == nullPtr
-      then return (Left (BoringSSLError 0 "X509.notAfter: no notAfter time"))
+      then return (Left (OperationFailed "X509.notAfter: no notAfter time"))
       else alloca $ \outPtr -> do
         rc <- c_ASN1_TIME_to_posix timePtr outPtr
         if rc == 1
           then do
             t <- peek outPtr
             return (Right t)
-          else return (Left (BoringSSLError 0 "X509.notAfter: time conversion failed"))
+          else return (Left (OperationFailed "X509.notAfter: time conversion failed"))
 {-# NOINLINE notAfter #-}
 
 -- | Verify that a certificate is validly self-signed.
