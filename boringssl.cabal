@@ -1,0 +1,298 @@
+cabal-version:   3.14
+name:            boringssl
+version:         0.1.0.0
+license:         NONE
+author:          Samuel Schlesinger
+maintainer:      sgschlesinger@gmail.com
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+synopsis:        Haskell bindings to BoringSSL
+description:
+  Haskell FFI bindings to Google's BoringSSL library.
+  Provides SHA-256/SHA-512 hashing and AEAD encryption
+  (AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305).
+
+common warnings
+    ghc-options: -Wall
+
+library
+    import:           warnings
+    exposed-modules:
+        Crypto.BoringSSL.Digest
+        Crypto.BoringSSL.AEAD
+    other-modules:
+        Crypto.BoringSSL.Internal.FFI
+        Crypto.BoringSSL.Internal.Buffer
+        Crypto.BoringSSL.Internal.Error
+    build-depends:
+        base ^>=4.18.3.0,
+        bytestring >=0.11 && <0.13
+    hs-source-dirs:   src
+    default-language: Haskell2010
+    include-dirs:     third_party/boringssl/include
+    cxx-options:      -std=c++17 -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION -fno-exceptions -fno-rtti
+    if os(darwin)
+        extra-libraries: c++
+    if os(linux)
+        extra-libraries: stdc++ pthread
+        cxx-options:     -D_XOPEN_SOURCE=700
+    cxx-sources:
+        third_party/boringssl/crypto/aes/aes.cc
+        third_party/boringssl/crypto/asn1/a_bitstr.cc
+        third_party/boringssl/crypto/asn1/a_bool.cc
+        third_party/boringssl/crypto/asn1/a_d2i_fp.cc
+        third_party/boringssl/crypto/asn1/a_dup.cc
+        third_party/boringssl/crypto/asn1/a_gentm.cc
+        third_party/boringssl/crypto/asn1/a_i2d_fp.cc
+        third_party/boringssl/crypto/asn1/a_int.cc
+        third_party/boringssl/crypto/asn1/a_mbstr.cc
+        third_party/boringssl/crypto/asn1/a_object.cc
+        third_party/boringssl/crypto/asn1/a_octet.cc
+        third_party/boringssl/crypto/asn1/a_strex.cc
+        third_party/boringssl/crypto/asn1/a_strnid.cc
+        third_party/boringssl/crypto/asn1/a_time.cc
+        third_party/boringssl/crypto/asn1/a_type.cc
+        third_party/boringssl/crypto/asn1/a_utctm.cc
+        third_party/boringssl/crypto/asn1/asn1_lib.cc
+        third_party/boringssl/crypto/asn1/asn1_par.cc
+        third_party/boringssl/crypto/asn1/asn_pack.cc
+        third_party/boringssl/crypto/asn1/f_int.cc
+        third_party/boringssl/crypto/asn1/f_string.cc
+        third_party/boringssl/crypto/asn1/posix_time.cc
+        third_party/boringssl/crypto/asn1/tasn_dec.cc
+        third_party/boringssl/crypto/asn1/tasn_enc.cc
+        third_party/boringssl/crypto/asn1/tasn_fre.cc
+        third_party/boringssl/crypto/asn1/tasn_new.cc
+        third_party/boringssl/crypto/asn1/tasn_typ.cc
+        third_party/boringssl/crypto/asn1/tasn_utl.cc
+        third_party/boringssl/crypto/base64/base64.cc
+        third_party/boringssl/crypto/bio/bio.cc
+        third_party/boringssl/crypto/bio/bio_mem.cc
+        third_party/boringssl/crypto/bio/connect.cc
+        third_party/boringssl/crypto/bio/errno.cc
+        third_party/boringssl/crypto/bio/fd.cc
+        third_party/boringssl/crypto/bio/file.cc
+        third_party/boringssl/crypto/bio/hexdump.cc
+        third_party/boringssl/crypto/bio/pair.cc
+        third_party/boringssl/crypto/bio/printf.cc
+        third_party/boringssl/crypto/bio/socket.cc
+        third_party/boringssl/crypto/bio/socket_helper.cc
+        third_party/boringssl/crypto/blake2/blake2.cc
+        third_party/boringssl/crypto/bn/bn_asn1.cc
+        third_party/boringssl/crypto/bn/convert.cc
+        third_party/boringssl/crypto/bn/div.cc
+        third_party/boringssl/crypto/bn/exponentiation.cc
+        third_party/boringssl/crypto/bn/sqrt.cc
+        third_party/boringssl/crypto/buf/buf.cc
+        third_party/boringssl/crypto/bytestring/asn1_compat.cc
+        third_party/boringssl/crypto/bytestring/ber.cc
+        third_party/boringssl/crypto/bytestring/cbb.cc
+        third_party/boringssl/crypto/bytestring/cbs.cc
+        third_party/boringssl/crypto/bytestring/unicode.cc
+        third_party/boringssl/crypto/chacha/chacha.cc
+        third_party/boringssl/crypto/cipher/derive_key.cc
+        third_party/boringssl/crypto/cipher/e_aesctrhmac.cc
+        third_party/boringssl/crypto/cipher/e_aeseax.cc
+        third_party/boringssl/crypto/cipher/e_aesgcmsiv.cc
+        third_party/boringssl/crypto/cipher/e_chacha20poly1305.cc
+        third_party/boringssl/crypto/cipher/e_des.cc
+        third_party/boringssl/crypto/cipher/e_null.cc
+        third_party/boringssl/crypto/cipher/e_rc2.cc
+        third_party/boringssl/crypto/cipher/e_rc4.cc
+        third_party/boringssl/crypto/cipher/e_tls.cc
+        third_party/boringssl/crypto/cipher/get_cipher.cc
+        third_party/boringssl/crypto/cipher/tls_cbc.cc
+        third_party/boringssl/crypto/cms/cms.cc
+        third_party/boringssl/crypto/conf/conf.cc
+        third_party/boringssl/crypto/cpu_aarch64_apple.cc
+        third_party/boringssl/crypto/cpu_aarch64_fuchsia.cc
+        third_party/boringssl/crypto/cpu_aarch64_linux.cc
+        third_party/boringssl/crypto/cpu_aarch64_openbsd.cc
+        third_party/boringssl/crypto/cpu_aarch64_sysreg.cc
+        third_party/boringssl/crypto/cpu_aarch64_win.cc
+        third_party/boringssl/crypto/cpu_arm_freebsd.cc
+        third_party/boringssl/crypto/cpu_arm_linux.cc
+        third_party/boringssl/crypto/cpu_intel.cc
+        third_party/boringssl/crypto/crypto.cc
+        third_party/boringssl/crypto/curve25519/curve25519.cc
+        third_party/boringssl/crypto/curve25519/curve25519_64_adx.cc
+        third_party/boringssl/crypto/curve25519/spake25519.cc
+        third_party/boringssl/crypto/des/des.cc
+        third_party/boringssl/crypto/dh/dh_asn1.cc
+        third_party/boringssl/crypto/dh/params.cc
+        third_party/boringssl/crypto/digest/digest_extra.cc
+        third_party/boringssl/crypto/dsa/dsa.cc
+        third_party/boringssl/crypto/dsa/dsa_asn1.cc
+        third_party/boringssl/crypto/ec/ec_asn1.cc
+        third_party/boringssl/crypto/ec/ec_derive.cc
+        third_party/boringssl/crypto/ec/hash_to_curve.cc
+        third_party/boringssl/crypto/ecdh/ecdh.cc
+        third_party/boringssl/crypto/ecdsa/ecdsa_asn1.cc
+        third_party/boringssl/crypto/ecdsa/ecdsa_p1363.cc
+        third_party/boringssl/crypto/engine/engine.cc
+        third_party/boringssl/crypto/err/err.cc
+        third_party/boringssl/crypto/evp/evp.cc
+        third_party/boringssl/crypto/evp/evp_asn1.cc
+        third_party/boringssl/crypto/evp/evp_ctx.cc
+        third_party/boringssl/crypto/evp/p_dh.cc
+        third_party/boringssl/crypto/evp/p_dsa.cc
+        third_party/boringssl/crypto/evp/p_ec.cc
+        third_party/boringssl/crypto/evp/p_ed25519.cc
+        third_party/boringssl/crypto/evp/p_hkdf.cc
+        third_party/boringssl/crypto/evp/p_mldsa.cc
+        third_party/boringssl/crypto/evp/p_rsa.cc
+        third_party/boringssl/crypto/evp/p_x25519.cc
+        third_party/boringssl/crypto/evp/pbkdf.cc
+        third_party/boringssl/crypto/evp/print.cc
+        third_party/boringssl/crypto/evp/scrypt.cc
+        third_party/boringssl/crypto/evp/sign.cc
+        third_party/boringssl/crypto/ex_data.cc
+        third_party/boringssl/crypto/fipsmodule/bcm.cc
+        third_party/boringssl/crypto/fipsmodule/fips_shared_support.cc
+        third_party/boringssl/crypto/fuzzer_mode.cc
+        third_party/boringssl/crypto/hpke/hpke.cc
+        third_party/boringssl/crypto/hrss/hrss.cc
+        third_party/boringssl/crypto/kyber/kyber.cc
+        third_party/boringssl/crypto/lhash/lhash.cc
+        third_party/boringssl/crypto/md4/md4.cc
+        third_party/boringssl/crypto/md5/md5.cc
+        third_party/boringssl/crypto/mem.cc
+        third_party/boringssl/crypto/mldsa/mldsa.cc
+        third_party/boringssl/crypto/mlkem/mlkem.cc
+        third_party/boringssl/crypto/obj/obj.cc
+        third_party/boringssl/crypto/obj/obj_xref.cc
+        third_party/boringssl/crypto/pem/pem_all.cc
+        third_party/boringssl/crypto/pem/pem_info.cc
+        third_party/boringssl/crypto/pem/pem_lib.cc
+        third_party/boringssl/crypto/pem/pem_oth.cc
+        third_party/boringssl/crypto/pem/pem_pk8.cc
+        third_party/boringssl/crypto/pem/pem_pkey.cc
+        third_party/boringssl/crypto/pem/pem_x509.cc
+        third_party/boringssl/crypto/pem/pem_xaux.cc
+        third_party/boringssl/crypto/pkcs7/pkcs7.cc
+        third_party/boringssl/crypto/pkcs7/pkcs7_x509.cc
+        third_party/boringssl/crypto/pkcs8/p5_pbev2.cc
+        third_party/boringssl/crypto/pkcs8/pkcs8.cc
+        third_party/boringssl/crypto/pkcs8/pkcs8_x509.cc
+        third_party/boringssl/crypto/poly1305/poly1305.cc
+        third_party/boringssl/crypto/poly1305/poly1305_arm.cc
+        third_party/boringssl/crypto/poly1305/poly1305_vec.cc
+        third_party/boringssl/crypto/pool/pool.cc
+        third_party/boringssl/crypto/rand/deterministic.cc
+        third_party/boringssl/crypto/rand/fork_detect.cc
+        third_party/boringssl/crypto/rand/forkunsafe.cc
+        third_party/boringssl/crypto/rand/getentropy.cc
+        third_party/boringssl/crypto/rand/ios.cc
+        third_party/boringssl/crypto/rand/passive.cc
+        third_party/boringssl/crypto/rand/rand.cc
+        third_party/boringssl/crypto/rand/trusty.cc
+        third_party/boringssl/crypto/rand/urandom.cc
+        third_party/boringssl/crypto/rand/windows.cc
+        third_party/boringssl/crypto/rc4/rc4.cc
+        third_party/boringssl/crypto/refcount.cc
+        third_party/boringssl/crypto/rsa/rsa_asn1.cc
+        third_party/boringssl/crypto/rsa/rsa_crypt.cc
+        third_party/boringssl/crypto/rsa/rsa_extra.cc
+        third_party/boringssl/crypto/rsa/rsa_print.cc
+        third_party/boringssl/crypto/sha/sha1.cc
+        third_party/boringssl/crypto/sha/sha256.cc
+        third_party/boringssl/crypto/sha/sha512.cc
+        third_party/boringssl/crypto/siphash/siphash.cc
+        third_party/boringssl/crypto/slhdsa/slhdsa.cc
+        third_party/boringssl/crypto/spake2plus/spake2plus.cc
+        third_party/boringssl/crypto/stack/stack.cc
+        third_party/boringssl/crypto/thread.cc
+        third_party/boringssl/crypto/thread_none.cc
+        third_party/boringssl/crypto/thread_pthread.cc
+        third_party/boringssl/crypto/thread_win.cc
+        third_party/boringssl/crypto/trust_token/pmbtoken.cc
+        third_party/boringssl/crypto/trust_token/trust_token.cc
+        third_party/boringssl/crypto/trust_token/voprf.cc
+        third_party/boringssl/crypto/x509/a_digest.cc
+        third_party/boringssl/crypto/x509/a_sign.cc
+        third_party/boringssl/crypto/x509/a_verify.cc
+        third_party/boringssl/crypto/x509/algorithm.cc
+        third_party/boringssl/crypto/x509/asn1_gen.cc
+        third_party/boringssl/crypto/x509/by_dir.cc
+        third_party/boringssl/crypto/x509/by_file.cc
+        third_party/boringssl/crypto/x509/i2d_pr.cc
+        third_party/boringssl/crypto/x509/name_print.cc
+        third_party/boringssl/crypto/x509/policy.cc
+        third_party/boringssl/crypto/x509/rsa_pss.cc
+        third_party/boringssl/crypto/x509/t_crl.cc
+        third_party/boringssl/crypto/x509/t_req.cc
+        third_party/boringssl/crypto/x509/t_x509.cc
+        third_party/boringssl/crypto/x509/t_x509a.cc
+        third_party/boringssl/crypto/x509/v3_akey.cc
+        third_party/boringssl/crypto/x509/v3_akeya.cc
+        third_party/boringssl/crypto/x509/v3_alt.cc
+        third_party/boringssl/crypto/x509/v3_bcons.cc
+        third_party/boringssl/crypto/x509/v3_bitst.cc
+        third_party/boringssl/crypto/x509/v3_conf.cc
+        third_party/boringssl/crypto/x509/v3_cpols.cc
+        third_party/boringssl/crypto/x509/v3_crld.cc
+        third_party/boringssl/crypto/x509/v3_enum.cc
+        third_party/boringssl/crypto/x509/v3_extku.cc
+        third_party/boringssl/crypto/x509/v3_genn.cc
+        third_party/boringssl/crypto/x509/v3_ia5.cc
+        third_party/boringssl/crypto/x509/v3_info.cc
+        third_party/boringssl/crypto/x509/v3_int.cc
+        third_party/boringssl/crypto/x509/v3_lib.cc
+        third_party/boringssl/crypto/x509/v3_ncons.cc
+        third_party/boringssl/crypto/x509/v3_ocsp.cc
+        third_party/boringssl/crypto/x509/v3_pcons.cc
+        third_party/boringssl/crypto/x509/v3_pmaps.cc
+        third_party/boringssl/crypto/x509/v3_prn.cc
+        third_party/boringssl/crypto/x509/v3_purp.cc
+        third_party/boringssl/crypto/x509/v3_skey.cc
+        third_party/boringssl/crypto/x509/v3_utl.cc
+        third_party/boringssl/crypto/x509/x509.cc
+        third_party/boringssl/crypto/x509/x509_att.cc
+        third_party/boringssl/crypto/x509/x509_cmp.cc
+        third_party/boringssl/crypto/x509/x509_d2.cc
+        third_party/boringssl/crypto/x509/x509_def.cc
+        third_party/boringssl/crypto/x509/x509_ext.cc
+        third_party/boringssl/crypto/x509/x509_lu.cc
+        third_party/boringssl/crypto/x509/x509_obj.cc
+        third_party/boringssl/crypto/x509/x509_req.cc
+        third_party/boringssl/crypto/x509/x509_set.cc
+        third_party/boringssl/crypto/x509/x509_trs.cc
+        third_party/boringssl/crypto/x509/x509_txt.cc
+        third_party/boringssl/crypto/x509/x509_v3.cc
+        third_party/boringssl/crypto/x509/x509_vfy.cc
+        third_party/boringssl/crypto/x509/x509_vpm.cc
+        third_party/boringssl/crypto/x509/x509cset.cc
+        third_party/boringssl/crypto/x509/x509name.cc
+        third_party/boringssl/crypto/x509/x509rset.cc
+        third_party/boringssl/crypto/x509/x509spki.cc
+        third_party/boringssl/crypto/x509/x_algor.cc
+        third_party/boringssl/crypto/x509/x_all.cc
+        third_party/boringssl/crypto/x509/x_attrib.cc
+        third_party/boringssl/crypto/x509/x_crl.cc
+        third_party/boringssl/crypto/x509/x_exten.cc
+        third_party/boringssl/crypto/x509/x_name.cc
+        third_party/boringssl/crypto/x509/x_pubkey.cc
+        third_party/boringssl/crypto/x509/x_req.cc
+        third_party/boringssl/crypto/x509/x_sig.cc
+        third_party/boringssl/crypto/x509/x_spki.cc
+        third_party/boringssl/crypto/x509/x_x509.cc
+        third_party/boringssl/crypto/x509/x_x509a.cc
+        third_party/boringssl/crypto/xwing/xwing.cc
+        third_party/boringssl/gen/crypto/err_data.cc
+
+test-suite boringssl-test
+    import:           warnings
+    type:             exitcode-stdio-1.0
+    main-is:          Main.hs
+    other-modules:
+        Test.Digest
+        Test.AEAD
+    build-depends:
+        base ^>=4.18.3.0,
+        bytestring >=0.11 && <0.13,
+        boringssl,
+        tasty >=1.4,
+        tasty-hunit >=0.10,
+        base16-bytestring >=1.0
+    hs-source-dirs:   test
+    default-language: Haskell2010
