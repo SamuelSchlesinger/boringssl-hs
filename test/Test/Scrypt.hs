@@ -15,7 +15,7 @@ tests = testGroup "Scrypt"
       case result of
         Left err -> assertFailure ("scrypt returned Left: " ++ show err)
         Right derived ->
-          BS.length derived @?= 64
+          secureBytesLength derived @?= 64
 
   , testCase "password and salt derivation" $ do
       -- password="password" salt="NaCl" N=1024 r=8 p=16 dkLen=64
@@ -23,16 +23,16 @@ tests = testGroup "Scrypt"
       case result of
         Left err -> assertFailure ("scrypt returned Left: " ++ show err)
         Right derived ->
-          BS.length derived @?= 64
+          secureBytesLength derived @?= 64
 
   , testCase "deterministic" $ do
-      let d1 = scrypt "pw" "salt" 16 1 1 32
-          d2 = scrypt "pw" "salt" 16 1 1 32
+      let d1 = fmap secureBytesToByteString $ scrypt "pw" "salt" 16 1 1 32
+          d2 = fmap secureBytesToByteString $ scrypt "pw" "salt" 16 1 1 32
       d1 @?= d2
 
   , testCase "different passwords produce different output" $ do
-      let d1 = scrypt "password1" "salt" 16 1 1 32
-          d2 = scrypt "password2" "salt" 16 1 1 32
+      let d1 = fmap secureBytesToByteString $ scrypt "password1" "salt" 16 1 1 32
+          d2 = fmap secureBytesToByteString $ scrypt "password2" "salt" 16 1 1 32
       assertBool "different passwords should differ" (d1 /= d2)
 
   , testCase "invalid N (not power of 2) returns Left" $ do
@@ -41,11 +41,11 @@ tests = testGroup "Scrypt"
         Left _  -> return ()
         Right _ -> assertFailure "scrypt should reject invalid N"
   , testCase "different salts produce different output" $ do
-      let d1 = scrypt "password" "salt1" 16 1 1 32
-          d2 = scrypt "password" "salt2" 16 1 1 32
+      let d1 = fmap secureBytesToByteString $ scrypt "password" "salt1" 16 1 1 32
+          d2 = fmap secureBytesToByteString $ scrypt "password" "salt2" 16 1 1 32
       assertBool "different salts should differ" (d1 /= d2)
   , testCase "output length matches requested" $ do
       case scrypt "pw" "s" 16 1 1 64 of
         Left err -> assertFailure ("scrypt failed: " ++ show err)
-        Right d -> BS.length d @?= 64
+        Right d -> secureBytesLength d @?= 64
   ]

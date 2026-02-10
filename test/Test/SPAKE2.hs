@@ -17,7 +17,7 @@ tests = testGroup "SPAKE2"
       Right msgB <- generateMessage ctxB password
       Right keyA <- processMessage ctxA msgB
       Right keyB <- processMessage ctxB msgA
-      keyA @?= keyB
+      secureBytesToByteString keyA @?= secureBytesToByteString keyB
   , testCase "different passwords produce different keys" $ do
       Right ctxA <- newContext Alice "alice" "bob"
       Right ctxB <- newContext Bob   "bob" "alice"
@@ -25,7 +25,8 @@ tests = testGroup "SPAKE2"
       Right msgB <- generateMessage ctxB "password2"
       Right keyA <- processMessage ctxA msgB
       Right keyB <- processMessage ctxB msgA
-      assertBool "keys should differ with different passwords" (keyA /= keyB)
+      assertBool "keys should differ with different passwords"
+        (secureBytesToByteString keyA /= secureBytesToByteString keyB)
   , testCase "empty names work" $ do
       Right ctxA <- newContext Alice "" ""
       Right ctxB <- newContext Bob   "" ""
@@ -34,7 +35,7 @@ tests = testGroup "SPAKE2"
       Right msgB <- generateMessage ctxB password
       Right keyA <- processMessage ctxA msgB
       Right keyB <- processMessage ctxB msgA
-      keyA @?= keyB
+      secureBytesToByteString keyA @?= secureBytesToByteString keyB
   , testCase "invalid message rejected" $ do
       Right ctxA <- newContext Alice "a" "b"
       _ <- generateMessage ctxA "pw"
@@ -48,7 +49,7 @@ tests = testGroup "SPAKE2"
       Right _msgA <- generateMessage ctxA "pw"
       Right msgB <- generateMessage ctxB "pw"
       Right keyA <- processMessage ctxA msgB
-      BS.length keyA @?= 64
+      secureBytesLength keyA @?= 64
   , testCase "message has correct size" $ do
       Right ctx <- newContext Alice "a" "b"
       Right msg <- generateMessage ctx "pw"

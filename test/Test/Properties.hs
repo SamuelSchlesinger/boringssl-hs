@@ -315,8 +315,8 @@ hkdfProperties = testGroup "HKDF"
 prop_hkdfDeterministic :: ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hkdfDeterministic (ArbitraryBS secret) (ArbitraryBS salt) (ArbitraryBS info) =
   let outLen = 32
-      r1 = HKDF.hkdf SHA256 secret salt info outLen
-      r2 = HKDF.hkdf SHA256 secret salt info outLen
+      r1 = fmap HKDF.secureBytesToByteString $ HKDF.hkdf SHA256 secret salt info outLen
+      r2 = fmap HKDF.secureBytesToByteString $ HKDF.hkdf SHA256 secret salt info outLen
   in r1 === r2
 
 prop_hkdfLength :: Algorithm -> ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
@@ -325,7 +325,7 @@ prop_hkdfLength algo (ArbitraryBS secret) (ArbitraryBS salt) (ArbitraryBS info) 
       outLen = min 64 maxOut
   in outLen > 0 ==>
      case HKDF.hkdf algo secret salt info outLen of
-       Right bs -> BS.length bs == outLen
+       Right sb -> HKDF.secureBytesLength sb == outLen
        Left _   -> False
 
 prop_hkdfExtractExpandMatchesFull :: Algorithm -> ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
@@ -335,9 +335,9 @@ prop_hkdfExtractExpandMatchesFull algo (ArbitraryBS secret) (ArbitraryBS salt) (
        Left _ -> property $ counterexample "hkdf failed" False
        Right full -> case HKDF.hkdfExtract algo secret salt of
          Left _ -> property $ counterexample "hkdfExtract failed" False
-         Right prk -> case HKDF.hkdfExpand algo prk info outLen of
+         Right prk -> case HKDF.hkdfExpand algo (HKDF.secureBytesToByteString prk) info outLen of
            Left _ -> property $ counterexample "hkdfExpand failed" False
-           Right expanded -> full === expanded
+           Right expanded -> HKDF.secureBytesToByteString full === HKDF.secureBytesToByteString expanded
 
 -- ---------------------------------------------------------------------------
 -- Cipher Properties
@@ -518,7 +518,7 @@ prop_ecdhSymmetric curve = ioProperty $ do
   secretAB <- ECDH.ecdhComputeSecret kpA pubB 32
   secretBA <- ECDH.ecdhComputeSecret kpB pubA 32
   case (secretAB, secretBA) of
-    (Right sAB, Right sBA) -> return $ sAB === sBA
+    (Right sAB, Right sBA) -> return $ ECDH.secureBytesToByteString sAB === ECDH.secureBytesToByteString sBA
     (Left err, _) -> return $ counterexample ("A->B failed: " ++ show err) False
     (_, Left err) -> return $ counterexample ("B->A failed: " ++ show err) False
 
