@@ -424,15 +424,25 @@ certSubjectAltNames (X509Cert fptr) = unsafePerformIO $
     extractGen gens i = do
       gen <- c_bssl_sk_GENERAL_NAME_value gens i
       genType <- c_bssl_general_name_type gen
-      dataPtr <- c_bssl_general_name_data gen
-      str <- asn1StringToBS dataPtr
       let typeInt = fromIntegral genType
-      return $ case genType of
-        1 -> GNEmail (bsToString str)  -- GEN_EMAIL
-        2 -> GNDNS (bsToString str)    -- GEN_DNS
-        6 -> GNURI (bsToString str)    -- GEN_URI
-        7 -> GNIP str                  -- GEN_IPADD
-        _ -> GNOther typeInt str
+      case genType of
+        1 -> do  -- GEN_EMAIL
+          dataPtr <- c_bssl_general_name_data gen
+          str <- asn1StringToBS dataPtr
+          return (GNEmail (bsToString str))
+        2 -> do  -- GEN_DNS
+          dataPtr <- c_bssl_general_name_data gen
+          str <- asn1StringToBS dataPtr
+          return (GNDNS (bsToString str))
+        6 -> do  -- GEN_URI
+          dataPtr <- c_bssl_general_name_data gen
+          str <- asn1StringToBS dataPtr
+          return (GNURI (bsToString str))
+        7 -> do  -- GEN_IPADD
+          dataPtr <- c_bssl_general_name_data gen
+          str <- asn1StringToBS dataPtr
+          return (GNIP str)
+        _ -> return (GNOther typeInt BS.empty)
 
     asn1StringToBS :: Ptr ASN1_STRING -> IO ByteString
     asn1StringToBS ptr = do
