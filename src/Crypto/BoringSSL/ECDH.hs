@@ -26,7 +26,6 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import Control.Exception (finally)
 
-import Crypto.BoringSSL.Internal.Buffer (createByteString)
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECKey
@@ -98,7 +97,9 @@ ecdhComputeRawSecret myKey peerPub = withBoundThread $
                                   merr <- getBoringSSLError
                                   return (Left (maybe (OperationFailed "ecdhComputeRawSecret: get_affine_coordinates failed") id merr))
                                 else do
-                                  bs <- createByteString fieldBytes $ \outPtr -> do
-                                    _ <- c_BN_bn2bin_padded outPtr (fromIntegral fieldBytes) xBn
-                                    return ()
-                                  return (Right bs)
+                                  fptr <- BSI.mallocByteString fieldBytes
+                                  rc3 <- withForeignPtr fptr $ \ptr ->
+                                    c_BN_bn2bin_padded (castPtr ptr) (fromIntegral fieldBytes) xBn
+                                  if rc3 /= 1
+                                    then return (Left (OperationFailed "ecdhComputeRawSecret: BN_bn2bin_padded failed"))
+                                    else return (Right (BSI.BS fptr fieldBytes))

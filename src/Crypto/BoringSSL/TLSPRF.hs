@@ -27,7 +27,9 @@ import Crypto.BoringSSL.Internal.FFI.TLSPRF
 --
 -- Returns 'Left' on failure.
 tlsPRF :: Algorithm -> Int -> ByteString -> ByteString -> ByteString -> ByteString -> Either CryptoError ByteString
-tlsPRF algo outLen secret label seed1 seed2 = unsafePerformIO $
+tlsPRF algo outLen secret label seed1 seed2
+  | outLen <= 0 = Left (InvalidInput "tlsPRF: output length must be positive")
+  | otherwise = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->
     withByteString label $ \labelPtr labelLen ->
       withByteString seed1 $ \seed1Ptr seed1Len ->

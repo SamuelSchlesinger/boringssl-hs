@@ -15,10 +15,12 @@ ASN1_INTEGER *bssl_basic_constraints_pathlen(const BASIC_CONSTRAINTS *bc) {
 
 /* GENERAL_NAME field accessors */
 int bssl_general_name_type(const GENERAL_NAME *gen) {
+    if (!gen) return -1;
     return gen->type;
 }
 
 void *bssl_general_name_data(const GENERAL_NAME *gen) {
+    if (!gen) return NULL;
     return gen->d.ptr;
 }
 
@@ -33,10 +35,12 @@ GENERAL_NAME *bssl_sk_GENERAL_NAME_value(const GENERAL_NAMES *sk, int i) {
 
 /* ASN1_STRING accessors */
 const unsigned char *bssl_ASN1_STRING_get0_data(const ASN1_STRING *str) {
+    if (!str) return NULL;
     return ASN1_STRING_get0_data(str);
 }
 
 int bssl_ASN1_STRING_length(const ASN1_STRING *str) {
+    if (!str) return 0;
     return ASN1_STRING_length(str);
 }
 

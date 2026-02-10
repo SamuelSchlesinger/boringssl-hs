@@ -10,6 +10,7 @@ module Crypto.BoringSSL.PBKDF2
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Unsafe as BSU
+import Data.Word (Word32)
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)
@@ -26,7 +27,12 @@ import Crypto.BoringSSL.Internal.FFI.PBKDF2
 -- of key material from @password@ and @salt@ using @iterations@ rounds of
 -- PBKDF2 with HMAC using the specified hash @algo@.
 pbkdf2 :: Algorithm -> ByteString -> ByteString -> Int -> Int -> Either CryptoError ByteString
-pbkdf2 algo password salt iterations keyLen = unsafePerformIO $
+pbkdf2 algo password salt iterations keyLen
+  | keyLen <= 0 = Left (InvalidInput "pbkdf2: key length must be positive")
+  | iterations <= 0 = Left (InvalidInput "pbkdf2: iterations must be positive")
+  | iterations > fromIntegral (maxBound :: Word32) =
+      Left (InvalidInput "pbkdf2: iterations exceeds uint32 maximum")
+  | otherwise = unsafePerformIO $
   BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
     withByteString salt $ \saltPtr saltLen -> do
       fptr <- BSI.mallocByteString keyLen

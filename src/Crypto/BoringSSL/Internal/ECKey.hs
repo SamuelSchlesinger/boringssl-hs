@@ -15,6 +15,7 @@ module Crypto.BoringSSL.Internal.ECKey
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Internal as BSI
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Ptr
@@ -108,10 +109,12 @@ ecPublicKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
           if len == 0
             then return (Left (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct size query failed"))
             else do
-              bs <- createByteString (fromIntegral len) $ \outPtr -> do
-                _ <- c_EC_POINT_point2oct grp pt 4 outPtr len nullPtr
-                return ()
-              return (Right bs)
+              fptr <- BSI.mallocByteString (fromIntegral len)
+              written <- withForeignPtr fptr $ \ptr ->
+                c_EC_POINT_point2oct grp pt 4 (castPtr ptr) len nullPtr
+              if written == 0
+                then return (Left (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct failed"))
+                else return (Right (BSI.BS fptr (fromIntegral written)))
 
 -- | Get the private key as fixed-width big-endian bytes, zero-padded to the
 -- full group order size. This avoids leaking information about the key value
@@ -127,10 +130,12 @@ ecPrivateKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
       bnPtr <- c_EC_KEY_get0_private_key keyPtr
       requireNonNull bnPtr (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_private_key returned NULL")
         >>? \bn -> do
-          bs <- createByteString numBytes $ \outPtr -> do
-            _ <- c_BN_bn2bin_padded outPtr (fromIntegral numBytes) bn
-            return ()
-          return (Right bs)
+          fptr <- BSI.mallocByteString numBytes
+          rc <- withForeignPtr fptr $ \ptr ->
+            c_BN_bn2bin_padded (castPtr ptr) (fromIntegral numBytes) bn
+          if rc /= 1
+            then return (Left (OperationFailed "ecPrivateKeyBytes: BN_bn2bin_padded failed"))
+            else return (Right (BSI.BS fptr numBytes))
 
 ------------------------------------------------------------------------
 -- Key import

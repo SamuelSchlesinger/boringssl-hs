@@ -27,7 +27,9 @@ import Crypto.BoringSSL.Internal.FFI.Scrypt
 --
 -- Returns 'Left' on failure (e.g. invalid parameters).
 scrypt :: ByteString -> ByteString -> Word64 -> Word64 -> Word64 -> Int -> Either CryptoError ByteString
-scrypt password salt n r p keyLen = unsafePerformIO $
+scrypt password salt n r p keyLen
+  | keyLen <= 0 = Left (InvalidInput "scrypt: key length must be positive")
+  | otherwise = unsafePerformIO $
   BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
     withByteString salt $ \saltPtr saltLen -> do
       fptr <- BSI.mallocByteString keyLen

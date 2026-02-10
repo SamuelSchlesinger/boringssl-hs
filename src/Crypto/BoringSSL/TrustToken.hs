@@ -144,9 +144,12 @@ extractTokens stack = do
 extractToken :: Ptr STACK_TRUST_TOKEN -> CSize -> IO ByteString
 extractToken stack i = do
   tok <- c_boringssl_sk_TRUST_TOKEN_value stack i
-  dataPtr <- c_boringssl_TRUST_TOKEN_data tok
-  len <- c_boringssl_TRUST_TOKEN_len tok
-  BS.packCStringLen (castPtr dataPtr, fromIntegral len)
+  if tok == nullPtr
+    then return BS.empty
+    else do
+      dataPtr <- c_boringssl_TRUST_TOKEN_data tok
+      len <- c_boringssl_TRUST_TOKEN_len tok
+      BS.packCStringLen (castPtr dataPtr, fromIntegral len)
 
 -- | Begin token redemption. Returns the redemption request.
 beginRedemption :: TrustTokenClient -> ByteString -> ByteString -> IO (Either CryptoError ByteString)

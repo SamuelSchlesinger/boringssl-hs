@@ -168,7 +168,7 @@ decrypt algo key iv ciphertext
                   if rc1 /= 1
                     then do
                       merr <- getBoringSSLError
-                      return (Left (maybe (OperationFailed "decrypt: DecryptInit failed") id merr))
+                      return (Left (maybe (OperationFailed "decrypt: decryption failed") id merr))
                     else do
                       alloca $ \updateLenPtr ->
                         alloca $ \finalLenPtr -> do
@@ -179,7 +179,7 @@ decrypt algo key iv ciphertext
                           if rc2 /= 1
                             then do
                               merr <- getBoringSSLError
-                              return (Left (maybe (OperationFailed "decrypt: DecryptUpdate failed") id merr))
+                              return (Left (maybe (OperationFailed "decrypt: decryption failed") id merr))
                             else do
                               updateLen <- peek updateLenPtr
                               let remaining = fromIntegral maxOutLen - updateLen
@@ -189,7 +189,7 @@ decrypt algo key iv ciphertext
                               if rc3 /= 1
                                 then do
                                   merr <- getBoringSSLError
-                                  return (Left (maybe (OperationFailed "decrypt: bad padding or corrupted ciphertext") id merr))
+                                  return (Left (maybe (OperationFailed "decrypt: decryption failed") id merr))
                                 else do
                                   finalLen <- peek finalLenPtr
                                   return (Right (fromIntegral (updateLen + finalLen)))

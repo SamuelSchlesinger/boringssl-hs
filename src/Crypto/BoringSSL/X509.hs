@@ -431,32 +431,39 @@ certSubjectAltNames (X509Cert fptr) = unsafePerformIO $
   where
     extractGen gens i = do
       gen <- c_bssl_sk_GENERAL_NAME_value gens i
-      genType <- c_bssl_general_name_type gen
-      let typeInt = fromIntegral genType
-      case genType of
-        1 -> do  -- GEN_EMAIL
-          dataPtr <- c_bssl_general_name_data gen
-          str <- asn1StringToBS dataPtr
-          return (GNEmail (bsToString str))
-        2 -> do  -- GEN_DNS
-          dataPtr <- c_bssl_general_name_data gen
-          str <- asn1StringToBS dataPtr
-          return (GNDNS (bsToString str))
-        6 -> do  -- GEN_URI
-          dataPtr <- c_bssl_general_name_data gen
-          str <- asn1StringToBS dataPtr
-          return (GNURI (bsToString str))
-        7 -> do  -- GEN_IPADD
-          dataPtr <- c_bssl_general_name_data gen
-          str <- asn1StringToBS dataPtr
-          return (GNIP str)
-        _ -> return (GNOther typeInt BS.empty)
+      if gen == nullPtr
+        then return (GNOther (-1) BS.empty)
+        else do
+          genType <- c_bssl_general_name_type gen
+          let typeInt = fromIntegral genType
+          case genType of
+            1 -> do  -- GEN_EMAIL
+              dataPtr <- c_bssl_general_name_data gen
+              str <- asn1StringToBS dataPtr
+              return (GNEmail (bsToString str))
+            2 -> do  -- GEN_DNS
+              dataPtr <- c_bssl_general_name_data gen
+              str <- asn1StringToBS dataPtr
+              return (GNDNS (bsToString str))
+            6 -> do  -- GEN_URI
+              dataPtr <- c_bssl_general_name_data gen
+              str <- asn1StringToBS dataPtr
+              return (GNURI (bsToString str))
+            7 -> do  -- GEN_IPADD
+              dataPtr <- c_bssl_general_name_data gen
+              str <- asn1StringToBS dataPtr
+              return (GNIP str)
+            _ -> return (GNOther typeInt BS.empty)
 
     asn1StringToBS :: Ptr ASN1_STRING -> IO ByteString
-    asn1StringToBS ptr = do
-      dataP <- c_bssl_ASN1_STRING_get0_data ptr
-      len <- c_bssl_ASN1_STRING_length ptr
-      BS.packCStringLen (castPtr dataP, fromIntegral len)
+    asn1StringToBS ptr
+      | ptr == nullPtr = return BS.empty
+      | otherwise = do
+          dataP <- c_bssl_ASN1_STRING_get0_data ptr
+          len <- c_bssl_ASN1_STRING_length ptr
+          if dataP == nullPtr || len <= 0
+            then return BS.empty
+            else BS.packCStringLen (castPtr dataP, fromIntegral len)
 
     bsToString :: ByteString -> String
     bsToString = map (toEnum . fromEnum) . BS.unpack
@@ -583,14 +590,18 @@ certSubjectDER :: X509Cert -> IO ByteString
 certSubjectDER (X509Cert fptr) =
   withForeignPtr fptr $ \certPtr -> do
     namePtr <- c_X509_get_subject_name certPtr
-    nameToDER namePtr
+    if namePtr == nullPtr
+      then return BS.empty
+      else nameToDER namePtr
 
 -- | Serialize the issuer distinguished name to DER.
 certIssuerDER :: X509Cert -> IO ByteString
 certIssuerDER (X509Cert fptr) =
   withForeignPtr fptr $ \certPtr -> do
     namePtr <- c_X509_get_issuer_name certPtr
-    nameToDER namePtr
+    if namePtr == nullPtr
+      then return BS.empty
+      else nameToDER namePtr
 
 nameToDER :: Ptr X509_NAME -> IO ByteString
 nameToDER namePtr = do

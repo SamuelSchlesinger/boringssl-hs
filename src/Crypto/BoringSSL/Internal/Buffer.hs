@@ -66,9 +66,12 @@ createByteStringLen maxLen f = do
 packOpenSSLBuffer :: Ptr (Ptr CUChar) -> Ptr CSize -> IO ByteString
 packOpenSSLBuffer bufPtrPtr lenPtr = do
   bufPtr <- peek bufPtrPtr
-  len <- peek lenPtr
-  BS.packCStringLen (castPtr bufPtr, fromIntegral len)
-    `finally` c_OPENSSL_free bufPtr
+  if bufPtr == nullPtr
+    then return BS.empty
+    else do
+      len <- peek lenPtr
+      BS.packCStringLen (castPtr bufPtr, fromIntegral len)
+        `finally` c_OPENSSL_free bufPtr
 
 -- | Constant-time equality comparison for ByteStrings of equal length.
 -- Uses BoringSSL's CRYPTO_memcmp to avoid timing side-channel attacks.

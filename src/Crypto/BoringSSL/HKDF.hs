@@ -30,7 +30,9 @@ import Crypto.BoringSSL.Internal.FFI.HKDF
 --
 -- @hkdf hashAlgo secret salt info outputLength@
 hkdf :: Algorithm -> ByteString -> ByteString -> ByteString -> Int -> Either CryptoError ByteString
-hkdf algo secret salt info outLen = unsafePerformIO $
+hkdf algo secret salt info outLen
+  | outLen <= 0 = Left (InvalidInput "hkdf: output length must be positive")
+  | otherwise = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->
     withByteString salt $ \saltPtr saltLen ->
       withByteString info $ \infoPtr infoLen -> do
@@ -69,7 +71,9 @@ hkdfExtract algo secret salt = unsafePerformIO $
 --
 -- @hkdfExpand hashAlgo prk info outputLength@
 hkdfExpand :: Algorithm -> ByteString -> ByteString -> Int -> Either CryptoError ByteString
-hkdfExpand algo prk info outLen = unsafePerformIO $
+hkdfExpand algo prk info outLen
+  | outLen <= 0 = Left (InvalidInput "hkdfExpand: output length must be positive")
+  | otherwise = unsafePerformIO $
   withByteString prk $ \prkPtr prkLen ->
     withByteString info $ \infoPtr infoLen -> do
       fptr <- BSI.mallocByteString outLen
