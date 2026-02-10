@@ -7,8 +7,10 @@ module Crypto.BoringSSL.Internal.Error
 
 import Control.Concurrent (rtsSupportsBoundThreads, runInBoundThread)
 import Control.Exception (Exception)
+import Data.List (intercalate)
 import Crypto.BoringSSL.Internal.FFI
 import Foreign.C.String
+import Foreign.C.Types
 import Foreign.Marshal.Array
 
 -- | Errors that can occur in the boringssl library.
@@ -50,24 +52,27 @@ instance Exception CryptoError
 clearBoringSSLError :: IO ()
 clearBoringSSLError = c_ERR_clear_error
 
--- | Drain the BoringSSL error queue and return the first error, if any.
+-- | Drain the BoringSSL error queue and return all errors, if any.
+-- The error code is taken from the first error, and all error messages
+-- are concatenated (separated by "; ") into a single string.
 getBoringSSLError :: IO (Maybe CryptoError)
 getBoringSSLError = do
   errCode <- c_ERR_get_error
   if errCode == 0
     then return Nothing
     else do
-      msg <- allocaArray 256 $ \buf -> do
-        c_ERR_error_string_n errCode buf 256
-        peekCString buf
-      -- Drain remaining errors
-      drainErrors
-      return (Just (BoringSSLError (fromIntegral errCode) msg))
+      msgs <- collectErrors errCode []
+      return (Just (BoringSSLError (fromIntegral errCode) (intercalate "; " (reverse msgs))))
 
-drainErrors :: IO ()
-drainErrors = do
-  e <- c_ERR_get_error
-  if e == 0 then return () else drainErrors
+collectErrors :: CUInt -> [String] -> IO [String]
+collectErrors code acc = do
+  msg <- allocaArray 256 $ \buf -> do
+    c_ERR_error_string_n code buf 256
+    peekCString buf
+  nextCode <- c_ERR_get_error
+  if nextCode == 0
+    then return (msg : acc)
+    else collectErrors nextCode (msg : acc)
 
 -- | Pin an IO action to a single OS thread using 'runInBoundThread'.
 -- BoringSSL's error queue is per-OS-thread, but GHC green threads can

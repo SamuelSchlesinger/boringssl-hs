@@ -6,10 +6,12 @@
 
 /* BASIC_CONSTRAINTS field accessors */
 int bssl_basic_constraints_ca(const BASIC_CONSTRAINTS *bc) {
+    if (!bc) return 0;
     return bc->ca;
 }
 
 ASN1_INTEGER *bssl_basic_constraints_pathlen(const BASIC_CONSTRAINTS *bc) {
+    if (!bc) return NULL;
     return bc->pathlen;
 }
 
@@ -26,10 +28,12 @@ void *bssl_general_name_data(const GENERAL_NAME *gen) {
 
 /* STACK_OF(GENERAL_NAME) accessors */
 int bssl_sk_GENERAL_NAME_num(const GENERAL_NAMES *sk) {
+    if (!sk) return 0;
     return (int)sk_GENERAL_NAME_num(sk);
 }
 
 GENERAL_NAME *bssl_sk_GENERAL_NAME_value(const GENERAL_NAMES *sk, int i) {
+    if (!sk || i < 0) return NULL;
     return sk_GENERAL_NAME_value(sk, (size_t)i);
 }
 
@@ -50,6 +54,7 @@ STACK_OF(X509) *bssl_sk_X509_new_null(void) {
 }
 
 int bssl_sk_X509_push(STACK_OF(X509) *sk, X509 *cert) {
+    if (!sk) return 0;
     return (int)sk_X509_push(sk, cert);
 }
 

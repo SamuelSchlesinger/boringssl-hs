@@ -47,6 +47,8 @@ module Crypto.BoringSSL.Internal.FFI.MLDSA
 import Foreign.C.Types
 import Foreign.Ptr
 
+import Crypto.BoringSSL.Internal.FFI.Constants
+
 -- Opaque struct types (must not leave address space)
 data MLDSA44_private_key
 data MLDSA44_public_key
@@ -69,15 +71,12 @@ mldsa44PublicKeyBytes = 1312
 mldsa44SignatureBytes :: Int
 mldsa44SignatureBytes = 2420
 
--- | Struct size for MLDSA44_private_key:
--- (32 + 64 + 256*4*4) + 32 + 256*4*(4+4+4) = 4192 + 32 + 12288 = 16512
+-- Struct sizes derived from BoringSSL headers at compile time.
 mldsa44PrivateKeySize :: Int
-mldsa44PrivateKeySize = 16512
+mldsa44PrivateKeySize = sizeofMLDSA44PrivateKey
 
--- | Struct size for MLDSA44_public_key:
--- 32 + 64 + 256*4*4 = 4192
 mldsa44PublicKeySize :: Int
-mldsa44PublicKeySize = 4192
+mldsa44PublicKeySize = sizeofMLDSA44PublicKey
 
 -- ML-DSA-65 constants from mldsa.h
 
@@ -89,15 +88,11 @@ mldsa65PublicKeyBytes = 1952
 mldsa65SignatureBytes :: Int
 mldsa65SignatureBytes = 3309
 
--- | Struct size for MLDSA65_private_key:
--- (32 + 64 + 256*4*6) + 32 + 256*4*(5+6+6) = 6240 + 32 + 17408 = 23680
 mldsa65PrivateKeySize :: Int
-mldsa65PrivateKeySize = 23680
+mldsa65PrivateKeySize = sizeofMLDSA65PrivateKey
 
--- | Struct size for MLDSA65_public_key:
--- 32 + 64 + 256*4*6 = 6240
 mldsa65PublicKeySize :: Int
-mldsa65PublicKeySize = 6240
+mldsa65PublicKeySize = sizeofMLDSA65PublicKey
 
 -- ML-DSA-87 constants from mldsa.h
 
@@ -109,15 +104,11 @@ mldsa87PublicKeyBytes = 2592
 mldsa87SignatureBytes :: Int
 mldsa87SignatureBytes = 4627
 
--- | Struct size for MLDSA87_private_key:
--- (32 + 64 + 256*4*8) + 32 + 256*4*(7+8+8) = 8288 + 32 + 23552 = 31872
 mldsa87PrivateKeySize :: Int
-mldsa87PrivateKeySize = 31872
+mldsa87PrivateKeySize = sizeofMLDSA87PrivateKey
 
--- | Struct size for MLDSA87_public_key:
--- 32 + 64 + 256*4*8 = 8288
 mldsa87PublicKeySize :: Int
-mldsa87PublicKeySize = 8288
+mldsa87PublicKeySize = sizeofMLDSA87PublicKey
 
 
 -- ML-DSA-44 FFI

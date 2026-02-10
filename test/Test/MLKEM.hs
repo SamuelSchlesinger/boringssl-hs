@@ -18,9 +18,9 @@ tests = testGroup "MLKEM"
         (_pub, priv) <- generateKeyPair MLKEM768
         (ct, ssEncap) <- encapsulate priv
         BS.length ct @?= ciphertextBytes MLKEM768
-        BS.length ssEncap @?= 32
+        secureBytesLength ssEncap @?= 32
         Right ssDecap <- decapsulate priv ct
-        ssDecap @?= ssEncap
+        secureBytesToByteString ssDecap @?= secureBytesToByteString ssEncap
 
     , testCase "decap with wrong length ciphertext" $ do
         (_pub, priv) <- generateKeyPair MLKEM768
@@ -36,14 +36,15 @@ tests = testGroup "MLKEM"
         (ct2, ss2) <- encapsulate priv2
         -- Different keys should produce different ciphertexts/secrets
         -- (with overwhelming probability)
-        assertBool "different keypairs should differ" (ss1 /= ss2 || ct1 /= ct2)
+        assertBool "different keypairs should differ"
+          (secureBytesToByteString ss1 /= secureBytesToByteString ss2 || ct1 /= ct2)
     ]
   , testGroup "ML-KEM-768 encapsulatePublic"
     [ testCase "encapsulatePublic round-trip" $ do
         (pub, priv) <- generateKeyPair MLKEM768
         Right (ct, ssEncap) <- encapsulatePublic MLKEM768 pub
         Right ssDecap <- decapsulate priv ct
-        ssDecap @?= ssEncap
+        secureBytesToByteString ssDecap @?= secureBytesToByteString ssEncap
     , testCase "encapsulatePublic rejects wrong-length key" $ do
         result <- encapsulatePublic MLKEM768 "short"
         case result of
@@ -59,9 +60,9 @@ tests = testGroup "MLKEM"
         (_pub, priv) <- generateKeyPair MLKEM1024
         (ct, ssEncap) <- encapsulate priv
         BS.length ct @?= ciphertextBytes MLKEM1024
-        BS.length ssEncap @?= 32
+        secureBytesLength ssEncap @?= 32
         Right ssDecap <- decapsulate priv ct
-        ssDecap @?= ssEncap
+        secureBytesToByteString ssDecap @?= secureBytesToByteString ssEncap
 
     , testCase "decap with wrong length ciphertext" $ do
         (_pub, priv) <- generateKeyPair MLKEM1024
@@ -74,7 +75,7 @@ tests = testGroup "MLKEM"
         (pub, priv) <- generateKeyPair MLKEM1024
         Right (ct, ssEncap) <- encapsulatePublic MLKEM1024 pub
         Right ssDecap <- decapsulate priv ct
-        ssDecap @?= ssEncap
+        secureBytesToByteString ssDecap @?= secureBytesToByteString ssEncap
     ]
   , testGroup "Constants"
     [ testCase "ML-KEM-768 public key bytes" $

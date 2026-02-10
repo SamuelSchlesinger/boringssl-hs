@@ -60,36 +60,36 @@ tests = testGroup "HMAC"
   , testGroup "Streaming"
     [ testCase "streaming matches one-shot" $ do
         let key = BS.replicate 20 0x0b
-        ctx <- hmacInit SHA256 key
-        hmacUpdate ctx "Hi There"
-        result <- hmacFinalize ctx
+        ctx <- unwrap =<< hmacInit SHA256 key
+        unwrap =<< hmacUpdate ctx "Hi There"
+        result <- unwrap =<< hmacFinalize ctx
         Right result @?= hmac SHA256 key "Hi There"
     , testCase "streaming multiple updates" $ do
         let key = "Jefe"
-        ctx <- hmacInit SHA256 key
-        hmacUpdate ctx "what do ya "
-        hmacUpdate ctx "want for nothing?"
-        result <- hmacFinalize ctx
+        ctx <- unwrap =<< hmacInit SHA256 key
+        unwrap =<< hmacUpdate ctx "what do ya "
+        unwrap =<< hmacUpdate ctx "want for nothing?"
+        result <- unwrap =<< hmacFinalize ctx
         Right result @?= hmac SHA256 key "what do ya want for nothing?"
     , testCase "SHA-512 streaming matches one-shot" $ do
         let key = BS.replicate 20 0x0b
-        ctx <- hmacInit SHA512 key
-        hmacUpdate ctx "Hi There"
-        result <- hmacFinalize ctx
+        ctx <- unwrap =<< hmacInit SHA512 key
+        unwrap =<< hmacUpdate ctx "Hi There"
+        result <- unwrap =<< hmacFinalize ctx
         Right result @?= hmac SHA512 key "Hi There"
     , testCase "SHA-384 streaming matches one-shot" $ do
         let key = BS.replicate 20 0x0b
-        ctx <- hmacInit SHA384 key
-        hmacUpdate ctx "Hi There"
-        result <- hmacFinalize ctx
+        ctx <- unwrap =<< hmacInit SHA384 key
+        unwrap =<< hmacUpdate ctx "Hi There"
+        result <- unwrap =<< hmacFinalize ctx
         Right result @?= hmac SHA384 key "Hi There"
     , testCase "streaming with empty update" $ do
         let key = BS.replicate 20 0x0b
-        ctx <- hmacInit SHA256 key
-        hmacUpdate ctx BS.empty
-        hmacUpdate ctx "Hi There"
-        hmacUpdate ctx BS.empty
-        result <- hmacFinalize ctx
+        ctx <- unwrap =<< hmacInit SHA256 key
+        unwrap =<< hmacUpdate ctx BS.empty
+        unwrap =<< hmacUpdate ctx "Hi There"
+        unwrap =<< hmacUpdate ctx BS.empty
+        result <- unwrap =<< hmacFinalize ctx
         Right result @?= hmac SHA256 key "Hi There"
     ]
   , testGroup "hmacVerify"

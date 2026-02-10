@@ -125,10 +125,15 @@ extractEC pkey = do
               if privBn == nullPtr
                 then return (Left (OperationFailed "loadPrivateKey: no private key"))
                 else do
-                  privBytes <- createByteString numBytes $ \outPtr ->
-                    c_BN_bn2bin_padded outPtr (fromIntegral numBytes) privBn >> return ()
-                  result <- ecKeyPairFromPrivateBytes curve privBytes
-                  return (fmap (SomeECKey curve) result)
+                  fptr <- BSI.mallocByteString numBytes
+                  rc <- withForeignPtr fptr $ \ptr ->
+                    c_BN_bn2bin_padded (castPtr ptr) (fromIntegral numBytes) privBn
+                  if rc /= 1
+                    then return (Left (OperationFailed "loadPrivateKey: BN_bn2bin_padded failed"))
+                    else do
+                      let privBytes = BSI.BS fptr numBytes
+                      result <- ecKeyPairFromPrivateBytes curve privBytes
+                      return (fmap (SomeECKey curve) result)
 
 extractEd25519 :: Ptr EVP_PKEY -> IO (Either CryptoError SomePrivateKey)
 extractEd25519 pkey = runExceptT $ do

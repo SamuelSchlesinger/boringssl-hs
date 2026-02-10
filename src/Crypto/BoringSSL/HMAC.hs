@@ -58,45 +58,47 @@ hmac algo key msg = unsafePerformIO $
 newtype HMACCtx = HMACCtx (ForeignPtr HMAC_CTX)
 
 -- | Initialize a streaming HMAC context.
-hmacInit :: Algorithm -> ByteString -> IO HMACCtx
+hmacInit :: Algorithm -> ByteString -> IO (Either CryptoError HMACCtx)
 hmacInit algo key = mask_ $ do
   ctx <- c_HMAC_CTX_new
   if ctx == nullPtr
-    then fail "hmacInit: HMAC_CTX_new returned NULL"
+    then return (Left (AllocationFailure "hmacInit: HMAC_CTX_new returned NULL"))
     else do
       withByteString key $ \keyPtr keyLen -> do
         rc <- c_HMAC_Init_ex ctx keyPtr keyLen (ID.evpMD algo) nullPtr
         if rc /= 1
           then do
             c_HMAC_CTX_free ctx
-            fail "hmacInit: HMAC_Init_ex failed"
+            return (Left (OperationFailed "hmacInit: HMAC_Init_ex failed"))
           else do
             fptr <- newForeignPtr c_HMAC_CTX_free_funptr ctx
-            return (HMACCtx fptr)
+            return (Right (HMACCtx fptr))
 
 -- | Feed more data into the HMAC context.
-hmacUpdate :: HMACCtx -> ByteString -> IO ()
+hmacUpdate :: HMACCtx -> ByteString -> IO (Either CryptoError ())
 hmacUpdate (HMACCtx fptr) bs =
   withForeignPtr fptr $ \ctx ->
     withByteString bs $ \dataPtr dataLen -> do
       rc <- c_HMAC_Update ctx dataPtr dataLen
       if rc /= 1
-        then fail "hmacUpdate: HMAC_Update failed"
-        else return ()
+        then return (Left (OperationFailed "hmacUpdate: HMAC_Update failed"))
+        else return (Right ())
 
 -- | Finalize the HMAC and return the MAC value.
-hmacFinalize :: HMACCtx -> IO ByteString
+hmacFinalize :: HMACCtx -> IO (Either CryptoError ByteString)
 hmacFinalize (HMACCtx fptr) =
   withForeignPtr fptr $ \ctx -> do
     -- EVP_MAX_MD_SIZE is 64
     fout <- BSI.mallocByteString 64
-    actualLen <- withForeignPtr fout $ \outPtr ->
+    result <- withForeignPtr fout $ \outPtr ->
       alloca $ \outLenPtr -> do
         rc <- c_HMAC_Final ctx (castPtr outPtr) outLenPtr
         if rc /= 1
-          then fail "hmacFinalize: HMAC_Final failed"
-          else fromIntegral <$> peek outLenPtr
-    return (BSI.BS fout actualLen)
+          then return Nothing
+          else Just . fromIntegral <$> peek outLenPtr
+    case result of
+      Nothing -> return (Left (OperationFailed "hmacFinalize: HMAC_Final failed"))
+      Just actualLen -> return (Right (BSI.BS fout actualLen))
 
 -- | Verify an HMAC in constant time.
 -- Computes HMAC of @message@ using @key@ and compares with @expected@

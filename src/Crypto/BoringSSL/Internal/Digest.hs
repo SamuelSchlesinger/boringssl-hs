@@ -8,6 +8,7 @@ module Crypto.BoringSSL.Internal.Digest
 import Foreign.C.Types (CInt)
 import Foreign.Ptr (Ptr)
 
+import Crypto.BoringSSL.Internal.FFI.Constants
 import Crypto.BoringSSL.Internal.FFI.Digest
 
 -- | Supported hash algorithms.
@@ -40,15 +41,14 @@ digestSize BLAKE2b256 = 32
 -- Returns 'Nothing' for algorithms that have no NID (e.g. BLAKE2b256),
 -- which cannot be used with NID-based operations like RSA PKCS#1 v1.5.
 --
--- These values are from BoringSSL's @nid.h@ header. If BoringSSL is updated,
--- verify these constants still match. Ideally these would be derived via
--- hsc2hs at compile time.
+-- NID values are derived from BoringSSL headers at compile time via the
+-- Constants module.
 algorithmNID :: Algorithm -> Maybe CInt
-algorithmNID SHA1       = Just 64   -- NID_sha1
-algorithmNID SHA224     = Just 675  -- NID_sha224
-algorithmNID SHA256     = Just 672  -- NID_sha256
-algorithmNID SHA384     = Just 673  -- NID_sha384
-algorithmNID SHA512     = Just 674  -- NID_sha512
-algorithmNID SHA512_256 = Just 962  -- NID_sha512_256
-algorithmNID MD5        = Just 4    -- NID_md5
-algorithmNID BLAKE2b256 = Nothing   -- BLAKE2b256 has no NID in BoringSSL
+algorithmNID SHA1       = Just nidSHA1
+algorithmNID SHA224     = Just nidSHA224
+algorithmNID SHA256     = Just nidSHA256
+algorithmNID SHA384     = Just nidSHA384
+algorithmNID SHA512     = Just nidSHA512
+algorithmNID SHA512_256 = Just nidSHA512_256
+algorithmNID MD5        = Just nidMD5
+algorithmNID BLAKE2b256 = Nothing

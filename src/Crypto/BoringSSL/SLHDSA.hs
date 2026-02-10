@@ -18,6 +18,11 @@ module Crypto.BoringSSL.SLHDSA
   , publicKeyBytes
   , privateKeyBytes
   , signatureBytes
+    -- * Secure memory
+  , SecureBytes
+  , createSecureBytes
+  , secureBytesToByteString
+  , secureBytesLength
     -- * Error type
   , CryptoError(..)
   ) where
@@ -33,6 +38,7 @@ import System.IO.Unsafe (unsafePerformIO)
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.SLHDSA
+import Crypto.BoringSSL.Internal.SecureBytes
 
 -- | SLH-DSA parameter set variant.
 data SLHDSAVariant
@@ -55,20 +61,19 @@ signatureBytes :: SLHDSAVariant -> Int
 signatureBytes SHA2_128S  = slhdsaSha2128sSignatureBytes
 signatureBytes SHAKE_256F = slhdsaShake256fSignatureBytes
 
--- | Generate a random SLH-DSA key pair. Returns (publicKey, privateKey) as
--- raw 'ByteString' values.
-generateKeyPair :: SLHDSAVariant -> IO (ByteString, ByteString)
+-- | Generate a random SLH-DSA key pair. Returns @(publicKey, privateKey)@.
+-- The private key is backed by 'SecureBytes' and zeroized on finalization.
+generateKeyPair :: SLHDSAVariant -> IO (ByteString, SecureBytes)
 generateKeyPair variant = mask_ $ do
   let pubLen  = publicKeyBytes variant
       privLen = privateKeyBytes variant
   pubFPtr  <- BSI.mallocByteString pubLen
-  privFPtr <- BSI.mallocByteString privLen
-  withForeignPtr pubFPtr $ \pubPtr ->
-    withForeignPtr privFPtr $ \privPtr ->
+  privSB <- createSecureBytes privLen $ \privPtr ->
+    withForeignPtr pubFPtr $ \pubPtr ->
       case variant of
-        SHA2_128S  -> c_SLHDSA_SHA2_128S_generate_key (castPtr pubPtr) (castPtr privPtr)
-        SHAKE_256F -> c_SLHDSA_SHAKE_256F_generate_key (castPtr pubPtr) (castPtr privPtr)
-  return (BSI.BS pubFPtr pubLen, BSI.BS privFPtr privLen)
+        SHA2_128S  -> c_SLHDSA_SHA2_128S_generate_key (castPtr pubPtr) privPtr
+        SHAKE_256F -> c_SLHDSA_SHAKE_256F_generate_key (castPtr pubPtr) privPtr
+  return (BSI.BS pubFPtr pubLen, privSB)
 
 -- | Sign a message with an SLH-DSA private key.
 --
@@ -78,15 +83,15 @@ generateKeyPair variant = mask_ $ do
 --
 -- This function is pure (uses 'unsafePerformIO'). Signing is deterministic
 -- but very slow by design.
-sign :: SLHDSAVariant -> ByteString -> ByteString -> ByteString -> Either CryptoError ByteString
+sign :: SLHDSAVariant -> SecureBytes -> ByteString -> ByteString -> Either CryptoError ByteString
 sign variant privKey msg ctx
-  | BS.length privKey /= privateKeyBytes variant =
+  | secureBytesLength privKey /= privateKeyBytes variant =
       Left (InvalidInput "SLHDSA.sign: incorrect private key length")
   | otherwise = unsafePerformIO $ do
       let sigLen = signatureBytes variant
       sigFPtr <- BSI.mallocByteString sigLen
       rc <- withForeignPtr sigFPtr $ \sigPtr ->
-        withByteString privKey $ \privPtr _ ->
+        withSecureBytes privKey $ \privPtr _ ->
           withByteString msg $ \msgPtr msgLen ->
             withByteString ctx $ \ctxPtr ctxLen ->
               case variant of

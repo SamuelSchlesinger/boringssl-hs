@@ -610,9 +610,10 @@ nameToDER namePtr = do
     then return BS.empty
     else do
       outFPtr <- BSI.mallocByteString (fromIntegral len)
-      withForeignPtr outFPtr $ \outBuf ->
+      actualLen <- withForeignPtr outFPtr $ \outBuf ->
         alloca $ \outPtrPtr -> do
           poke outPtrPtr (castPtr outBuf)
-          _ <- c_i2d_X509_NAME namePtr outPtrPtr
-          return ()
-      return (BSI.BS outFPtr (fromIntegral len))
+          c_i2d_X509_NAME namePtr outPtrPtr
+      if actualLen < 0
+        then return BS.empty
+        else return (BSI.BS outFPtr (fromIntegral actualLen))

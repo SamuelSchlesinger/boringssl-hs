@@ -35,7 +35,7 @@ variantTests variant = testGroup (show variant)
   [ testCase "keygen produces correct sizes" $ do
       (pub, priv) <- generateKeyPair variant
       BS.length pub @?= publicKeyBytes variant
-      BS.length priv @?= privateKeyBytes variant
+      secureBytesLength priv @?= privateKeyBytes variant
 
   , testCase "sign/verify round-trip" $ do
       (pub, priv) <- generateKeyPair variant
@@ -90,7 +90,9 @@ variantTests variant = testGroup (show variant)
             (not (verify variant pub sig msg ctx2))
 
   , testCase "sign rejects wrong-length private key" $ do
-      let result = sign variant "too short" "msg" ""
+      -- Create a SecureBytes of incorrect length (1 byte instead of privateKeyBytes)
+      wrongKey <- createSecureBytes 1 $ \_ -> return ()
+      let result = sign variant wrongKey "msg" ""
       case result of
         Left _  -> return ()
         Right _ -> assertFailure "sign should reject wrong-length private key"

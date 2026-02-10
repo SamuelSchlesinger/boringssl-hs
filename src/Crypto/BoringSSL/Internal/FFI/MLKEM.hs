@@ -33,6 +33,8 @@ module Crypto.BoringSSL.Internal.FFI.MLKEM
 import Foreign.C.Types
 import Foreign.Ptr
 
+import Crypto.BoringSSL.Internal.FFI.Constants
+
 -- Opaque struct types (must not leave address space)
 data MLKEM768_private_key
 data MLKEM768_public_key
@@ -64,26 +66,18 @@ mlkemSharedSecretBytes = 32
 mlkemSeedBytes :: Int
 mlkemSeedBytes = 64
 
--- Struct sizes computed from the header:
--- MLKEM768_private_key: union { uint8_t bytes[512*(3+3+9)+32+32+32]; ... }
---   = 512*15 + 96 = 7680 + 96 = 7776 bytes
+-- Struct sizes derived from BoringSSL headers at compile time.
 mlkem768PrivateKeySize :: Int
-mlkem768PrivateKeySize = 7776
+mlkem768PrivateKeySize = sizeofMLKEM768PrivateKey
 
--- MLKEM768_public_key: union { uint8_t bytes[512*(3+9)+32+32]; ... }
---   = 512*12 + 64 = 6144 + 64 = 6208 bytes
 mlkem768PublicKeySize :: Int
-mlkem768PublicKeySize = 6208
+mlkem768PublicKeySize = sizeofMLKEM768PublicKey
 
--- MLKEM1024_private_key: union { uint8_t bytes[512*(4+4+16)+32+32+32]; ... }
---   = 512*24 + 96 = 12288 + 96 = 12384 bytes
 mlkem1024PrivateKeySize :: Int
-mlkem1024PrivateKeySize = 12384
+mlkem1024PrivateKeySize = sizeofMLKEM1024PrivateKey
 
--- MLKEM1024_public_key: union { uint8_t bytes[512*(4+16)+32+32]; ... }
---   = 512*20 + 64 = 10240 + 64 = 10304 bytes
 mlkem1024PublicKeySize :: Int
-mlkem1024PublicKeySize = 10304
+mlkem1024PublicKeySize = sizeofMLKEM1024PublicKey
 
 
 -- ML-KEM-768 FFI

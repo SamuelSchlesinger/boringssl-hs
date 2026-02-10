@@ -14,7 +14,6 @@ module Crypto.BoringSSL.Internal.ECKey
   ) where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.C.Types
 import Foreign.ForeignPtr
@@ -23,27 +22,28 @@ import Control.Exception (mask_, finally)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.FFI.Constants
 import Crypto.BoringSSL.Internal.FFI.ECKey
 
 -- | Supported elliptic curves.
 data ECCurve = P256 | P384 | P521
   deriving (Eq, Show)
 
--- | An EC key pair (private + public).
-newtype ECKeyPair = ECKeyPair (ForeignPtr EC_KEY)
+-- | An EC key pair (private + public), storing the curve alongside the key.
+data ECKeyPair = ECKeyPair !ECCurve !(ForeignPtr EC_KEY)
 
 -- | An EC public key only.
 newtype ECPublicKey = ECPublicKey (ForeignPtr EC_KEY)
 
--- | NID for a curve.
+-- | NID for a curve, derived from BoringSSL headers at compile time.
 curveNID :: ECCurve -> CInt
-curveNID P256 = 415   -- NID_X9_62_prime256v1 (from nid.h; consider hsc2hs)
-curveNID P384 = 715   -- NID_secp384r1
-curveNID P521 = 716   -- NID_secp521r1
+curveNID P256 = nidX962Prime256v1
+curveNID P384 = nidSecp384r1
+curveNID P521 = nidSecp521r1
 
 -- | Use an ECKeyPair's raw pointer.
 withECKeyPair :: ECKeyPair -> (Ptr EC_KEY -> IO a) -> IO a
-withECKeyPair (ECKeyPair fptr) = withForeignPtr fptr
+withECKeyPair (ECKeyPair _curve fptr) = withForeignPtr fptr
 
 -- | Use an ECPublicKey's raw pointer.
 withECPublicKey :: ECPublicKey -> (Ptr EC_KEY -> IO a) -> IO a
@@ -80,15 +80,15 @@ generateECKeyPair curve = withBoundThread $ mask_ $ do
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   requireNonNull keyPtr (AllocationFailure "generateECKeyPair: EC_KEY_new_by_curve_name failed")
     >>? \kp -> do
-      rc <- c_EC_KEY_generate_key kp
+      -- Attach finalizer immediately so the key is freed on all paths.
+      fptr <- newForeignPtr c_EC_KEY_free_funptr kp
+      rc <- withForeignPtr fptr $ \k -> c_EC_KEY_generate_key k
       if rc /= 1
         then do
-          c_EC_KEY_free kp
           merr <- getBoringSSLError
           return (Left (maybe (OperationFailed "generateECKeyPair: EC_KEY_generate_key failed") id merr))
-        else do
-          fptr <- newForeignPtr c_EC_KEY_free_funptr kp
-          return (Right (ECKeyPair fptr))
+        else
+          return (Right (ECKeyPair curve fptr))
 
 ------------------------------------------------------------------------
 -- Key serialization
@@ -96,7 +96,7 @@ generateECKeyPair curve = withBoundThread $ mask_ $ do
 
 -- | Get the uncompressed point encoding of the public key.
 ecPublicKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
-ecPublicKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
+ecPublicKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> do
   groupPtr <- c_EC_KEY_get0_group keyPtr
   requireNonNull groupPtr (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_group returned NULL")
     >>? \grp -> do
@@ -121,7 +121,7 @@ ecPublicKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
 -- through variable-length encoding and ensures compatibility with protocols
 -- expecting fixed-width keys.
 ecPrivateKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
-ecPrivateKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
+ecPrivateKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> do
   groupPtr <- c_EC_KEY_get0_group keyPtr
   requireNonNull groupPtr (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_group returned NULL")
     >>? \grp -> do
@@ -157,7 +157,7 @@ ecKeyPairFromPrivateBytes curve privBytes = withBoundThread $ mask_ $ do
         requireSuccess rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_check_key failed")
       case result of
         Left err -> return (Left err)
-        Right () -> return (Right (ECKeyPair fptr))
+        Right () -> return (Right (ECKeyPair curve fptr))
   where
     setPrivateKey kp =
       withByteString privBytes $ \privPtr privLen -> do
@@ -221,14 +221,8 @@ ecPublicKeyFromBytes curve pubBytes = withBoundThread $ mask_ $ do
 
 -- | Extract the public key from a key pair.
 ecPublicKeyOfPair :: ECKeyPair -> IO (Either CryptoError ECPublicKey)
-ecPublicKeyOfPair kp = do
+ecPublicKeyOfPair kp@(ECKeyPair curve _fptr) = do
   result <- ecPublicKeyBytes kp
   case result of
     Left err -> return (Left err)
-    Right pubBytes ->
-      -- Determine curve from uncompressed point size
-      case BS.length pubBytes of
-        65  -> ecPublicKeyFromBytes P256 pubBytes  -- 1 + 2*32
-        97  -> ecPublicKeyFromBytes P384 pubBytes  -- 1 + 2*48
-        133 -> ecPublicKeyFromBytes P521 pubBytes  -- 1 + 2*66
-        n   -> return (Left (OperationFailed ("ecPublicKeyOfPair: unexpected public key size " ++ show n)))
+    Right pubBytes -> ecPublicKeyFromBytes curve pubBytes

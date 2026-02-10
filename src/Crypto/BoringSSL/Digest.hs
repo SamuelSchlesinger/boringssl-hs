@@ -26,6 +26,7 @@ module Crypto.BoringSSL.Digest
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
+import Data.IORef
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
@@ -120,7 +121,9 @@ digestSize = ID.digestSize
 -- Streaming digest
 
 -- | An incremental digest context.
-newtype DigestCtx = DigestCtx (ForeignPtr EVP_MD_CTX)
+-- The 'IORef' 'Bool' tracks whether the context has been finalized
+-- ('True' means finalized; further operations will fail).
+data DigestCtx = DigestCtx !(IORef Bool) !(ForeignPtr EVP_MD_CTX)
 
 -- | Initialize a streaming digest context for the given algorithm.
 digestInit :: Algorithm -> IO DigestCtx
@@ -136,47 +139,61 @@ digestInit algo = mask_ $ do
           fail "digestInit: EVP_DigestInit_ex failed"
         else do
           fptr <- newForeignPtr c_EVP_MD_CTX_free_funptr ctx
-          return (DigestCtx fptr)
+          ref <- newIORef False
+          return (DigestCtx ref fptr)
 
 -- | Feed more data into the digest context.
 digestUpdate :: DigestCtx -> ByteString -> IO ()
-digestUpdate (DigestCtx fptr) bs =
-  withForeignPtr fptr $ \ctx ->
-    withByteString bs $ \dataPtr dataLen -> do
-      rc <- c_EVP_DigestUpdate ctx dataPtr dataLen
-      if rc /= 1
-        then fail "digestUpdate: EVP_DigestUpdate failed"
-        else return ()
+digestUpdate (DigestCtx ref fptr) bs = do
+  finalized <- readIORef ref
+  if finalized
+    then fail "digestUpdate: context already finalized"
+    else withForeignPtr fptr $ \ctx ->
+      withByteString bs $ \dataPtr dataLen -> do
+        rc <- c_EVP_DigestUpdate ctx dataPtr dataLen
+        if rc /= 1
+          then fail "digestUpdate: EVP_DigestUpdate failed"
+          else return ()
 
 -- | Create a copy of a digest context. The copy is independent:
 -- updating or finalizing one does not affect the other.
 digestCopy :: DigestCtx -> IO DigestCtx
-digestCopy (DigestCtx srcFPtr) = mask_ $
-  withForeignPtr srcFPtr $ \srcCtx -> do
-    dstCtx <- c_EVP_MD_CTX_new
-    if dstCtx == nullPtr
-      then fail "digestCopy: EVP_MD_CTX_new returned NULL"
-      else do
-        rc <- c_EVP_MD_CTX_copy_ex dstCtx srcCtx
-        if rc /= 1
-          then do
-            c_EVP_MD_CTX_free dstCtx
-            fail "digestCopy: EVP_MD_CTX_copy_ex failed"
+digestCopy (DigestCtx srcRef srcFPtr) = do
+  finalized <- readIORef srcRef
+  if finalized
+    then fail "digestCopy: context already finalized"
+    else mask_ $
+      withForeignPtr srcFPtr $ \srcCtx -> do
+        dstCtx <- c_EVP_MD_CTX_new
+        if dstCtx == nullPtr
+          then fail "digestCopy: EVP_MD_CTX_new returned NULL"
           else do
-            dstFPtr <- newForeignPtr c_EVP_MD_CTX_free_funptr dstCtx
-            return (DigestCtx dstFPtr)
+            rc <- c_EVP_MD_CTX_copy_ex dstCtx srcCtx
+            if rc /= 1
+              then do
+                c_EVP_MD_CTX_free dstCtx
+                fail "digestCopy: EVP_MD_CTX_copy_ex failed"
+              else do
+                dstFPtr <- newForeignPtr c_EVP_MD_CTX_free_funptr dstCtx
+                dstRef <- newIORef False
+                return (DigestCtx dstRef dstFPtr)
 
--- | Finalize the digest and return the hash. The context should not be
--- used after this call.
+-- | Finalize the digest and return the hash. Marks the context as
+-- finalized; any subsequent operation on this context will fail.
 digestFinalize :: DigestCtx -> IO ByteString
-digestFinalize (DigestCtx fptr) =
-  withForeignPtr fptr $ \ctx -> do
-    -- EVP_MAX_MD_SIZE is 64 (for SHA-512)
-    fout <- BSI.mallocByteString 64
-    actualLen <- withForeignPtr fout $ \outPtr ->
-      alloca $ \outLenPtr -> do
-        rc <- c_EVP_DigestFinal_ex ctx (castPtr outPtr) outLenPtr
-        if rc /= 1
-          then fail "digestFinalize: EVP_DigestFinal_ex failed"
-          else fromIntegral <$> peek outLenPtr
-    return (BSI.BS fout actualLen)
+digestFinalize (DigestCtx ref fptr) = do
+  finalized <- readIORef ref
+  if finalized
+    then fail "digestFinalize: context already finalized"
+    else do
+      writeIORef ref True
+      withForeignPtr fptr $ \ctx -> do
+        -- EVP_MAX_MD_SIZE is 64 (for SHA-512)
+        fout <- BSI.mallocByteString 64
+        actualLen <- withForeignPtr fout $ \outPtr ->
+          alloca $ \outLenPtr -> do
+            rc <- c_EVP_DigestFinal_ex ctx (castPtr outPtr) outLenPtr
+            if rc /= 1
+              then fail "digestFinalize: EVP_DigestFinal_ex failed"
+              else fromIntegral <$> peek outLenPtr
+        return (BSI.BS fout actualLen)

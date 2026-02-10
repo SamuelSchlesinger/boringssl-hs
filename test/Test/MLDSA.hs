@@ -6,7 +6,7 @@ import qualified Data.ByteString.Char8 as BS8
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.MLDSA
+import Crypto.BoringSSL.MLDSA hiding (secureBytesToByteString, secureBytesLength)
 
 tests :: TestTree
 tests = testGroup "MLDSA"

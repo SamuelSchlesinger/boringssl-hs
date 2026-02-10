@@ -307,6 +307,12 @@ rsaDecrypt (RSAKeyPair fptr) ciphertext = withBoundThread $
       Right len -> return (Right (BSI.BS outFPtr len))
 
 -- | RSA PKCS#1 v1.5 encrypt plaintext with a public key.
+--
+-- __WARNING:__ RSA PKCS#1 v1.5 encryption is vulnerable to
+-- Bleichenbacher-style adaptive chosen-ciphertext attacks. The error return
+-- on padding failure creates an oracle. Use 'rsaEncrypt' (OAEP) instead for
+-- new protocols. This function is provided only for legacy compatibility.
+{-# DEPRECATED rsaEncryptPKCS1 "Use rsaEncrypt (OAEP) instead. PKCS#1 v1.5 encryption is vulnerable to Bleichenbacher-style attacks." #-}
 rsaEncryptPKCS1 :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
 rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
@@ -330,6 +336,12 @@ rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext = withBoundThread $
       Right len -> return (Right (BSI.BS outFPtr len))
 
 -- | RSA PKCS#1 v1.5 decrypt ciphertext with a private key.
+--
+-- __WARNING:__ RSA PKCS#1 v1.5 encryption is vulnerable to
+-- Bleichenbacher-style adaptive chosen-ciphertext attacks. The error return
+-- on padding failure creates an oracle. Use 'rsaDecrypt' (OAEP) instead for
+-- new protocols. This function is provided only for legacy compatibility.
+{-# DEPRECATED rsaDecryptPKCS1 "Use rsaDecrypt (OAEP) instead. PKCS#1 v1.5 encryption is vulnerable to Bleichenbacher-style attacks." #-}
 rsaDecryptPKCS1 :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do

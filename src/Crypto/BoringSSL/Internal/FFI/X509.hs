@@ -14,6 +14,7 @@ module Crypto.BoringSSL.Internal.FFI.X509
   , GENERAL_NAME
   , GENERAL_NAMES
   , ASN1_STRING
+  , BIGNUM
     -- * X.509 parsing and serialization
   , c_d2i_X509
   , c_X509_free
@@ -113,6 +114,7 @@ data BASIC_CONSTRAINTS
 data GENERAL_NAME
 data GENERAL_NAMES
 data ASN1_STRING
+data BIGNUM
 
 ------------------------------------------------------------------------
 -- X.509 parsing and serialization
@@ -216,7 +218,7 @@ foreign import capi unsafe "openssl/evp.h EVP_PKEY_get_raw_private_key"
 ------------------------------------------------------------------------
 
 foreign import capi unsafe "openssl/asn1.h ASN1_INTEGER_to_BN"
-  c_ASN1_INTEGER_to_BN :: Ptr ASN1_INTEGER -> Ptr a -> IO (Ptr a)
+  c_ASN1_INTEGER_to_BN :: Ptr ASN1_INTEGER -> Ptr BIGNUM -> IO (Ptr BIGNUM)
 
 foreign import capi unsafe "openssl/asn1.h ASN1_TIME_to_posix"
   c_ASN1_TIME_to_posix :: Ptr ASN1_TIME -> Ptr Int64 -> IO CInt
@@ -226,10 +228,10 @@ foreign import capi unsafe "openssl/asn1.h ASN1_TIME_to_posix"
 ------------------------------------------------------------------------
 
 foreign import capi unsafe "openssl/bn.h BN_bn2hex"
-  c_BN_bn2hex :: Ptr a -> IO (Ptr CChar)
+  c_BN_bn2hex :: Ptr BIGNUM -> IO (Ptr CChar)
 
 foreign import capi unsafe "openssl/bn.h BN_free"
-  c_BN_free :: Ptr a -> IO ()
+  c_BN_free :: Ptr BIGNUM -> IO ()
 
 ------------------------------------------------------------------------
 -- Feature 9: Signature algorithm
@@ -288,6 +290,10 @@ foreign import capi unsafe "openssl/x509v3.h BASIC_CONSTRAINTS_free"
 foreign import capi unsafe "x509_helpers.h bssl_general_name_type"
   c_bssl_general_name_type :: Ptr GENERAL_NAME -> IO CInt
 
+-- | Returns the GENERAL_NAME data union pointer. Only valid as
+-- Ptr ASN1_STRING for types GEN_EMAIL (1), GEN_DNS (2), GEN_URI (6),
+-- GEN_IPADD (7). Callers must check bssl_general_name_type before
+-- dereferencing.
 foreign import capi unsafe "x509_helpers.h bssl_general_name_data"
   c_bssl_general_name_data :: Ptr GENERAL_NAME -> IO (Ptr ASN1_STRING)
 
@@ -373,9 +379,10 @@ foreign import capi unsafe "x509_helpers.h bssl_sk_X509_free"
 -- Feature 11: BIO
 ------------------------------------------------------------------------
 
--- | BIO *BIO_new_mem_buf(const void *buf, int len)
+-- | BIO *BIO_new_mem_buf(const void *buf, ossl_ssize_t len)
+-- The length parameter is ossl_ssize_t (ptrdiff_t), not int.
 foreign import capi unsafe "openssl/bio.h BIO_new_mem_buf"
-  c_BIO_new_mem_buf :: Ptr CUChar -> CInt -> IO (Ptr BIO)
+  c_BIO_new_mem_buf :: Ptr CUChar -> CPtrdiff -> IO (Ptr BIO)
 
 -- | int BIO_free(BIO *bio)
 foreign import capi unsafe "openssl/bio.h BIO_free"

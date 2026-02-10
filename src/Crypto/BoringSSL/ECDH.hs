@@ -90,7 +90,7 @@ ecdhComputeRawSecret myKey peerPub = withBoundThread $
                           xBn <- c_BN_new
                           if xBn == nullPtr
                             then return (Left (AllocationFailure "ecdhComputeRawSecret: BN_new failed"))
-                            else flip finally (c_BN_free xBn) $ do
+                            else flip finally (c_BN_clear_free xBn) $ do
                               rc2 <- c_EC_POINT_get_affine_coordinates_GFp groupPtr sharedPt xBn nullPtr nullPtr
                               if rc2 /= 1
                                 then do

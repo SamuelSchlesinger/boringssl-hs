@@ -276,10 +276,18 @@ prop_hmacLength algo (ArbitraryBS key) (ArbitraryBS msg) =
 
 prop_hmacStreamingMatchesOneShot :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hmacStreamingMatchesOneShot algo (ArbitraryBS key) (ArbitraryBS msg) = ioProperty $ do
-  ctx <- HMAC.hmacInit algo key
-  HMAC.hmacUpdate ctx msg
-  streamResult <- HMAC.hmacFinalize ctx
-  return (Right streamResult === HMAC.hmac algo key msg)
+  eCtx <- HMAC.hmacInit algo key
+  case eCtx of
+    Left err -> return $ counterexample ("hmacInit failed: " ++ show err) False
+    Right ctx -> do
+      eUpd <- HMAC.hmacUpdate ctx msg
+      case eUpd of
+        Left err -> return $ counterexample ("hmacUpdate failed: " ++ show err) False
+        Right () -> do
+          eResult <- HMAC.hmacFinalize ctx
+          case eResult of
+            Left err -> return $ counterexample ("hmacFinalize failed: " ++ show err) False
+            Right streamResult -> return (Right streamResult === HMAC.hmac algo key msg)
 
 prop_hmacDifferentKeys :: Algorithm -> NonEmptyBS -> Property
 prop_hmacDifferentKeys algo (NonEmptyBS msg) = ioProperty $ do
@@ -427,8 +435,8 @@ prop_x25519SharedSecretSymmetric :: Property
 prop_x25519SharedSecretSymmetric = ioProperty $ do
   (pubA, privA) <- X25519.generateKeyPair
   (pubB, privB) <- X25519.generateKeyPair
-  let secretAB = X25519.computeSharedSecret privA pubB
-      secretBA = X25519.computeSharedSecret privB pubA
+  let secretAB = fmap X25519.secureBytesToByteString (X25519.computeSharedSecret privA pubB)
+      secretBA = fmap X25519.secureBytesToByteString (X25519.computeSharedSecret privB pubA)
   return $ secretAB === secretBA
 
 prop_x25519PublicKeyDeterministic :: Property

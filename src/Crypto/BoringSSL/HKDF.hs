@@ -32,6 +32,7 @@ import Crypto.BoringSSL.Internal.FFI.HKDF
 hkdf :: Algorithm -> ByteString -> ByteString -> ByteString -> Int -> Either CryptoError ByteString
 hkdf algo secret salt info outLen
   | outLen <= 0 = Left (InvalidInput "hkdf: output length must be positive")
+  | outLen > 255 * ID.digestSize algo = Left (InvalidInput "hkdf: output length exceeds RFC 5869 maximum (255 * hash length)")
   | otherwise = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->
     withByteString salt $ \saltPtr saltLen ->
@@ -73,6 +74,7 @@ hkdfExtract algo secret salt = unsafePerformIO $
 hkdfExpand :: Algorithm -> ByteString -> ByteString -> Int -> Either CryptoError ByteString
 hkdfExpand algo prk info outLen
   | outLen <= 0 = Left (InvalidInput "hkdfExpand: output length must be positive")
+  | outLen > 255 * ID.digestSize algo = Left (InvalidInput "hkdfExpand: output length exceeds RFC 5869 maximum (255 * hash length)")
   | otherwise = unsafePerformIO $
   withByteString prk $ \prkPtr prkLen ->
     withByteString info $ \infoPtr infoLen -> do

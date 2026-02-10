@@ -82,6 +82,7 @@ library
         Crypto.BoringSSL.Internal.FFI.ECDH
         Crypto.BoringSSL.Internal.FFI.RSA
         Crypto.BoringSSL.Internal.FFI.Base64
+        Crypto.BoringSSL.Internal.FFI.CBS
         Crypto.BoringSSL.Internal.FFI.Memory
         Crypto.BoringSSL.Internal.FFI.PBKDF2
         Crypto.BoringSSL.Internal.FFI.MLKEM
@@ -101,13 +102,17 @@ library
         Crypto.BoringSSL.Internal.Buffer
         Crypto.BoringSSL.Internal.Error
         Crypto.BoringSSL.Internal.ExceptT
+        Crypto.BoringSSL.Internal.FFI.Constants
+        Crypto.BoringSSL.Internal.SecureBytes
     build-depends:
         base >=4.16 && <4.22,
         bytestring >=0.11 && <0.13
     hs-source-dirs:   src
     default-language: Haskell2010
     include-dirs:     third_party/boringssl/include cbits
-    c-sources:        cbits/trust_token_helpers.c
+    c-sources:        cbits/cbs_helpers.c
+                      cbits/constants.c
+                      cbits/trust_token_helpers.c
                       cbits/x509_helpers.c
     cc-options:       -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION
     cxx-options:      -std=c++17 -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION -fno-exceptions -fno-rtti

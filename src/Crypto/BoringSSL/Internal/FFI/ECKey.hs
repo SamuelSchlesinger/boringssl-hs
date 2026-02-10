@@ -35,6 +35,7 @@ module Crypto.BoringSSL.Internal.FFI.ECKey
   , c_BN_bn2bin
   , c_BN_bn2bin_padded
   , c_BN_bin2bn
+  , c_BN_clear_free
   , c_EC_GROUP_get_degree
     -- * EC_POINT arithmetic
   , c_EC_POINT_mul
@@ -163,6 +164,12 @@ foreign import capi unsafe "openssl/ec.h EC_GROUP_get_degree"
 -- | BIGNUM *BN_bin2bn(const uint8_t *in, size_t len, BIGNUM *ret)
 foreign import capi unsafe "openssl/bn.h BN_bin2bn"
   c_BN_bin2bn :: Ptr CUChar -> CSize -> Ptr BIGNUM -> IO (Ptr BIGNUM)
+
+-- | void BN_clear_free(BIGNUM *bn)
+-- Zeroizes the BIGNUM before freeing. Use for secret values (private keys,
+-- shared secrets).
+foreign import capi unsafe "openssl/bn.h BN_clear_free"
+  c_BN_clear_free :: Ptr BIGNUM -> IO ()
 
 -- EC_POINT arithmetic
 

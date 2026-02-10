@@ -3,6 +3,14 @@
 -- Supports AES-128\/256 in CBC, CTR, ECB, and OFB modes.
 -- CBC and ECB modes apply PKCS#7 padding automatically.
 -- ECB mode uses no IV (pass 'Data.ByteString.empty' as the IV argument).
+--
+-- __WARNING:__ These ciphers do __NOT__ provide authentication or integrity
+-- protection. An attacker can modify ciphertext without detection. Use the
+-- "Crypto.BoringSSL.AEAD" module for authenticated encryption.
+--
+-- __WARNING:__ ECB mode ('AES128ECB', 'AES256ECB') is insecure for
+-- general-purpose encryption. Identical plaintext blocks produce identical
+-- ciphertext blocks, leaking patterns.
 module Crypto.BoringSSL.Cipher
   ( -- * Algorithms
     CipherAlgorithm(..)
@@ -33,7 +41,14 @@ import Crypto.BoringSSL.Internal.FFI.Cipher
 data CipherAlgorithm
   = AES128CBC | AES256CBC
   | AES128CTR | AES256CTR
-  | AES128ECB | AES256ECB
+  | AES128ECB
+    -- ^ __WARNING:__ ECB mode is insecure for general-purpose encryption.
+    -- Identical plaintext blocks produce identical ciphertext blocks, leaking
+    -- patterns. Consider using CBC, CTR, or preferably AEAD instead.
+  | AES256ECB
+    -- ^ __WARNING:__ ECB mode is insecure for general-purpose encryption.
+    -- Identical plaintext blocks produce identical ciphertext blocks, leaking
+    -- patterns. Consider using CBC, CTR, or preferably AEAD instead.
   | AES128OFB | AES256OFB
   deriving (Eq, Show)
 

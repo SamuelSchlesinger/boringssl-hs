@@ -7,6 +7,7 @@ module Crypto.BoringSSL.Scrypt
   , CryptoError(..)
   ) where
 
+import Data.Bits ((.&.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
 import qualified Data.ByteString.Unsafe as BSU
@@ -29,6 +30,9 @@ import Crypto.BoringSSL.Internal.FFI.Scrypt
 scrypt :: ByteString -> ByteString -> Word64 -> Word64 -> Word64 -> Int -> Either CryptoError ByteString
 scrypt password salt n r p keyLen
   | keyLen <= 0 = Left (InvalidInput "scrypt: key length must be positive")
+  | n < 2 || (n .&. (n - 1)) /= 0 = Left (InvalidInput "scrypt: N must be >= 2 and a power of 2")
+  | r == 0 = Left (InvalidInput "scrypt: r must be > 0")
+  | p == 0 = Left (InvalidInput "scrypt: p must be > 0")
   | otherwise = unsafePerformIO $
   BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
     withByteString salt $ \saltPtr saltLen -> do

@@ -18,6 +18,8 @@ module Crypto.BoringSSL.Internal.FFI.XWing
 import Foreign.C.Types
 import Foreign.Ptr
 
+import Crypto.BoringSSL.Internal.FFI.Constants
+
 -- | Opaque type representing @struct XWING_private_key@.
 -- The contents must never leave the address space.
 data XWING_private_key
@@ -40,11 +42,10 @@ xwingCiphertextBytes = 1120
 xwingSharedSecretBytes :: Int
 xwingSharedSecretBytes = 32
 
--- | sizeof(struct XWING_private_key)
--- Computed from: union { uint8_t bytes[512*(3+3+9)+32+32+32+32+32]; ... }
---   = 512*15 + 5*32 = 7680 + 160 = 7840 bytes
+-- | sizeof(struct XWING_private_key), derived from BoringSSL headers at
+-- compile time.
 xwingPrivateKeyStructSize :: Int
-xwingPrivateKeyStructSize = 7840
+xwingPrivateKeyStructSize = sizeofXWINGPrivateKey
 
 
 -- FFI bindings

@@ -22,6 +22,7 @@ module Crypto.BoringSSL.AEAD
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
+import Control.Concurrent.MVar
 import Control.Exception (mask_)
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
@@ -44,7 +45,9 @@ data AEADAlgorithm
 
 -- | An AEAD context wrapping a BoringSSL EVP_AEAD_CTX.
 -- Automatically freed when garbage collected.
-data AEADCtx = AEADCtx !AEADAlgorithm !(ForeignPtr EVP_AEAD_CTX)
+--
+-- Thread-safe: concurrent 'seal' and 'open' calls are serialized via an internal lock.
+data AEADCtx = AEADCtx !AEADAlgorithm !(MVar ()) !(ForeignPtr EVP_AEAD_CTX)
 
 -- | Get the C pointer for an AEAD algorithm.
 aeadPtr :: AEADAlgorithm -> Ptr EVP_AEAD
@@ -85,20 +88,26 @@ newAEADCtx algo key = do
             Nothing -> return (Left (AllocationFailure "newAEADCtx: EVP_AEAD_CTX_new returned NULL"))
         else do
           fptr <- newForeignPtr c_EVP_AEAD_CTX_free_funptr ctx
-          return (Right (AEADCtx algo fptr))
+          lock <- newMVar ()
+          return (Right (AEADCtx algo lock fptr))
 
 -- | Encrypt and authenticate plaintext.
 --
 -- @seal ctx nonce plaintext ad@ encrypts @plaintext@ with the given
 -- @nonce@ and additional data @ad@, returning the ciphertext (which
 -- includes the authentication tag appended).
+--
+-- __WARNING:__ For AES-GCM, reusing a nonce with the same key is catastrophic
+-- — it completely destroys confidentiality and authenticity. Callers must
+-- ensure nonces are never reused. Consider using AES-GCM-SIV
+-- ('AES128GCMSIV', 'AES256GCMSIV') for nonce-misuse resistance.
 seal :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-seal (AEADCtx algo fptr) nonce plaintext ad
+seal (AEADCtx algo lock fptr) nonce plaintext ad
   | BS.length nonce /= nonceLength algo =
       return $ Left $ InvalidInput $
         "seal: nonce length " ++ show (BS.length nonce) ++
         " does not match expected " ++ show (nonceLength algo)
-  | otherwise = withBoundThread $
+  | otherwise = withMVar lock $ \_ -> withBoundThread $
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString plaintext $ \inPtr inLen ->
@@ -127,12 +136,12 @@ seal (AEADCtx algo fptr) nonce plaintext ad
 -- the authentication tag) with the given @nonce@ and additional data @ad@.
 -- Returns 'Left' if authentication fails.
 open :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-open (AEADCtx algo fptr) nonce ciphertext ad
+open (AEADCtx algo lock fptr) nonce ciphertext ad
   | BS.length nonce /= nonceLength algo =
       return $ Left $ InvalidInput $
         "open: nonce length " ++ show (BS.length nonce) ++
         " does not match expected " ++ show (nonceLength algo)
-  | otherwise = withBoundThread $
+  | otherwise = withMVar lock $ \_ -> withBoundThread $
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString ciphertext $ \inPtr inLen ->

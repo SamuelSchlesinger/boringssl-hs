@@ -14,6 +14,7 @@ import Control.Exception (finally)
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
+import Foreign.Marshal.Utils (fillBytes)
 import Foreign.Ptr
 import Foreign.Storable
 
@@ -29,7 +30,10 @@ withByteString bs f
   | otherwise  = BSU.unsafeUseAsCStringLen bs $ \(ptr, len) ->
       f (castPtr ptr) (fromIntegral len)
 
--- | A non-null pointer used for empty ByteStrings.
+-- | A non-null, well-aligned, dangling pointer used for empty ByteStrings
+-- (analogous to Rust's @NonNull::dangling()@).  This is always passed with
+-- length 0 and is never dereferenced; it exists solely to satisfy C APIs
+-- that reject NULL even when the buffer length is zero.
 emptyBufPtr :: Ptr CUChar
 emptyBufPtr = nullPtr `plusPtr` 1
 {-# NOINLINE emptyBufPtr #-}
@@ -39,6 +43,7 @@ emptyBufPtr = nullPtr `plusPtr` 1
 createByteString :: Int -> (Ptr CUChar -> IO ()) -> IO ByteString
 createByteString n f = do
   fptr <- BSI.mallocByteString n
+  withForeignPtr fptr $ \ptr -> fillBytes ptr 0 n
   withForeignPtr fptr $ \ptr -> f (castPtr ptr)
   return (BSI.BS fptr n)
 

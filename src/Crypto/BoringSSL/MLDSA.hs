@@ -22,6 +22,10 @@ module Crypto.BoringSSL.MLDSA
   , publicKeyBytes
   , signatureBytes
   , seedBytes
+    -- * Secure memory
+  , SecureBytes
+  , secureBytesToByteString
+  , secureBytesLength
     -- * Error type
   , CryptoError(..)
   ) where
@@ -30,16 +34,18 @@ import Control.Exception (mask_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
+import Foreign.Marshal.Utils (copyBytes)
 import Foreign.Ptr
-import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.FFI.CBS
+import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_cleanse)
 import Crypto.BoringSSL.Internal.FFI.MLDSA
+import Crypto.BoringSSL.Internal.SecureBytes
 
 -- | ML-DSA variant selection.
 data MLDSAVariant = MLDSA44 | MLDSA65 | MLDSA87
@@ -87,15 +93,12 @@ publicKeySize MLDSA44 = mldsa44PublicKeySize
 publicKeySize MLDSA65 = mldsa65PublicKeySize
 publicKeySize MLDSA87 = mldsa87PublicKeySize
 
--- Internal: size of a CBS struct (pointer + size_t).
-cbsSize :: Int
-cbsSize = sizeOf (undefined :: Ptr ()) + sizeOf (undefined :: CSize)
-
 -- | Generate a random ML-DSA key pair.
 -- Returns @(encodedPublicKey, seed, privateKey)@ where @seed@ is the
 -- 32-byte seed that can be used with 'privateKeyFromSeed' to regenerate
--- the private key.
-generateKeyPair :: MLDSAVariant -> IO (Either CryptoError (ByteString, ByteString, MLDSAPrivateKey))
+-- the private key. The seed is returned as 'SecureBytes' and zeroized on
+-- finalization.
+generateKeyPair :: MLDSAVariant -> IO (Either CryptoError (ByteString, SecureBytes, MLDSAPrivateKey))
 generateKeyPair variant = withBoundThread $ mask_ $ do
   let pkSize = publicKeyBytes variant
       skSize = privateKeySize variant
@@ -111,23 +114,27 @@ generateKeyPair variant = withBoundThread $ mask_ $ do
           MLDSA87 -> c_MLDSA87_generate_key (castPtr pubPtr) seedPtr (castPtr skPtr)
         if rc /= 1
           then do
+            c_OPENSSL_cleanse (castPtr seedPtr) (fromIntegral mldsaSeedBytes)
             merr <- getBoringSSLError
             return (Left (maybe (OperationFailed "MLDSA_generate_key failed") id merr))
           else do
-            seedBs <- BS.packCStringLen (castPtr seedPtr, mldsaSeedBytes)
-            return (Right (BSI.BS pubFPtr pkSize, seedBs, MLDSAPrivateKey variant skFPtr))
+            seedSB <- createSecureBytes mldsaSeedBytes $ \dstPtr ->
+              copyBytes (castPtr dstPtr) (castPtr seedPtr) mldsaSeedBytes
+            c_OPENSSL_cleanse (castPtr seedPtr) (fromIntegral mldsaSeedBytes)
+            return (Right (BSI.BS pubFPtr pkSize, seedSB, MLDSAPrivateKey variant skFPtr))
 
 -- | Regenerate a private key from a seed value that was produced by
 -- 'generateKeyPair'. The seed must be exactly 32 bytes.
-privateKeyFromSeed :: MLDSAVariant -> ByteString -> Either CryptoError MLDSAPrivateKey
+-- Accepts 'SecureBytes' to preserve zeroization guarantees.
+privateKeyFromSeed :: MLDSAVariant -> SecureBytes -> Either CryptoError MLDSAPrivateKey
 privateKeyFromSeed variant seed
-  | BS.length seed /= mldsaSeedBytes =
+  | secureBytesLength seed /= mldsaSeedBytes =
       Left (InvalidInput "privateKeyFromSeed: seed must be 32 bytes")
   | otherwise = unsafePerformIO $ mask_ $ do
       let skSize = privateKeySize variant
       skFPtr <- mallocForeignPtrBytes skSize
       rc <- withForeignPtr skFPtr $ \skPtr ->
-        withByteString seed $ \seedPtr seedLen ->
+        withSecureBytes seed $ \seedPtr seedLen ->
           case variant of
             MLDSA44 -> c_MLDSA44_private_key_from_seed (castPtr skPtr) seedPtr seedLen
             MLDSA65 -> c_MLDSA65_private_key_from_seed (castPtr skPtr) seedPtr seedLen
@@ -164,10 +171,8 @@ publicKeyFromBytes variant bs
       pkFPtr <- mallocForeignPtrBytes pkSize
       rc <- withForeignPtr pkFPtr $ \pkPtr ->
         withByteString bs $ \dataPtr dataLen ->
-          -- Allocate a CBS struct on the stack: { const uint8_t *data; size_t len; }
-          allocaBytes cbsSize $ \cbsPtr -> do
-            pokeByteOff cbsPtr 0 dataPtr
-            pokeByteOff cbsPtr (sizeOf (undefined :: Ptr ())) (dataLen :: CSize)
+          allocaBytes c_bssl_CBS_size $ \cbsPtr -> do
+            c_bssl_CBS_init cbsPtr (castPtr dataPtr) dataLen
             case variant of
               MLDSA44 -> c_MLDSA44_parse_public_key (castPtr pkPtr) (castPtr cbsPtr)
               MLDSA65 -> c_MLDSA65_parse_public_key (castPtr pkPtr) (castPtr cbsPtr)
