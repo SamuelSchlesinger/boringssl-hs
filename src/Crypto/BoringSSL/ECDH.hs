@@ -45,6 +45,7 @@ ecdhComputeSecret myKey peerPub outLen
     withECPublicKey peerPub $ \peerKeyPtr -> do
       peerPoint <- c_EC_KEY_get0_public_key peerKeyPtr
       fptr <- BSI.mallocByteString outLen
+      clearBoringSSLError
       rc <- withForeignPtr fptr $ \ptr ->
         c_ECDH_compute_key_fips (castPtr ptr) (fromIntegral outLen) peerPoint myKeyPtr
       if rc /= 1
@@ -80,6 +81,7 @@ ecdhComputeRawSecret myKey peerPub =
                     then return (Left (AllocationFailure "ecdhComputeRawSecret: EC_POINT_new failed"))
                     else flip finally (c_EC_POINT_free sharedPt) $ do
                       -- shared = privBn * peerPoint
+                      clearBoringSSLError
                       rc <- c_EC_POINT_mul groupPtr sharedPt nullPtr peerPoint privBn nullPtr
                       if rc /= 1
                         then do

@@ -75,6 +75,7 @@ newAEADCtx algo key = do
            "newAEADCtx: key length " ++ show (BS.length key)
            ++ " does not match expected " ++ show expectedKeyLen
     else withByteString key $ \keyPtr keyLen -> mask_ $ do
+      clearBoringSSLError
       ctx <- c_EVP_AEAD_CTX_new aead keyPtr keyLen 0
       if ctx == nullPtr
         then do
@@ -101,6 +102,7 @@ seal (AEADCtx algo fptr) nonce plaintext ad =
     outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
     alloca $ \outLenPtr -> do
       poke outLenPtr 0
+      clearBoringSSLError
       rc <- withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_seal ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
@@ -129,6 +131,7 @@ open (AEADCtx _algo fptr) nonce ciphertext ad =
     outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
     alloca $ \outLenPtr -> do
       poke outLenPtr 0
+      clearBoringSSLError
       rc <- withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_open ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen

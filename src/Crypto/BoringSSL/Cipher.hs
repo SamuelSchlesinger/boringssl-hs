@@ -102,6 +102,7 @@ encrypt algo key iv plaintext
                 let maxOutLen = fromIntegral inLen + (16 :: Int)
                 fptr <- BSI.mallocByteString maxOutLen
                 result <- withForeignPtr fptr $ \outPtr -> do
+                  clearBoringSSLError
                   rc1 <- c_EVP_EncryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
                   if rc1 /= 1
                     then do
@@ -162,6 +163,7 @@ decrypt algo key iv ciphertext
                 let maxOutLen = fromIntegral inLen + (16 :: Int)
                 fptr <- BSI.mallocByteString maxOutLen
                 result <- withForeignPtr fptr $ \outPtr -> do
+                  clearBoringSSLError
                   rc1 <- c_EVP_DecryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
                   if rc1 /= 1
                     then do
