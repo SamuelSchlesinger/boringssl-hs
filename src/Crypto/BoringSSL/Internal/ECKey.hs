@@ -74,7 +74,7 @@ requireSuccess _ err = return (Left err)
 
 -- | Generate a new EC key pair for the given curve.
 generateECKeyPair :: ECCurve -> IO (Either CryptoError ECKeyPair)
-generateECKeyPair curve = mask_ $ do
+generateECKeyPair curve = withBoundThread $ mask_ $ do
   clearBoringSSLError
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   requireNonNull keyPtr (AllocationFailure "generateECKeyPair: EC_KEY_new_by_curve_name failed")
@@ -138,7 +138,7 @@ ecPrivateKeyBytes (ECKeyPair fptr) = withForeignPtr fptr $ \keyPtr -> do
 
 -- | Reconstruct an EC key pair from a curve and private key bytes.
 ecKeyPairFromPrivateBytes :: ECCurve -> ByteString -> IO (Either CryptoError ECKeyPair)
-ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
+ecKeyPairFromPrivateBytes curve privBytes = withBoundThread $ mask_ $ do
   clearBoringSSLError
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   requireNonNull keyPtr (AllocationFailure "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed")
@@ -182,7 +182,7 @@ ecKeyPairFromPrivateBytes curve privBytes = mask_ $ do
 
 -- | Parse an EC public key from uncompressed point bytes.
 ecPublicKeyFromBytes :: ECCurve -> ByteString -> IO (Either CryptoError ECPublicKey)
-ecPublicKeyFromBytes curve pubBytes = mask_ $ do
+ecPublicKeyFromBytes curve pubBytes = withBoundThread $ mask_ $ do
   clearBoringSSLError
   keyPtr <- c_EC_KEY_new_by_curve_name (curveNID curve)
   requireNonNull keyPtr (AllocationFailure "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed")

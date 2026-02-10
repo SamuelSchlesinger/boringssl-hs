@@ -44,7 +44,7 @@ generateKeyPair = generateECKeyPair
 -- | Sign a pre-hashed digest with ECDSA.
 -- Returns a DER-encoded ASN.1 signature.
 ecdsaSign :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
-ecdsaSign kp digest =
+ecdsaSign kp digest = withBoundThread $
   withECKeyPair kp $ \keyPtr -> do
     maxSigLen <- c_ECDSA_size keyPtr
     fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
@@ -68,7 +68,7 @@ ecdsaSign kp digest =
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors (e.g. memory allocation failure).
 ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-ecdsaVerify pubKey digest sig =
+ecdsaVerify pubKey digest sig = withBoundThread $
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
@@ -87,7 +87,7 @@ ecdsaVerify pubKey digest sig =
 -- The signature length is always @2 * group_order_bytes@
 -- (64 for P-256, 96 for P-384, 132 for P-521).
 ecdsaSignP1363 :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
-ecdsaSignP1363 kp digest =
+ecdsaSignP1363 kp digest = withBoundThread $
   withECKeyPair kp $ \keyPtr -> do
     maxSigLen <- c_ECDSA_size_p1363 keyPtr
     fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
@@ -111,7 +111,7 @@ ecdsaSignP1363 kp digest =
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors.
 ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-ecdsaVerifyP1363 pubKey digest sig =
+ecdsaVerifyP1363 pubKey digest sig = withBoundThread $
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do

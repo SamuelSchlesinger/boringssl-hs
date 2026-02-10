@@ -69,7 +69,7 @@ rsaPKCS1Padding = 1
 generateRSAKeyPair :: Int -> IO (Either CryptoError RSAKeyPair)
 generateRSAKeyPair bits
   | bits < 2048 = return (Left (InvalidInput "generateRSAKeyPair: key size must be at least 2048 bits"))
-  | otherwise = mask $ \restore -> do
+  | otherwise = withBoundThread $ mask $ \restore -> do
   rsa <- c_RSA_new
   if rsa == nullPtr
     then return (Left (AllocationFailure "generateRSAKeyPair: RSA_new failed"))
@@ -96,7 +96,7 @@ generateRSAKeyPair bits
 
 -- | Serialize the public key to DER-encoded PKCS#1 format.
 publicKeyToBytes :: RSAKeyPair -> IO (Either CryptoError ByteString)
-publicKeyToBytes (RSAKeyPair fptr) =
+publicKeyToBytes (RSAKeyPair fptr) = withBoundThread $
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
       alloca $ \outLenPtr -> do
@@ -110,7 +110,7 @@ publicKeyToBytes (RSAKeyPair fptr) =
 
 -- | Deserialize a public key from DER-encoded PKCS#1 format.
 publicKeyFromBytes :: ByteString -> IO (Either CryptoError RSAPublicKey)
-publicKeyFromBytes bs =
+publicKeyFromBytes bs = withBoundThread $
   withByteString bs $ \ptr len -> mask_ $ do
     clearBoringSSLError
     rsa <- c_RSA_public_key_from_bytes ptr len
@@ -124,7 +124,7 @@ publicKeyFromBytes bs =
 
 -- | Serialize the private key to DER-encoded PKCS#1 format.
 privateKeyToBytes :: RSAKeyPair -> IO (Either CryptoError ByteString)
-privateKeyToBytes (RSAKeyPair fptr) =
+privateKeyToBytes (RSAKeyPair fptr) = withBoundThread $
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
       alloca $ \outLenPtr -> do
@@ -138,7 +138,7 @@ privateKeyToBytes (RSAKeyPair fptr) =
 
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
 privateKeyFromBytes :: ByteString -> IO (Either CryptoError RSAKeyPair)
-privateKeyFromBytes bs =
+privateKeyFromBytes bs = withBoundThread $
   withByteString bs $ \ptr len -> mask_ $ do
     clearBoringSSLError
     rsa <- c_RSA_private_key_from_bytes ptr len
@@ -166,7 +166,7 @@ rsaSign :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteS
 rsaSign _ algo _
   | Nothing <- ID.algorithmNID algo =
       return (Left (InvalidInput ("rsaSign: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
-rsaSign (RSAKeyPair fptr) algo digest = do
+rsaSign (RSAKeyPair fptr) algo digest = withBoundThread $ do
   let nid = case ID.algorithmNID algo of
               Just n  -> n
               Nothing -> error "rsaSign: unreachable (algorithmNID already checked)"
@@ -197,7 +197,7 @@ rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either
 rsaVerify _ algo _ _
   | Nothing <- ID.algorithmNID algo =
       return (Left (InvalidInput ("rsaVerify: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
-rsaVerify (RSAPublicKey fptr) algo digest sig = do
+rsaVerify (RSAPublicKey fptr) algo digest sig = withBoundThread $ do
   let nid = case ID.algorithmNID algo of
               Just n  -> n
               Nothing -> error "rsaVerify: unreachable (algorithmNID already checked)"
@@ -217,7 +217,7 @@ rsaVerify (RSAPublicKey fptr) algo digest sig = do
 -- | RSA-PSS sign a pre-hashed digest. Uses the same hash for MGF1
 -- and salt length equal to the digest size.
 rsaSignPSS :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
-rsaSignPSS (RSAKeyPair fptr) algo digest =
+rsaSignPSS (RSAKeyPair fptr) algo digest = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     outFPtr <- BSI.mallocByteString modSize
@@ -244,7 +244,7 @@ rsaSignPSS (RSAKeyPair fptr) algo digest =
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors.
 rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
+rsaVerifyPSS (RSAPublicKey fptr) algo digest sig = withBoundThread $
   withForeignPtr fptr $ \rsa ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
@@ -262,7 +262,7 @@ rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
 
 -- | RSA-OAEP encrypt plaintext with a public key.
 rsaEncrypt :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
-rsaEncrypt (RSAPublicKey fptr) plaintext =
+rsaEncrypt (RSAPublicKey fptr) plaintext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     outFPtr <- BSI.mallocByteString modSize
@@ -285,7 +285,7 @@ rsaEncrypt (RSAPublicKey fptr) plaintext =
 
 -- | RSA-OAEP decrypt ciphertext with a private key.
 rsaDecrypt :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
-rsaDecrypt (RSAKeyPair fptr) ciphertext =
+rsaDecrypt (RSAKeyPair fptr) ciphertext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     outFPtr <- BSI.mallocByteString modSize
@@ -308,7 +308,7 @@ rsaDecrypt (RSAKeyPair fptr) ciphertext =
 
 -- | RSA PKCS#1 v1.5 encrypt plaintext with a public key.
 rsaEncryptPKCS1 :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
-rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext =
+rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     outFPtr <- BSI.mallocByteString modSize
@@ -331,7 +331,7 @@ rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext =
 
 -- | RSA PKCS#1 v1.5 decrypt ciphertext with a private key.
 rsaDecryptPKCS1 :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
-rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext =
+rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     outFPtr <- BSI.mallocByteString modSize

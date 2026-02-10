@@ -40,7 +40,7 @@ ecdhComputeSecret :: ECKeyPair -> ECPublicKey -> Int -> IO (Either CryptoError B
 ecdhComputeSecret myKey peerPub outLen
   | outLen `notElem` [32, 48, 64] =
       return (Left (InvalidInput "ecdhComputeSecret: output length must be 32, 48, or 64"))
-  | otherwise =
+  | otherwise = withBoundThread $
   withECKeyPair myKey $ \myKeyPtr ->
     withECPublicKey peerPub $ \peerKeyPtr -> do
       peerPoint <- c_EC_KEY_get0_public_key peerKeyPtr
@@ -59,7 +59,7 @@ ecdhComputeSecret myKey peerPub outLen
 -- Returns the x-coordinate of privKey * peerPubKey, zero-padded to the
 -- field size: 32 bytes for P-256, 48 for P-384, 66 for P-521.
 ecdhComputeRawSecret :: ECKeyPair -> ECPublicKey -> IO (Either CryptoError ByteString)
-ecdhComputeRawSecret myKey peerPub =
+ecdhComputeRawSecret myKey peerPub = withBoundThread $
   withECKeyPair myKey $ \myKeyPtr ->
     withECPublicKey peerPub $ \peerKeyPtr -> do
       groupPtr <- c_EC_KEY_get0_group myKeyPtr

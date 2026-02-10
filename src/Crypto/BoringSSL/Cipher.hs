@@ -85,7 +85,7 @@ encrypt algo key iv plaintext
       return (Left (InvalidInput ("encrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
   | BS.length iv /= cipherIVLength algo =
       return (Left (InvalidInput ("encrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
-  | otherwise =
+  | otherwise = withBoundThread $
       withByteString key $ \keyPtr _ ->
         withByteString plaintext $ \inPtr inLen -> do
         let ivAction f =
@@ -146,7 +146,7 @@ decrypt algo key iv ciphertext
       return (Left (InvalidInput ("decrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
   | BS.length iv /= cipherIVLength algo =
       return (Left (InvalidInput ("decrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
-  | otherwise =
+  | otherwise = withBoundThread $
       withByteString key $ \keyPtr _ ->
         withByteString ciphertext $ \inPtr inLen -> do
         let ivAction f =

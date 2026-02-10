@@ -96,7 +96,7 @@ cbsSize = sizeOf (undefined :: Ptr ()) + sizeOf (undefined :: CSize)
 -- 32-byte seed that can be used with 'privateKeyFromSeed' to regenerate
 -- the private key.
 generateKeyPair :: MLDSAVariant -> IO (Either CryptoError (ByteString, ByteString, MLDSAPrivateKey))
-generateKeyPair variant = mask_ $ do
+generateKeyPair variant = withBoundThread $ mask_ $ do
   let pkSize = publicKeyBytes variant
       skSize = privateKeySize variant
   pubFPtr <- BSI.mallocByteString pkSize
@@ -180,7 +180,7 @@ publicKeyFromBytes variant bs
 -- | Sign a message with an ML-DSA private key.
 -- Takes a private key, message, and context string.
 sign :: MLDSAPrivateKey -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-sign (MLDSAPrivateKey variant skFPtr) msg context = do
+sign (MLDSAPrivateKey variant skFPtr) msg context = withBoundThread $ do
   let sigSize = signatureBytes variant
   sigFPtr <- BSI.mallocByteString sigSize
   clearBoringSSLError

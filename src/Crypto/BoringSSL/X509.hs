@@ -42,6 +42,7 @@ module Crypto.BoringSSL.X509
   ) where
 
 import Control.Exception (bracket, mask_)
+import Data.Bits ((.&.))
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
@@ -355,13 +356,20 @@ certKeyUsage (X509Cert fptr) = unsafePerformIO $
   where
     decodeKeyUsage :: Int -> [KeyUsageFlag]
     decodeKeyUsage w =
-      [ flag | (bit, flag) <- zip ([0..] :: [Int]) allFlags, w `testBit'` bit ]
-    allFlags =
-      [ DigitalSignature, ContentCommitment, KeyEncipherment
-      , DataEncipherment, KeyAgreement, KeyCertSign, CRLSign
-      , EncipherOnly, DecipherOnly ]
-    testBit' :: Int -> Int -> Bool
-    testBit' n b = (n `div` (2^b)) `mod` 2 == 1
+      [ flag | (mask, flag) <- kuMasks, w .&. mask /= 0 ]
+    -- BoringSSL KU_* constants from <openssl/x509v3.h>
+    kuMasks :: [(Int, KeyUsageFlag)]
+    kuMasks =
+      [ (0x0080, DigitalSignature)
+      , (0x0040, ContentCommitment)
+      , (0x0020, KeyEncipherment)
+      , (0x0010, DataEncipherment)
+      , (0x0008, KeyAgreement)
+      , (0x0004, KeyCertSign)
+      , (0x0002, CRLSign)
+      , (0x0001, EncipherOnly)
+      , (0x8000, DecipherOnly)
+      ]
 {-# NOINLINE certKeyUsage #-}
 
 -- | Get the basic constraints extension.

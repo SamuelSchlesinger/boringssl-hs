@@ -35,9 +35,7 @@ source-repository head
     location: https://github.com/SamuelSchlesinger/boringssl-hs.git
 
 common warnings
-    -- TODO: Remove -Werror before publishing to Hackage. It causes downstream
-    -- build failures when new GHC versions introduce new warnings.
-    ghc-options: -Wall -Werror
+    ghc-options: -Wall
 
 library
     import:           warnings
@@ -365,6 +363,7 @@ library
 test-suite boringssl-test
     import:           warnings
     type:             exitcode-stdio-1.0
+    ghc-options:      -threaded
     main-is:          Main.hs
     other-modules:
         Test.Digest
@@ -409,6 +408,7 @@ test-suite boringssl-test
 benchmark boringssl-bench
     import:           warnings
     type:             exitcode-stdio-1.0
+    ghc-options:      -threaded
     main-is:          Main.hs
     hs-source-dirs:   bench
     build-depends:

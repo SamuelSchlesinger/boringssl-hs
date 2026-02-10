@@ -74,7 +74,7 @@ newAEADCtx algo key = do
     then return $ Left $ InvalidInput $
            "newAEADCtx: key length " ++ show (BS.length key)
            ++ " does not match expected " ++ show expectedKeyLen
-    else withByteString key $ \keyPtr keyLen -> mask_ $ do
+    else withBoundThread $ withByteString key $ \keyPtr keyLen -> mask_ $ do
       clearBoringSSLError
       ctx <- c_EVP_AEAD_CTX_new aead keyPtr keyLen 0
       if ctx == nullPtr
@@ -93,7 +93,7 @@ newAEADCtx algo key = do
 -- @nonce@ and additional data @ad@, returning the ciphertext (which
 -- includes the authentication tag appended).
 seal :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-seal (AEADCtx algo fptr) nonce plaintext ad =
+seal (AEADCtx algo fptr) nonce plaintext ad = withBoundThread $
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString plaintext $ \inPtr inLen ->
@@ -122,7 +122,7 @@ seal (AEADCtx algo fptr) nonce plaintext ad =
 -- the authentication tag) with the given @nonce@ and additional data @ad@.
 -- Returns 'Left' if authentication fails.
 open :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-open (AEADCtx _algo fptr) nonce ciphertext ad =
+open (AEADCtx _algo fptr) nonce ciphertext ad = withBoundThread $
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString ciphertext $ \inPtr inLen ->

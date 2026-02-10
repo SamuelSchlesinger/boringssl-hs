@@ -2,8 +2,10 @@ module Crypto.BoringSSL.Internal.Error
   ( CryptoError(..)
   , getBoringSSLError
   , clearBoringSSLError
+  , withBoundThread
   ) where
 
+import Control.Concurrent (rtsSupportsBoundThreads, runInBoundThread)
 import Control.Exception (Exception)
 import Crypto.BoringSSL.Internal.FFI
 import Foreign.C.String
@@ -66,3 +68,17 @@ drainErrors :: IO ()
 drainErrors = do
   e <- c_ERR_get_error
   if e == 0 then return () else drainErrors
+
+-- | Pin an IO action to a single OS thread using 'runInBoundThread'.
+-- BoringSSL's error queue is per-OS-thread, but GHC green threads can
+-- migrate between OS threads at safe FFI call boundaries.  Wrapping the
+-- @clearBoringSSLError@ / C call / @getBoringSSLError@ sequence with
+-- 'withBoundThread' guarantees all three run on the same OS thread,
+-- preventing error misattribution.
+--
+-- With the non-threaded RTS there is only one OS thread, so migration
+-- cannot occur and 'runInBoundThread' is unnecessary (and would crash).
+withBoundThread :: IO a -> IO a
+withBoundThread
+  | rtsSupportsBoundThreads = runInBoundThread
+  | otherwise               = id

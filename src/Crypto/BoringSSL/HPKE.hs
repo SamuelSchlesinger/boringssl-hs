@@ -96,7 +96,7 @@ aeadPtr ChaChaPoly = c_EVP_hpke_chacha20_poly1305
 
 -- | Generate a new HPKE key pair for the given KEM.
 generateKey :: HPKEKEM -> IO (Either CryptoError HPKEKey)
-generateKey kem = mask_ $ do
+generateKey kem = withBoundThread $ mask_ $ do
   key <- c_EVP_HPKE_KEY_new
   if key == nullPtr
     then return (Left (AllocationFailure "generateKey: EVP_HPKE_KEY_new failed"))
@@ -114,7 +114,7 @@ generateKey kem = mask_ $ do
 
 -- | Initialize an HPKE key from a private key byte string.
 keyFromPrivate :: HPKEKEM -> ByteString -> IO (Either CryptoError HPKEKey)
-keyFromPrivate kem privBytes = mask_ $ do
+keyFromPrivate kem privBytes = withBoundThread $ mask_ $ do
   key <- c_EVP_HPKE_KEY_new
   if key == nullPtr
     then return (Left (AllocationFailure "keyFromPrivate: EVP_HPKE_KEY_new failed"))
@@ -133,7 +133,7 @@ keyFromPrivate kem privBytes = mask_ $ do
 
 -- | Extract the public key bytes from an HPKE key pair.
 publicKeyBytes :: HPKEKey -> IO (Either CryptoError ByteString)
-publicKeyBytes (HPKEKey fptr) =
+publicKeyBytes (HPKEKey fptr) = withBoundThread $
   withForeignPtr fptr $ \key -> do
     let maxLen = evpHPKEMaxPublicKeyLength
     outFPtr <- BSI.mallocByteString maxLen
@@ -151,7 +151,7 @@ publicKeyBytes (HPKEKey fptr) =
 
 -- | Extract the private key bytes from an HPKE key pair.
 privateKeyBytes :: HPKEKey -> IO (Either CryptoError ByteString)
-privateKeyBytes (HPKEKey fptr) =
+privateKeyBytes (HPKEKey fptr) = withBoundThread $
   withForeignPtr fptr $ \key -> do
     let maxLen = evpHPKEMaxPrivateKeyLength
     outFPtr <- BSI.mallocByteString maxLen
@@ -171,7 +171,7 @@ privateKeyBytes (HPKEKey fptr) =
 -- the encapsulated key to send to the recipient.
 setupSender :: HPKEKEM -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
             -> IO (Either CryptoError (ByteString, SenderCtx))
-setupSender kem kdf aead peerPubKey info = mask_ $ do
+setupSender kem kdf aead peerPubKey info = withBoundThread $ mask_ $ do
   ctx <- c_EVP_HPKE_CTX_new
   if ctx == nullPtr
     then return (Left (AllocationFailure "setupSender: EVP_HPKE_CTX_new failed"))
@@ -204,7 +204,7 @@ setupSender kem kdf aead peerPubKey info = mask_ $ do
 -- | Set up a recipient context from an encapsulated key.
 setupRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                -> IO (Either CryptoError RecipientCtx)
-setupRecipient (HPKEKey keyFPtr) kdf aead enc info = mask_ $ do
+setupRecipient (HPKEKey keyFPtr) kdf aead enc info = withBoundThread $ mask_ $ do
   ctx <- c_EVP_HPKE_CTX_new
   if ctx == nullPtr
     then return (Left (AllocationFailure "setupRecipient: EVP_HPKE_CTX_new failed"))
@@ -231,7 +231,7 @@ setupRecipient (HPKEKey keyFPtr) kdf aead enc info = mask_ $ do
 -- Returns @(enc, SenderCtx)@ where @enc@ is the encapsulated key.
 setupAuthSender :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                 -> IO (Either CryptoError (ByteString, SenderCtx))
-setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = mask_ $ do
+setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = withBoundThread $ mask_ $ do
   ctx <- c_EVP_HPKE_CTX_new
   if ctx == nullPtr
     then return (Left (AllocationFailure "setupAuthSender: EVP_HPKE_CTX_new failed"))
@@ -267,7 +267,7 @@ setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = mask_ $ do
 -- public key. The sender must have used 'setupAuthSender'.
 setupAuthRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                    -> ByteString -> IO (Either CryptoError RecipientCtx)
-setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = mask_ $ do
+setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = withBoundThread $ mask_ $ do
   ctx <- c_EVP_HPKE_CTX_new
   if ctx == nullPtr
     then return (Left (AllocationFailure "setupAuthRecipient: EVP_HPKE_CTX_new failed"))
@@ -293,7 +293,7 @@ setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = mask_ $ do
 -- This is stateful: each call advances the internal sequence number.
 -- Thread-safe: concurrent calls are serialized.
 senderSeal :: SenderCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-senderSeal (SenderCtx lock fptr) plaintext ad =
+senderSeal (SenderCtx lock fptr) plaintext ad = withBoundThread $
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     overhead <- fromIntegral <$> c_EVP_HPKE_CTX_max_overhead ctx
@@ -318,7 +318,7 @@ senderSeal (SenderCtx lock fptr) plaintext ad =
 -- This is stateful: each call advances the internal sequence number.
 -- Thread-safe: concurrent calls are serialized.
 recipientOpen :: RecipientCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-recipientOpen (RecipientCtx lock fptr) ciphertext ad =
+recipientOpen (RecipientCtx lock fptr) ciphertext ad = withBoundThread $
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     let maxOutLen = BS.length ciphertext
@@ -343,7 +343,7 @@ recipientOpen (RecipientCtx lock fptr) ciphertext ad =
 senderExport :: SenderCtx -> ByteString -> Int -> IO (Either CryptoError ByteString)
 senderExport _ _ len
   | len <= 0 = return (Left (InvalidInput "senderExport: output length must be positive"))
-senderExport (SenderCtx lock fptr) context len =
+senderExport (SenderCtx lock fptr) context len = withBoundThread $
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     outFPtr <- BSI.mallocByteString len
@@ -362,7 +362,7 @@ senderExport (SenderCtx lock fptr) context len =
 recipientExport :: RecipientCtx -> ByteString -> Int -> IO (Either CryptoError ByteString)
 recipientExport _ _ len
   | len <= 0 = return (Left (InvalidInput "recipientExport: output length must be positive"))
-recipientExport (RecipientCtx lock fptr) context len =
+recipientExport (RecipientCtx lock fptr) context len = withBoundThread $
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     outFPtr <- BSI.mallocByteString len
