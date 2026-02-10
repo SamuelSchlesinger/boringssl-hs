@@ -101,6 +101,7 @@ generateKey kem = mask_ $ do
   if key == nullPtr
     then return (Left (AllocationFailure "generateKey: EVP_HPKE_KEY_new failed"))
     else do
+      clearBoringSSLError
       rc <- c_EVP_HPKE_KEY_generate key (kemPtr kem)
       if rc /= 1
         then do
@@ -118,6 +119,7 @@ keyFromPrivate kem privBytes = mask_ $ do
   if key == nullPtr
     then return (Left (AllocationFailure "keyFromPrivate: EVP_HPKE_KEY_new failed"))
     else do
+      clearBoringSSLError
       rc <- withByteString privBytes $ \privPtr privLen ->
         c_EVP_HPKE_KEY_init key (kemPtr kem) privPtr privLen
       if rc /= 1
@@ -136,6 +138,7 @@ publicKeyBytes (HPKEKey fptr) =
     let maxLen = evpHPKEMaxPublicKeyLength
     outFPtr <- BSI.mallocByteString maxLen
     alloca $ \outLenPtr -> do
+      clearBoringSSLError
       rc <- withForeignPtr outFPtr $ \outPtr ->
         c_EVP_HPKE_KEY_public_key key (castPtr outPtr) outLenPtr (fromIntegral maxLen)
       if rc /= 1
@@ -153,6 +156,7 @@ privateKeyBytes (HPKEKey fptr) =
     let maxLen = evpHPKEMaxPrivateKeyLength
     outFPtr <- BSI.mallocByteString maxLen
     alloca $ \outLenPtr -> do
+      clearBoringSSLError
       rc <- withForeignPtr outFPtr $ \outPtr ->
         c_EVP_HPKE_KEY_private_key key (castPtr outPtr) outLenPtr (fromIntegral maxLen)
       if rc /= 1
@@ -178,6 +182,7 @@ setupSender kem kdf aead peerPubKey info = mask_ $ do
         withForeignPtr encFPtr $ \encPtr ->
           withByteString peerPubKey $ \pkPtr pkLen ->
             withByteString info $ \infoPtr infoLen -> do
+              clearBoringSSLError
               rc <- c_EVP_HPKE_CTX_setup_sender ctx (castPtr encPtr) encLenPtr
                       (fromIntegral maxEncLen) (kemPtr kem) (kdfPtr kdf)
                       (aeadPtr aead) pkPtr pkLen infoPtr infoLen
@@ -204,6 +209,7 @@ setupRecipient (HPKEKey keyFPtr) kdf aead enc info = mask_ $ do
   if ctx == nullPtr
     then return (Left (AllocationFailure "setupRecipient: EVP_HPKE_CTX_new failed"))
     else do
+      clearBoringSSLError
       rc <- withForeignPtr keyFPtr $ \key ->
         withByteString enc $ \encPtr encLen ->
           withByteString info $ \infoPtr infoLen ->
@@ -237,6 +243,7 @@ setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = mask_ $ do
           withForeignPtr authKeyFPtr $ \authKey ->
             withByteString peerPubKey $ \pkPtr pkLen ->
               withByteString info $ \infoPtr infoLen -> do
+                clearBoringSSLError
                 rc <- c_EVP_HPKE_CTX_setup_auth_sender ctx (castPtr encPtr)
                         encLenPtr (fromIntegral maxEncLen) authKey (kdfPtr kdf)
                         (aeadPtr aead) pkPtr pkLen infoPtr infoLen
@@ -265,6 +272,7 @@ setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = mask_ $ do
   if ctx == nullPtr
     then return (Left (AllocationFailure "setupAuthRecipient: EVP_HPKE_CTX_new failed"))
     else do
+      clearBoringSSLError
       rc <- withForeignPtr keyFPtr $ \key ->
         withByteString enc $ \encPtr encLen ->
           withByteString info $ \infoPtr infoLen ->
@@ -292,6 +300,7 @@ senderSeal (SenderCtx lock fptr) plaintext ad =
     let maxOutLen = BS.length plaintext + overhead
     outFPtr <- BSI.mallocByteString maxOutLen
     alloca $ \outLenPtr -> do
+      clearBoringSSLError
       rc <- withForeignPtr outFPtr $ \outPtr ->
         withByteString plaintext $ \inPtr inLen ->
           withByteString ad $ \adPtr adLen ->
@@ -315,6 +324,7 @@ recipientOpen (RecipientCtx lock fptr) ciphertext ad =
     let maxOutLen = BS.length ciphertext
     outFPtr <- BSI.mallocByteString maxOutLen
     alloca $ \outLenPtr -> do
+      clearBoringSSLError
       rc <- withForeignPtr outFPtr $ \outPtr ->
         withByteString ciphertext $ \inPtr inLen ->
           withByteString ad $ \adPtr adLen ->
@@ -337,6 +347,7 @@ senderExport (SenderCtx lock fptr) context len =
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     outFPtr <- BSI.mallocByteString len
+    clearBoringSSLError
     rc <- withForeignPtr outFPtr $ \outPtr ->
       withByteString context $ \ctxPtr ctxLen ->
         c_EVP_HPKE_CTX_export ctx (castPtr outPtr) (fromIntegral len) ctxPtr ctxLen
@@ -355,6 +366,7 @@ recipientExport (RecipientCtx lock fptr) context len =
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     outFPtr <- BSI.mallocByteString len
+    clearBoringSSLError
     rc <- withForeignPtr outFPtr $ \outPtr ->
       withByteString context $ \ctxPtr ctxLen ->
         c_EVP_HPKE_CTX_export ctx (castPtr outPtr) (fromIntegral len) ctxPtr ctxLen

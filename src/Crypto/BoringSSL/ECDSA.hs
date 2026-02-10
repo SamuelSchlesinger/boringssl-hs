@@ -51,6 +51,7 @@ ecdsaSign kp digest =
     result <- withForeignPtr fptr $ \sigPtr ->
       withByteString digest $ \digestPtr digestLen ->
         alloca $ \sigLenPtr -> do
+          clearBoringSSLError
           rc <- c_ECDSA_sign 0 digestPtr digestLen (castPtr sigPtr) sigLenPtr keyPtr
           if rc /= 1
             then do
@@ -71,6 +72,7 @@ ecdsaVerify pubKey digest sig =
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
+        clearBoringSSLError
         rc <- c_ECDSA_verify 0 digestPtr digestLen sigPtr sigLen keyPtr
         if rc == 1
           then return (Right True)
@@ -92,6 +94,7 @@ ecdsaSignP1363 kp digest =
     result <- withForeignPtr fptr $ \sigPtr ->
       withByteString digest $ \digestPtr digestLen ->
         alloca $ \sigLenPtr -> do
+          clearBoringSSLError
           rc <- c_ECDSA_sign_p1363 digestPtr digestLen (castPtr sigPtr) sigLenPtr maxSigLen keyPtr
           if rc /= 1
             then do
@@ -112,6 +115,7 @@ ecdsaVerifyP1363 pubKey digest sig =
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
+        clearBoringSSLError
         rc <- c_ECDSA_verify_p1363 digestPtr digestLen sigPtr sigLen keyPtr
         if rc == 1
           then return (Right True)

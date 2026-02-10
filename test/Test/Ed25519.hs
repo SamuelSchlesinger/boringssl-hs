@@ -116,14 +116,17 @@ tests = testGroup "Ed25519"
           sig @?= expectedSig
         else do
           -- NO_ASM build: public key diverges from RFC 8032 (known issue on aarch64)
-          assertBool
-            ( "KNOWN ISSUE: Ed25519 public key does not match RFC 8032 test vector.\n"
-              ++ "This is expected when BoringSSL is compiled with -DOPENSSL_NO_ASM on aarch64.\n"
-              ++ "Got public key: " ++ show (Base16.encode pub) ++ "\n"
-              ++ "Expected:       " ++ show (Base16.encode expectedPub) ++ "\n"
-              ++ "Sign/verify round-trips still work correctly."
-            )
-            True  -- Pass the test with a descriptive message, not a silent skip
+          -- Print diagnostic so it's visible in test output (assertBool _ True is silent)
+          putStrLn $ unlines
+            [ ""
+            , "KNOWN ISSUE: Ed25519 public key does not match RFC 8032 test vector."
+            , "This is expected when BoringSSL is compiled with -DOPENSSL_NO_ASM on aarch64."
+            , "Got public key: " ++ show (Base16.encode pub)
+            , "Expected:       " ++ show (Base16.encode expectedPub)
+            , "Sign/verify round-trips still work correctly."
+            ]
+          -- Verify round-trip still works even if KAT doesn't match
+          assertBool "signature from RFC 8032 seed should verify (NO_ASM build)" (verify pub' BS.empty sig')
   , testGroup "Smart constructors"
     [ testCase "publicKeyFromBytes accepts 32 bytes" $ do
         let bs = BS.replicate 32 0x42

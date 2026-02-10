@@ -81,6 +81,7 @@ generateRSAKeyPair bits
           return (Left (AllocationFailure "generateRSAKeyPair: BN_new failed"))
         else do
           _ <- c_BN_set_word e 65537
+          clearBoringSSLError
           rc <- restore (c_RSA_generate_key_ex rsa (fromIntegral bits) e nullPtr)
                   `onException` (c_BN_free e >> c_RSA_free rsa)
           c_BN_free e
@@ -99,6 +100,7 @@ publicKeyToBytes (RSAKeyPair fptr) =
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
       alloca $ \outLenPtr -> do
+        clearBoringSSLError
         rc <- c_RSA_public_key_to_bytes outPtrPtr outLenPtr rsa
         if rc /= 1
           then do
@@ -110,6 +112,7 @@ publicKeyToBytes (RSAKeyPair fptr) =
 publicKeyFromBytes :: ByteString -> IO (Either CryptoError RSAPublicKey)
 publicKeyFromBytes bs =
   withByteString bs $ \ptr len -> mask_ $ do
+    clearBoringSSLError
     rsa <- c_RSA_public_key_from_bytes ptr len
     if rsa == nullPtr
       then do
@@ -125,6 +128,7 @@ privateKeyToBytes (RSAKeyPair fptr) =
   withForeignPtr fptr $ \rsa ->
     alloca $ \outPtrPtr ->
       alloca $ \outLenPtr -> do
+        clearBoringSSLError
         rc <- c_RSA_private_key_to_bytes outPtrPtr outLenPtr rsa
         if rc /= 1
           then do
@@ -136,6 +140,7 @@ privateKeyToBytes (RSAKeyPair fptr) =
 privateKeyFromBytes :: ByteString -> IO (Either CryptoError RSAKeyPair)
 privateKeyFromBytes bs =
   withByteString bs $ \ptr len -> mask_ $ do
+    clearBoringSSLError
     rsa <- c_RSA_private_key_from_bytes ptr len
     if rsa == nullPtr
       then do
@@ -171,6 +176,7 @@ rsaSign (RSAKeyPair fptr) algo digest = do
     result <- withForeignPtr outFPtr $ \outPtr ->
       withByteString digest $ \digestPtr digestLen ->
         alloca $ \outLenPtr -> do
+          clearBoringSSLError
           rc <- c_RSA_sign nid digestPtr digestLen
                   (castPtr outPtr) outLenPtr rsa
           if rc /= 1
@@ -198,6 +204,7 @@ rsaVerify (RSAPublicKey fptr) algo digest sig = do
   withForeignPtr fptr $ \rsa ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
+        clearBoringSSLError
         rc <- c_RSA_verify nid digestPtr digestLen sigPtr sigLen rsa
         if rc == 1
           then return (Right True)
@@ -219,6 +226,7 @@ rsaSignPSS (RSAKeyPair fptr) algo digest =
         alloca $ \outLenPtr -> do
           let md = ID.evpMD algo
               saltLen = fromIntegral (ID.digestSize algo)
+          clearBoringSSLError
           rc <- c_RSA_sign_pss_mgf1 rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
                   digestPtr digestLen md md saltLen
           if rc /= 1
@@ -242,6 +250,7 @@ rsaVerifyPSS (RSAPublicKey fptr) algo digest sig =
       withByteString sig $ \sigPtr sigLen -> do
         let md = ID.evpMD algo
             saltLen = fromIntegral (ID.digestSize algo)
+        clearBoringSSLError
         rc <- c_RSA_verify_pss_mgf1 rsa digestPtr digestLen md md saltLen sigPtr sigLen
         if rc == 1
           then return (Right True)
@@ -260,6 +269,7 @@ rsaEncrypt (RSAPublicKey fptr) plaintext =
     result <- withForeignPtr outFPtr $ \outPtr ->
       withByteString plaintext $ \inPtr inLen ->
         alloca $ \outLenPtr -> do
+          clearBoringSSLError
           rc <- c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
                   inPtr inLen rsaPKCS1OAEPPadding
           if rc /= 1
@@ -282,6 +292,7 @@ rsaDecrypt (RSAKeyPair fptr) ciphertext =
     result <- withForeignPtr outFPtr $ \outPtr ->
       withByteString ciphertext $ \inPtr inLen ->
         alloca $ \outLenPtr -> do
+          clearBoringSSLError
           rc <- c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
                   inPtr inLen rsaPKCS1OAEPPadding
           if rc /= 1
@@ -304,6 +315,7 @@ rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext =
     result <- withForeignPtr outFPtr $ \outPtr ->
       withByteString plaintext $ \inPtr inLen ->
         alloca $ \outLenPtr -> do
+          clearBoringSSLError
           rc <- c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
                   inPtr inLen rsaPKCS1Padding
           if rc /= 1
@@ -326,6 +338,7 @@ rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext =
     result <- withForeignPtr outFPtr $ \outPtr ->
       withByteString ciphertext $ \inPtr inLen ->
         alloca $ \outLenPtr -> do
+          clearBoringSSLError
           rc <- c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
                   inPtr inLen rsaPKCS1Padding
           if rc /= 1

@@ -104,6 +104,7 @@ generateKeyPair variant = mask_ $ do
   allocaBytes mldsaSeedBytes $ \seedPtr ->
     withForeignPtr pubFPtr $ \pubPtr ->
       withForeignPtr skFPtr $ \skPtr -> do
+        clearBoringSSLError
         rc <- case variant of
           MLDSA44 -> c_MLDSA44_generate_key (castPtr pubPtr) seedPtr (castPtr skPtr)
           MLDSA65 -> c_MLDSA65_generate_key (castPtr pubPtr) seedPtr (castPtr skPtr)
@@ -182,6 +183,7 @@ sign :: MLDSAPrivateKey -> ByteString -> ByteString -> IO (Either CryptoError By
 sign (MLDSAPrivateKey variant skFPtr) msg context = do
   let sigSize = signatureBytes variant
   sigFPtr <- BSI.mallocByteString sigSize
+  clearBoringSSLError
   rc <- withForeignPtr skFPtr $ \skPtr ->
     withByteString msg $ \msgPtr msgLen ->
       withByteString context $ \ctxPtr ctxLen ->

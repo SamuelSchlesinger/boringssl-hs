@@ -45,6 +45,7 @@ import Control.Exception (bracket, mask_)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
+import Data.Char (digitToInt, isHexDigit)
 import Data.Int (Int64)
 import Foreign.C.String
 import Foreign.C.Types
@@ -390,7 +391,7 @@ certBasicConstraints (X509Cert fptr) = unsafePerformIO $
                   else do
                     hexStr <- peekCString hexPtr
                     c_OPENSSL_free hexPtr
-                    return (Just (read ("0x" ++ hexStr) :: Int))
+                    return (safeReadHex hexStr)
         c_BASIC_CONSTRAINTS_free bc
         return (Just (ca /= 0, pathlen))
 {-# NOINLINE certBasicConstraints #-}
@@ -443,6 +444,13 @@ certSubjectAltNames (X509Cert fptr) = unsafePerformIO $
     bsToString = map (toEnum . fromEnum) . BS.unpack
 {-# NOINLINE certSubjectAltNames #-}
 
+-- | Safely parse a hex string to an Int, returning Nothing on invalid input.
+safeReadHex :: String -> Maybe Int
+safeReadHex s
+  | null s         = Nothing
+  | all isHexDigit s = Just (foldl (\acc c -> acc * 16 + digitToInt c) 0 s)
+  | otherwise      = Nothing
+
 ------------------------------------------------------------------------
 -- Feature 8: X.509 chain verification
 ------------------------------------------------------------------------
@@ -486,32 +494,42 @@ verifyCertChain (X509Store storeFptr) (X509Cert targetFptr) intermediates =
       if skPtr == nullPtr
         then return (VerifyFailed (-1) "sk_X509_new_null failed")
         else do
-          -- Push all intermediate certs
-          mapM_ (\(X509Cert fp) -> withForeignPtr fp $ \cp ->
+          -- Push all intermediate certs (check for allocation failure)
+          pushResults <- mapM (\(X509Cert fp) -> withForeignPtr fp $ \cp ->
             c_bssl_sk_X509_push skPtr cp) intermediates
-          -- Create and initialize X509_STORE_CTX
-          result <- bracket c_X509_STORE_CTX_new
-                            (\ctx -> if ctx /= nullPtr then c_X509_STORE_CTX_free ctx else return ())
-                   $ \ctx -> do
-            if ctx == nullPtr
-              then return (VerifyFailed (-1) "X509_STORE_CTX_new failed")
-              else do
-                rc <- c_X509_STORE_CTX_init ctx storePtr targetPtr skPtr
-                if rc /= 1
-                  then return (VerifyFailed (-1) "X509_STORE_CTX_init failed")
+          if any (== 0) pushResults
+            then do
+              c_bssl_sk_X509_free skPtr
+              mapM_ (\(X509Cert fp) -> touchForeignPtr fp) intermediates
+              return (VerifyFailed (-1) "sk_X509_push allocation failed")
+            else do
+              -- Create and initialize X509_STORE_CTX
+              result <- bracket c_X509_STORE_CTX_new
+                                (\ctx -> if ctx /= nullPtr
+                                           then c_X509_STORE_CTX_free ctx
+                                           else return ())
+                       $ \ctx -> do
+                if ctx == nullPtr
+                  then return (VerifyFailed (-1) "X509_STORE_CTX_new failed")
                   else do
-                    vrc <- c_X509_verify_cert ctx
-                    if vrc == 1
-                      then return VerifyOK
+                    rc <- c_X509_STORE_CTX_init ctx storePtr targetPtr skPtr
+                    if rc /= 1
+                      then return (VerifyFailed (-1) "X509_STORE_CTX_init failed")
                       else do
-                        errCode <- c_X509_STORE_CTX_get_error ctx
-                        errStr <- c_X509_verify_cert_error_string (fromIntegral errCode)
-                        errMsg <- if errStr == nullPtr then return "unknown" else peekCString errStr
-                        return (VerifyFailed (fromIntegral errCode) errMsg)
-          c_bssl_sk_X509_free skPtr
-          -- Keep intermediate ForeignPtrs alive through verification
-          mapM_ (\(X509Cert fp) -> touchForeignPtr fp) intermediates
-          return result
+                        vrc <- c_X509_verify_cert ctx
+                        if vrc == 1
+                          then return VerifyOK
+                          else do
+                            errCode <- c_X509_STORE_CTX_get_error ctx
+                            errStr <- c_X509_verify_cert_error_string (fromIntegral errCode)
+                            errMsg <- if errStr == nullPtr
+                                        then return "unknown"
+                                        else peekCString errStr
+                            return (VerifyFailed (fromIntegral errCode) errMsg)
+              c_bssl_sk_X509_free skPtr
+              -- Keep intermediate ForeignPtrs alive through verification
+              mapM_ (\(X509Cert fp) -> touchForeignPtr fp) intermediates
+              return result
 
 ------------------------------------------------------------------------
 -- Feature 9: Certificate signature algorithm
