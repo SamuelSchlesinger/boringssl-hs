@@ -109,7 +109,7 @@ encrypt algo key iv plaintext
         ivAction $ \ivPtr -> do
           let maxOutLen = fromIntegral inLen + (16 :: Int)
           fptr <- BSI.mallocByteString maxOutLen
-          result <- withForeignPtr fptr $ \outPtr -> runExceptT $ do
+          fmap (fmap (BSI.BS fptr)) $ withForeignPtr fptr $ \outPtr -> runExceptT $ do
             ctx <- bracketE c_EVP_CIPHER_CTX_new
                             (\c -> when (c /= nullPtr) (c_EVP_CIPHER_CTX_free c))
                             $ \c -> do
@@ -132,9 +132,6 @@ encrypt algo key iv plaintext
                 finalLen <- liftIO $ peek finalLenPtr
                 return (fromIntegral (updateLen + finalLen))
             return ctx
-          case result of
-            Left err  -> return (Left err)
-            Right len -> return (Right (BSI.BS fptr len))
 
 -- | Decrypt ciphertext. CBC and ECB modes remove PKCS#7 padding automatically.
 -- For ECB mode, pass an empty IV (@BS.empty@).
@@ -156,7 +153,7 @@ decrypt algo key iv ciphertext
         ivAction $ \ivPtr -> do
           let maxOutLen = fromIntegral inLen + (16 :: Int)
           fptr <- BSI.mallocByteString maxOutLen
-          result <- withForeignPtr fptr $ \outPtr -> runExceptT $ do
+          fmap (fmap (BSI.BS fptr)) $ withForeignPtr fptr $ \outPtr -> runExceptT $ do
             ctx <- bracketE c_EVP_CIPHER_CTX_new
                             (\c -> when (c /= nullPtr) (c_EVP_CIPHER_CTX_free c))
                             $ \c -> do
@@ -179,6 +176,3 @@ decrypt algo key iv ciphertext
                 finalLen <- liftIO $ peek finalLenPtr
                 return (fromIntegral (updateLen + finalLen))
             return ctx
-          case result of
-            Left err  -> return (Left err)
-            Right len -> return (Right (BSI.BS fptr len))

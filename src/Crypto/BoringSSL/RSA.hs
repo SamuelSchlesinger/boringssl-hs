@@ -36,6 +36,7 @@ module Crypto.BoringSSL.RSA
   ) where
 
 import Data.ByteString (ByteString)
+import Data.Maybe (fromMaybe)
 import qualified Data.ByteString.Internal as BSI
 import Foreign.C.Types
 import Foreign.ForeignPtr
@@ -88,8 +89,7 @@ generateRSAKeyPair bits
           if rc /= 1
             then do
               c_RSA_free rsa
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "generateRSAKeyPair: RSA_generate_key_ex failed") id merr))
+              Left . fromMaybe (OperationFailed "generateRSAKeyPair: RSA_generate_key_ex failed") <$> getBoringSSLError
             else do
               fptr <- newForeignPtr c_RSA_free_funptr rsa
               return (Right (RSAKeyPair fptr))
@@ -156,19 +156,15 @@ rsaSign (RSAKeyPair fptr) algo digest = withBoundThread $ do
               Nothing -> error "rsaSign: unreachable (algorithmNID already checked)"
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
-    outFPtr <- BSI.mallocByteString modSize
-    result <- withForeignPtr outFPtr $ \outPtr ->
-      withByteString digest $ \digestPtr digestLen -> runExceptT $
-        allocaE $ \outLenPtr -> do
-          liftIO clearBoringSSLError
-          rc <- liftIO $ c_RSA_sign nid digestPtr digestLen
-                  (castPtr outPtr) outLenPtr rsa
-          checkRCError rc "rsaSign: RSA_sign failed"
-          actualLen <- liftIO $ peek outLenPtr
-          return (fromIntegral actualLen)
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS outFPtr len))
+    withByteString digest $ \digestPtr digestLen -> runExceptT $ do
+      outFPtr <- liftIO $ BSI.mallocByteString modSize
+      allocaE $ \outLenPtr -> do
+        liftIO clearBoringSSLError
+        rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
+          c_RSA_sign nid digestPtr digestLen (castPtr outPtr) outLenPtr rsa
+        checkRCError rc "rsaSign: RSA_sign failed"
+        actualLen <- liftIO $ peek outLenPtr
+        return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | PKCS#1 v1.5 verify a signature on a pre-hashed digest.
 -- Returns @Left@ if the algorithm has no NID, or @Right False@ for invalid
@@ -186,13 +182,7 @@ rsaVerify (RSAPublicKey fptr) algo digest sig = withBoundThread $ do
       withByteString sig $ \sigPtr sigLen -> do
         clearBoringSSLError
         rc <- c_RSA_verify nid digestPtr digestLen sigPtr sigLen rsa
-        if rc == 1
-          then return (Right True)
-          else if rc == 0
-            then return (Right False)
-            else do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "rsaVerify: internal error") id merr))
+        checkVerifyRC rc "rsaVerify: internal error"
 
 -- | RSA-PSS sign a pre-hashed digest. Uses the same hash for MGF1
 -- and salt length equal to the digest size.
@@ -200,21 +190,14 @@ rsaSignPSS :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError By
 rsaSignPSS (RSAKeyPair fptr) algo digest = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
-    outFPtr <- BSI.mallocByteString modSize
-    result <- withForeignPtr outFPtr $ \outPtr ->
-      withByteString digest $ \digestPtr digestLen -> runExceptT $
-        allocaE $ \outLenPtr -> do
-          let md = ID.evpMD algo
-              saltLen = fromIntegral (ID.digestSize algo)
-          liftIO clearBoringSSLError
-          rc <- liftIO $ c_RSA_sign_pss_mgf1 rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
-                  digestPtr digestLen md md saltLen
-          checkRCError rc "rsaSignPSS: failed"
-          actualLen <- liftIO $ peek outLenPtr
-          return (fromIntegral actualLen)
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS outFPtr len))
+    withByteString digest $ \digestPtr digestLen -> runExceptT $
+      let md = ID.evpMD algo
+          saltLen = fromIntegral (ID.digestSize algo)
+      in withOutputBuffer modSize
+        (\outPtr outLenPtr ->
+          c_RSA_sign_pss_mgf1 rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+            digestPtr digestLen md md saltLen)
+        "rsaSignPSS: failed"
 
 -- | RSA-PSS verify a signature on a pre-hashed digest.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
@@ -228,51 +211,31 @@ rsaVerifyPSS (RSAPublicKey fptr) algo digest sig = withBoundThread $
             saltLen = fromIntegral (ID.digestSize algo)
         clearBoringSSLError
         rc <- c_RSA_verify_pss_mgf1 rsa digestPtr digestLen md md saltLen sigPtr sigLen
-        if rc == 1
-          then return (Right True)
-          else if rc == 0
-            then return (Right False)
-            else do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "rsaVerifyPSS: internal error") id merr))
+        checkVerifyRC rc "rsaVerifyPSS: internal error"
 
 -- | RSA-OAEP encrypt plaintext with a public key.
 rsaEncrypt :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
 rsaEncrypt (RSAPublicKey fptr) plaintext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
-    outFPtr <- BSI.mallocByteString modSize
-    result <- withForeignPtr outFPtr $ \outPtr ->
-      withByteString plaintext $ \inPtr inLen -> runExceptT $
-        allocaE $ \outLenPtr -> do
-          liftIO clearBoringSSLError
-          rc <- liftIO $ c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
-                  inPtr inLen rsaPKCS1OAEPPadding
-          checkRCError rc "rsaEncrypt: failed"
-          actualLen <- liftIO $ peek outLenPtr
-          return (fromIntegral actualLen)
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS outFPtr len))
+    withByteString plaintext $ \inPtr inLen -> runExceptT $
+      withOutputBuffer modSize
+        (\outPtr outLenPtr ->
+          c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+            inPtr inLen rsaPKCS1OAEPPadding)
+        "rsaEncrypt: failed"
 
 -- | RSA-OAEP decrypt ciphertext with a private key.
 rsaDecrypt :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 rsaDecrypt (RSAKeyPair fptr) ciphertext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
-    outFPtr <- BSI.mallocByteString modSize
-    result <- withForeignPtr outFPtr $ \outPtr ->
-      withByteString ciphertext $ \inPtr inLen -> runExceptT $
-        allocaE $ \outLenPtr -> do
-          liftIO clearBoringSSLError
-          rc <- liftIO $ c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
-                  inPtr inLen rsaPKCS1OAEPPadding
-          checkRCError rc "rsaDecrypt: failed"
-          actualLen <- liftIO $ peek outLenPtr
-          return (fromIntegral actualLen)
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS outFPtr len))
+    withByteString ciphertext $ \inPtr inLen -> runExceptT $
+      withOutputBuffer modSize
+        (\outPtr outLenPtr ->
+          c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+            inPtr inLen rsaPKCS1OAEPPadding)
+        "rsaDecrypt: failed"
 
 -- | RSA PKCS#1 v1.5 encrypt plaintext with a public key.
 --
@@ -285,19 +248,12 @@ rsaEncryptPKCS1 :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteStri
 rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
-    outFPtr <- BSI.mallocByteString modSize
-    result <- withForeignPtr outFPtr $ \outPtr ->
-      withByteString plaintext $ \inPtr inLen -> runExceptT $
-        allocaE $ \outLenPtr -> do
-          liftIO clearBoringSSLError
-          rc <- liftIO $ c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
-                  inPtr inLen rsaPKCS1Padding
-          checkRCError rc "rsaEncryptPKCS1: failed"
-          actualLen <- liftIO $ peek outLenPtr
-          return (fromIntegral actualLen)
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS outFPtr len))
+    withByteString plaintext $ \inPtr inLen -> runExceptT $
+      withOutputBuffer modSize
+        (\outPtr outLenPtr ->
+          c_RSA_encrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+            inPtr inLen rsaPKCS1Padding)
+        "rsaEncryptPKCS1: failed"
 
 -- | RSA PKCS#1 v1.5 decrypt ciphertext with a private key.
 --
@@ -310,19 +266,12 @@ rsaDecryptPKCS1 :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString
 rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
-    outFPtr <- BSI.mallocByteString modSize
-    result <- withForeignPtr outFPtr $ \outPtr ->
-      withByteString ciphertext $ \inPtr inLen -> runExceptT $
-        allocaE $ \outLenPtr -> do
-          liftIO clearBoringSSLError
-          rc <- liftIO $ c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
-                  inPtr inLen rsaPKCS1Padding
-          checkRCError rc "rsaDecryptPKCS1: failed"
-          actualLen <- liftIO $ peek outLenPtr
-          return (fromIntegral actualLen)
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS outFPtr len))
+    withByteString ciphertext $ \inPtr inLen -> runExceptT $
+      withOutputBuffer modSize
+        (\outPtr outLenPtr ->
+          c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
+            inPtr inLen rsaPKCS1Padding)
+        "rsaDecryptPKCS1: failed"
 
 -- | Get the RSA key size in bits from a public key.
 rsaPublicBits :: RSAPublicKey -> IO Int

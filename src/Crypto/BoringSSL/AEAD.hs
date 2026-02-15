@@ -85,11 +85,7 @@ newAEADCtx algo key = do
           fptr <- liftIO $ newForeignPtr c_EVP_AEAD_CTX_free_funptr ctx
           lock <- liftIO $ newMVar ()
           return (AEADCtx algo lock fptr)
-        else ExceptT $ do
-          merr <- getBoringSSLError
-          case merr of
-            Just e  -> return (Left e)
-            Nothing -> return (Left (AllocationFailure "newAEADCtx: EVP_AEAD_CTX_new returned NULL"))
+        else throwBoringSSLError (AllocationFailure "newAEADCtx: EVP_AEAD_CTX_new returned NULL")
 
 -- | Encrypt and authenticate plaintext.
 --
@@ -120,15 +116,9 @@ seal (AEADCtx algo lock fptr) nonce plaintext ad
       rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_seal ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
-      if rc == 1
-        then do
-          actualLen <- liftIO $ peek outLenPtr
-          return (BSI.BS outFPtr (fromIntegral actualLen))
-        else ExceptT $ do
-          merr <- getBoringSSLError
-          case merr of
-            Just e  -> return (Left e)
-            Nothing -> return (Left (OperationFailed "seal failed"))
+      checkRCError rc "seal failed"
+      actualLen <- liftIO $ peek outLenPtr
+      return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | Decrypt and verify ciphertext.
 --
@@ -154,15 +144,9 @@ open (AEADCtx algo lock fptr) nonce ciphertext ad
       rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_open ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
-      if rc == 1
-        then do
-          actualLen <- liftIO $ peek outLenPtr
-          return (BSI.BS outFPtr (fromIntegral actualLen))
-        else ExceptT $ do
-          merr <- getBoringSSLError
-          case merr of
-            Just e  -> return (Left e)
-            Nothing -> return (Left (OperationFailed "open failed: authentication error"))
+      checkRCError rc "open failed: authentication error"
+      actualLen <- liftIO $ peek outLenPtr
+      return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | Query the expected key length for an AEAD algorithm.
 keyLength :: AEADAlgorithm -> Int
