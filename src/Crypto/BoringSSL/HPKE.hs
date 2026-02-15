@@ -40,7 +40,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 import Control.Exception (mask_)
@@ -48,6 +47,7 @@ import Control.Concurrent.MVar
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.HPKE
 
 -- | HPKE KEM algorithms.
@@ -96,134 +96,114 @@ aeadPtr ChaChaPoly = c_EVP_hpke_chacha20_poly1305
 
 -- | Generate a new HPKE key pair for the given KEM.
 generateKey :: HPKEKEM -> IO (Either CryptoError HPKEKey)
-generateKey kem = withBoundThread $ mask_ $ do
-  key <- c_EVP_HPKE_KEY_new
-  if key == nullPtr
-    then return (Left (AllocationFailure "generateKey: EVP_HPKE_KEY_new failed"))
+generateKey kem = withBoundThread $ mask_ $ runExceptT $ do
+  key <- liftIO c_EVP_HPKE_KEY_new
+    >>= \p -> nonNull p (AllocationFailure "generateKey: EVP_HPKE_KEY_new failed")
+  liftIO clearBoringSSLError
+  rc <- liftIO $ c_EVP_HPKE_KEY_generate key (kemPtr kem)
+  if rc == 1
+    then do
+      fptr <- liftIO $ newForeignPtr c_EVP_HPKE_KEY_free_funptr key
+      return (HPKEKey fptr)
     else do
-      clearBoringSSLError
-      rc <- c_EVP_HPKE_KEY_generate key (kemPtr kem)
-      if rc /= 1
-        then do
-          c_EVP_HPKE_KEY_free key
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "generateKey: EVP_HPKE_KEY_generate failed") id merr))
-        else do
-          fptr <- newForeignPtr c_EVP_HPKE_KEY_free_funptr key
-          return (Right (HPKEKey fptr))
+      liftIO $ c_EVP_HPKE_KEY_free key
+      checkRCError rc "generateKey: EVP_HPKE_KEY_generate failed"
+      return undefined -- unreachable
 
 -- | Initialize an HPKE key from a private key byte string.
 keyFromPrivate :: HPKEKEM -> ByteString -> IO (Either CryptoError HPKEKey)
-keyFromPrivate kem privBytes = withBoundThread $ mask_ $ do
-  key <- c_EVP_HPKE_KEY_new
-  if key == nullPtr
-    then return (Left (AllocationFailure "keyFromPrivate: EVP_HPKE_KEY_new failed"))
+keyFromPrivate kem privBytes = withBoundThread $ mask_ $ runExceptT $ do
+  key <- liftIO c_EVP_HPKE_KEY_new
+    >>= \p -> nonNull p (AllocationFailure "keyFromPrivate: EVP_HPKE_KEY_new failed")
+  liftIO clearBoringSSLError
+  rc <- liftIO $ withByteString privBytes $ \privPtr privLen ->
+    c_EVP_HPKE_KEY_init key (kemPtr kem) privPtr privLen
+  if rc == 1
+    then do
+      fptr <- liftIO $ newForeignPtr c_EVP_HPKE_KEY_free_funptr key
+      return (HPKEKey fptr)
     else do
-      clearBoringSSLError
-      rc <- withByteString privBytes $ \privPtr privLen ->
-        c_EVP_HPKE_KEY_init key (kemPtr kem) privPtr privLen
-      if rc /= 1
-        then do
-          c_EVP_HPKE_KEY_free key
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "keyFromPrivate: EVP_HPKE_KEY_init failed") id merr))
-        else do
-          fptr <- newForeignPtr c_EVP_HPKE_KEY_free_funptr key
-          return (Right (HPKEKey fptr))
+      liftIO $ c_EVP_HPKE_KEY_free key
+      checkRCError rc "keyFromPrivate: EVP_HPKE_KEY_init failed"
+      return undefined -- unreachable
 
 -- | Extract the public key bytes from an HPKE key pair.
 publicKeyBytes :: HPKEKey -> IO (Either CryptoError ByteString)
 publicKeyBytes (HPKEKey fptr) = withBoundThread $
-  withForeignPtr fptr $ \key -> do
+  withForeignPtr fptr $ \key -> runExceptT $ do
     let maxLen = evpHPKEMaxPublicKeyLength
-    outFPtr <- BSI.mallocByteString maxLen
-    alloca $ \outLenPtr -> do
-      clearBoringSSLError
-      rc <- withForeignPtr outFPtr $ \outPtr ->
+    outFPtr <- liftIO $ BSI.mallocByteString maxLen
+    allocaE $ \outLenPtr -> do
+      liftIO clearBoringSSLError
+      rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_HPKE_KEY_public_key key (castPtr outPtr) outLenPtr (fromIntegral maxLen)
-      if rc /= 1
-        then do
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "publicKeyBytes: EVP_HPKE_KEY_public_key failed") id merr))
-        else do
-          actualLen <- peek outLenPtr
-          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
+      checkRCError rc "publicKeyBytes: EVP_HPKE_KEY_public_key failed"
+      actualLen <- liftIO $ peek outLenPtr
+      return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | Extract the private key bytes from an HPKE key pair.
 privateKeyBytes :: HPKEKey -> IO (Either CryptoError ByteString)
 privateKeyBytes (HPKEKey fptr) = withBoundThread $
-  withForeignPtr fptr $ \key -> do
+  withForeignPtr fptr $ \key -> runExceptT $ do
     let maxLen = evpHPKEMaxPrivateKeyLength
-    outFPtr <- BSI.mallocByteString maxLen
-    alloca $ \outLenPtr -> do
-      clearBoringSSLError
-      rc <- withForeignPtr outFPtr $ \outPtr ->
+    outFPtr <- liftIO $ BSI.mallocByteString maxLen
+    allocaE $ \outLenPtr -> do
+      liftIO clearBoringSSLError
+      rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_HPKE_KEY_private_key key (castPtr outPtr) outLenPtr (fromIntegral maxLen)
-      if rc /= 1
-        then do
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "privateKeyBytes: EVP_HPKE_KEY_private_key failed") id merr))
-        else do
-          actualLen <- peek outLenPtr
-          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
+      checkRCError rc "privateKeyBytes: EVP_HPKE_KEY_private_key failed"
+      actualLen <- liftIO $ peek outLenPtr
+      return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | Set up a sender context. Returns @(enc, SenderCtx)@ where @enc@ is
 -- the encapsulated key to send to the recipient.
 setupSender :: HPKEKEM -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
             -> IO (Either CryptoError (ByteString, SenderCtx))
-setupSender kem kdf aead peerPubKey info = withBoundThread $ mask_ $ do
-  ctx <- c_EVP_HPKE_CTX_new
-  if ctx == nullPtr
-    then return (Left (AllocationFailure "setupSender: EVP_HPKE_CTX_new failed"))
-    else do
-      let maxEncLen = evpHPKEMaxEncLength
-      encFPtr <- BSI.mallocByteString maxEncLen
-      result <- alloca $ \encLenPtr ->
-        withForeignPtr encFPtr $ \encPtr ->
-          withByteString peerPubKey $ \pkPtr pkLen ->
-            withByteString info $ \infoPtr infoLen -> do
-              clearBoringSSLError
-              rc <- c_EVP_HPKE_CTX_setup_sender ctx (castPtr encPtr) encLenPtr
-                      (fromIntegral maxEncLen) (kemPtr kem) (kdfPtr kdf)
-                      (aeadPtr aead) pkPtr pkLen infoPtr infoLen
-              if rc /= 1
-                then return Nothing
-                else do
-                  actualEncLen <- peek encLenPtr
-                  return (Just (fromIntegral actualEncLen))
-      case result of
-        Nothing -> do
-          c_EVP_HPKE_CTX_free ctx
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "setupSender: EVP_HPKE_CTX_setup_sender failed") id merr))
-        Just encLen -> do
-          ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          lock <- newMVar ()
-          return (Right (BSI.BS encFPtr encLen, SenderCtx lock ctxFPtr))
+setupSender kem kdf aead peerPubKey info = withBoundThread $ mask_ $ runExceptT $ do
+  ctx <- liftIO c_EVP_HPKE_CTX_new
+    >>= \p -> nonNull p (AllocationFailure "setupSender: EVP_HPKE_CTX_new failed")
+  let maxEncLen = evpHPKEMaxEncLength
+  encFPtr <- liftIO $ BSI.mallocByteString maxEncLen
+  allocaE $ \encLenPtr -> do
+    liftIO clearBoringSSLError
+    rc <- liftIO $ withForeignPtr encFPtr $ \encPtr ->
+      withByteString peerPubKey $ \pkPtr pkLen ->
+        withByteString info $ \infoPtr infoLen ->
+          c_EVP_HPKE_CTX_setup_sender ctx (castPtr encPtr) encLenPtr
+            (fromIntegral maxEncLen) (kemPtr kem) (kdfPtr kdf)
+            (aeadPtr aead) pkPtr pkLen infoPtr infoLen
+    if rc == 1
+      then do
+        actualEncLen <- liftIO $ peek encLenPtr
+        ctxFPtr <- liftIO $ newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
+        lock <- liftIO $ newMVar ()
+        return (BSI.BS encFPtr (fromIntegral actualEncLen), SenderCtx lock ctxFPtr)
+      else do
+        liftIO $ c_EVP_HPKE_CTX_free ctx
+        checkRCError rc "setupSender: EVP_HPKE_CTX_setup_sender failed"
+        return undefined -- unreachable
 
 -- | Set up a recipient context from an encapsulated key.
 setupRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                -> IO (Either CryptoError RecipientCtx)
-setupRecipient (HPKEKey keyFPtr) kdf aead enc info = withBoundThread $ mask_ $ do
-  ctx <- c_EVP_HPKE_CTX_new
-  if ctx == nullPtr
-    then return (Left (AllocationFailure "setupRecipient: EVP_HPKE_CTX_new failed"))
+setupRecipient (HPKEKey keyFPtr) kdf aead enc info = withBoundThread $ mask_ $ runExceptT $ do
+  ctx <- liftIO c_EVP_HPKE_CTX_new
+    >>= \p -> nonNull p (AllocationFailure "setupRecipient: EVP_HPKE_CTX_new failed")
+  liftIO clearBoringSSLError
+  rc <- liftIO $ withForeignPtr keyFPtr $ \key ->
+    withByteString enc $ \encPtr encLen ->
+      withByteString info $ \infoPtr infoLen ->
+        c_EVP_HPKE_CTX_setup_recipient ctx key (kdfPtr kdf) (aeadPtr aead)
+          encPtr encLen infoPtr infoLen
+  if rc == 1
+    then do
+      ctxFPtr <- liftIO $ newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
+      lock <- liftIO $ newMVar ()
+      return (RecipientCtx lock ctxFPtr)
     else do
-      clearBoringSSLError
-      rc <- withForeignPtr keyFPtr $ \key ->
-        withByteString enc $ \encPtr encLen ->
-          withByteString info $ \infoPtr infoLen ->
-            c_EVP_HPKE_CTX_setup_recipient ctx key (kdfPtr kdf) (aeadPtr aead)
-              encPtr encLen infoPtr infoLen
-      if rc /= 1
-        then do
-          c_EVP_HPKE_CTX_free ctx
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "setupRecipient: EVP_HPKE_CTX_setup_recipient failed") id merr))
-        else do
-          ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          lock <- newMVar ()
-          return (Right (RecipientCtx lock ctxFPtr))
+      liftIO $ c_EVP_HPKE_CTX_free ctx
+      checkRCError rc "setupRecipient: EVP_HPKE_CTX_setup_recipient failed"
+      return undefined -- unreachable
 
 -- | Set up an authenticated sender context. Like 'setupSender', but the
 -- sender authenticates themselves with their own 'HPKEKey'. The recipient
@@ -231,63 +211,55 @@ setupRecipient (HPKEKey keyFPtr) kdf aead enc info = withBoundThread $ mask_ $ d
 -- Returns @(enc, SenderCtx)@ where @enc@ is the encapsulated key.
 setupAuthSender :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                 -> IO (Either CryptoError (ByteString, SenderCtx))
-setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = withBoundThread $ mask_ $ do
-  ctx <- c_EVP_HPKE_CTX_new
-  if ctx == nullPtr
-    then return (Left (AllocationFailure "setupAuthSender: EVP_HPKE_CTX_new failed"))
-    else do
-      let maxEncLen = evpHPKEMaxEncLength
-      encFPtr <- BSI.mallocByteString maxEncLen
-      result <- alloca $ \encLenPtr ->
-        withForeignPtr encFPtr $ \encPtr ->
-          withForeignPtr authKeyFPtr $ \authKey ->
-            withByteString peerPubKey $ \pkPtr pkLen ->
-              withByteString info $ \infoPtr infoLen -> do
-                clearBoringSSLError
-                rc <- c_EVP_HPKE_CTX_setup_auth_sender ctx (castPtr encPtr)
-                        encLenPtr (fromIntegral maxEncLen) authKey (kdfPtr kdf)
-                        (aeadPtr aead) pkPtr pkLen infoPtr infoLen
-                if rc /= 1
-                  then return Nothing
-                  else do
-                    actualEncLen <- peek encLenPtr
-                    return (Just (fromIntegral actualEncLen))
-      case result of
-        Nothing -> do
-          c_EVP_HPKE_CTX_free ctx
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "setupAuthSender: EVP_HPKE_CTX_setup_auth_sender failed") id merr))
-        Just encLen -> do
-          ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          lock <- newMVar ()
-          return (Right (BSI.BS encFPtr encLen, SenderCtx lock ctxFPtr))
+setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = withBoundThread $ mask_ $ runExceptT $ do
+  ctx <- liftIO c_EVP_HPKE_CTX_new
+    >>= \p -> nonNull p (AllocationFailure "setupAuthSender: EVP_HPKE_CTX_new failed")
+  let maxEncLen = evpHPKEMaxEncLength
+  encFPtr <- liftIO $ BSI.mallocByteString maxEncLen
+  allocaE $ \encLenPtr -> do
+    liftIO clearBoringSSLError
+    rc <- liftIO $ withForeignPtr encFPtr $ \encPtr ->
+      withForeignPtr authKeyFPtr $ \authKey ->
+        withByteString peerPubKey $ \pkPtr pkLen ->
+          withByteString info $ \infoPtr infoLen ->
+            c_EVP_HPKE_CTX_setup_auth_sender ctx (castPtr encPtr)
+              encLenPtr (fromIntegral maxEncLen) authKey (kdfPtr kdf)
+              (aeadPtr aead) pkPtr pkLen infoPtr infoLen
+    if rc == 1
+      then do
+        actualEncLen <- liftIO $ peek encLenPtr
+        ctxFPtr <- liftIO $ newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
+        lock <- liftIO $ newMVar ()
+        return (BSI.BS encFPtr (fromIntegral actualEncLen), SenderCtx lock ctxFPtr)
+      else do
+        liftIO $ c_EVP_HPKE_CTX_free ctx
+        checkRCError rc "setupAuthSender: EVP_HPKE_CTX_setup_auth_sender failed"
+        return undefined -- unreachable
 
 -- | Set up an authenticated recipient context. Like 'setupRecipient', but
 -- also verifies that the sender authenticated themselves with the given
 -- public key. The sender must have used 'setupAuthSender'.
 setupAuthRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                    -> ByteString -> IO (Either CryptoError RecipientCtx)
-setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = withBoundThread $ mask_ $ do
-  ctx <- c_EVP_HPKE_CTX_new
-  if ctx == nullPtr
-    then return (Left (AllocationFailure "setupAuthRecipient: EVP_HPKE_CTX_new failed"))
+setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = withBoundThread $ mask_ $ runExceptT $ do
+  ctx <- liftIO c_EVP_HPKE_CTX_new
+    >>= \p -> nonNull p (AllocationFailure "setupAuthRecipient: EVP_HPKE_CTX_new failed")
+  liftIO clearBoringSSLError
+  rc <- liftIO $ withForeignPtr keyFPtr $ \key ->
+    withByteString enc $ \encPtr encLen ->
+      withByteString info $ \infoPtr infoLen ->
+        withByteString senderPubKey $ \spkPtr spkLen ->
+          c_EVP_HPKE_CTX_setup_auth_recipient ctx key (kdfPtr kdf)
+            (aeadPtr aead) encPtr encLen infoPtr infoLen spkPtr spkLen
+  if rc == 1
+    then do
+      ctxFPtr <- liftIO $ newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
+      lock <- liftIO $ newMVar ()
+      return (RecipientCtx lock ctxFPtr)
     else do
-      clearBoringSSLError
-      rc <- withForeignPtr keyFPtr $ \key ->
-        withByteString enc $ \encPtr encLen ->
-          withByteString info $ \infoPtr infoLen ->
-            withByteString senderPubKey $ \spkPtr spkLen ->
-              c_EVP_HPKE_CTX_setup_auth_recipient ctx key (kdfPtr kdf)
-                (aeadPtr aead) encPtr encLen infoPtr infoLen spkPtr spkLen
-      if rc /= 1
-        then do
-          c_EVP_HPKE_CTX_free ctx
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "setupAuthRecipient: EVP_HPKE_CTX_setup_auth_recipient failed") id merr))
-        else do
-          ctxFPtr <- newForeignPtr c_EVP_HPKE_CTX_free_funptr ctx
-          lock <- newMVar ()
-          return (Right (RecipientCtx lock ctxFPtr))
+      liftIO $ c_EVP_HPKE_CTX_free ctx
+      checkRCError rc "setupAuthRecipient: EVP_HPKE_CTX_setup_auth_recipient failed"
+      return undefined -- unreachable
 
 -- | Encrypt and authenticate plaintext using the sender context.
 -- This is stateful: each call advances the internal sequence number.
@@ -295,24 +267,20 @@ setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = withBoundT
 senderSeal :: SenderCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 senderSeal (SenderCtx lock fptr) plaintext ad = withBoundThread $
   withMVar lock $ \_ ->
-  withForeignPtr fptr $ \ctx -> do
-    overhead <- fromIntegral <$> c_EVP_HPKE_CTX_max_overhead ctx
+  withForeignPtr fptr $ \ctx -> runExceptT $ do
+    overhead <- liftIO $ fromIntegral <$> c_EVP_HPKE_CTX_max_overhead ctx
     let maxOutLen = BS.length plaintext + overhead
-    outFPtr <- BSI.mallocByteString maxOutLen
-    alloca $ \outLenPtr -> do
-      clearBoringSSLError
-      rc <- withForeignPtr outFPtr $ \outPtr ->
+    outFPtr <- liftIO $ BSI.mallocByteString maxOutLen
+    allocaE $ \outLenPtr -> do
+      liftIO clearBoringSSLError
+      rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         withByteString plaintext $ \inPtr inLen ->
           withByteString ad $ \adPtr adLen ->
             c_EVP_HPKE_CTX_seal ctx (castPtr outPtr) outLenPtr
               (fromIntegral maxOutLen) inPtr inLen adPtr adLen
-      if rc /= 1
-        then do
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "senderSeal: EVP_HPKE_CTX_seal failed") id merr))
-        else do
-          actualLen <- peek outLenPtr
-          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
+      checkRCError rc "senderSeal: EVP_HPKE_CTX_seal failed"
+      actualLen <- liftIO $ peek outLenPtr
+      return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | Decrypt and verify ciphertext using the recipient context.
 -- This is stateful: each call advances the internal sequence number.
@@ -320,23 +288,19 @@ senderSeal (SenderCtx lock fptr) plaintext ad = withBoundThread $
 recipientOpen :: RecipientCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 recipientOpen (RecipientCtx lock fptr) ciphertext ad = withBoundThread $
   withMVar lock $ \_ ->
-  withForeignPtr fptr $ \ctx -> do
+  withForeignPtr fptr $ \ctx -> runExceptT $ do
     let maxOutLen = BS.length ciphertext
-    outFPtr <- BSI.mallocByteString maxOutLen
-    alloca $ \outLenPtr -> do
-      clearBoringSSLError
-      rc <- withForeignPtr outFPtr $ \outPtr ->
+    outFPtr <- liftIO $ BSI.mallocByteString maxOutLen
+    allocaE $ \outLenPtr -> do
+      liftIO clearBoringSSLError
+      rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         withByteString ciphertext $ \inPtr inLen ->
           withByteString ad $ \adPtr adLen ->
             c_EVP_HPKE_CTX_open ctx (castPtr outPtr) outLenPtr
               (fromIntegral maxOutLen) inPtr inLen adPtr adLen
-      if rc /= 1
-        then do
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "recipientOpen: decryption or authentication failed") id merr))
-        else do
-          actualLen <- peek outLenPtr
-          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
+      checkRCError rc "recipientOpen: decryption or authentication failed"
+      actualLen <- liftIO $ peek outLenPtr
+      return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | Export a secret from the sender context.
 -- Thread-safe: concurrent calls are serialized.
@@ -345,17 +309,14 @@ senderExport _ _ len
   | len <= 0 = return (Left (InvalidInput "senderExport: output length must be positive"))
 senderExport (SenderCtx lock fptr) context len = withBoundThread $
   withMVar lock $ \_ ->
-  withForeignPtr fptr $ \ctx -> do
-    outFPtr <- BSI.mallocByteString len
-    clearBoringSSLError
-    rc <- withForeignPtr outFPtr $ \outPtr ->
+  withForeignPtr fptr $ \ctx -> runExceptT $ do
+    outFPtr <- liftIO $ BSI.mallocByteString len
+    liftIO clearBoringSSLError
+    rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
       withByteString context $ \ctxPtr ctxLen ->
         c_EVP_HPKE_CTX_export ctx (castPtr outPtr) (fromIntegral len) ctxPtr ctxLen
-    if rc /= 1
-      then do
-        merr <- getBoringSSLError
-        return (Left (maybe (OperationFailed "senderExport: EVP_HPKE_CTX_export failed") id merr))
-      else return (Right (BSI.BS outFPtr len))
+    checkRCError rc "senderExport: EVP_HPKE_CTX_export failed"
+    return (BSI.BS outFPtr len)
 
 -- | Export a secret from the recipient context.
 -- Thread-safe: concurrent calls are serialized.
@@ -364,14 +325,11 @@ recipientExport _ _ len
   | len <= 0 = return (Left (InvalidInput "recipientExport: output length must be positive"))
 recipientExport (RecipientCtx lock fptr) context len = withBoundThread $
   withMVar lock $ \_ ->
-  withForeignPtr fptr $ \ctx -> do
-    outFPtr <- BSI.mallocByteString len
-    clearBoringSSLError
-    rc <- withForeignPtr outFPtr $ \outPtr ->
+  withForeignPtr fptr $ \ctx -> runExceptT $ do
+    outFPtr <- liftIO $ BSI.mallocByteString len
+    liftIO clearBoringSSLError
+    rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
       withByteString context $ \ctxPtr ctxLen ->
         c_EVP_HPKE_CTX_export ctx (castPtr outPtr) (fromIntegral len) ctxPtr ctxLen
-    if rc /= 1
-      then do
-        merr <- getBoringSSLError
-        return (Left (maybe (OperationFailed "recipientExport: EVP_HPKE_CTX_export failed") id merr))
-      else return (Right (BSI.BS outFPtr len))
+    checkRCError rc "recipientExport: EVP_HPKE_CTX_export failed"
+    return (BSI.BS outFPtr len)

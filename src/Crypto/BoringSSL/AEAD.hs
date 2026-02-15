@@ -25,12 +25,12 @@ import qualified Data.ByteString.Internal as BSI
 import Control.Concurrent.MVar
 import Control.Exception (mask_)
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc
 import Foreign.Ptr
 import Foreign.Storable
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI
 
 -- | Supported AEAD algorithms.
@@ -77,19 +77,19 @@ newAEADCtx algo key = do
     then return $ Left $ InvalidInput $
            "newAEADCtx: key length " ++ show (BS.length key)
            ++ " does not match expected " ++ show expectedKeyLen
-    else withBoundThread $ withByteString key $ \keyPtr keyLen -> mask_ $ do
-      clearBoringSSLError
-      ctx <- c_EVP_AEAD_CTX_new aead keyPtr keyLen 0
-      if ctx == nullPtr
+    else withBoundThread $ withByteString key $ \keyPtr keyLen -> mask_ $ runExceptT $ do
+      liftIO clearBoringSSLError
+      ctx <- liftIO $ c_EVP_AEAD_CTX_new aead keyPtr keyLen 0
+      if ctx /= nullPtr
         then do
+          fptr <- liftIO $ newForeignPtr c_EVP_AEAD_CTX_free_funptr ctx
+          lock <- liftIO $ newMVar ()
+          return (AEADCtx algo lock fptr)
+        else ExceptT $ do
           merr <- getBoringSSLError
           case merr of
             Just e  -> return (Left e)
             Nothing -> return (Left (AllocationFailure "newAEADCtx: EVP_AEAD_CTX_new returned NULL"))
-        else do
-          fptr <- newForeignPtr c_EVP_AEAD_CTX_free_funptr ctx
-          lock <- newMVar ()
-          return (Right (AEADCtx algo lock fptr))
 
 -- | Encrypt and authenticate plaintext.
 --
@@ -111,20 +111,20 @@ seal (AEADCtx algo lock fptr) nonce plaintext ad
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString plaintext $ \inPtr inLen ->
-  withByteString ad $ \adPtr adLen -> do
+  withByteString ad $ \adPtr adLen -> runExceptT $ do
     let maxOutLen = inLen + fromIntegral (maxOverhead algo)
-    outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
-    alloca $ \outLenPtr -> do
-      poke outLenPtr 0
-      clearBoringSSLError
-      rc <- withForeignPtr outFPtr $ \outPtr ->
+    outFPtr <- liftIO $ BSI.mallocByteString (fromIntegral maxOutLen)
+    allocaE $ \outLenPtr -> do
+      liftIO $ poke outLenPtr 0
+      liftIO clearBoringSSLError
+      rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_seal ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
       if rc == 1
         then do
-          actualLen <- peek outLenPtr
-          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
-        else do
+          actualLen <- liftIO $ peek outLenPtr
+          return (BSI.BS outFPtr (fromIntegral actualLen))
+        else ExceptT $ do
           merr <- getBoringSSLError
           case merr of
             Just e  -> return (Left e)
@@ -145,20 +145,20 @@ open (AEADCtx algo lock fptr) nonce ciphertext ad
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString ciphertext $ \inPtr inLen ->
-  withByteString ad $ \adPtr adLen -> do
+  withByteString ad $ \adPtr adLen -> runExceptT $ do
     let maxOutLen = inLen  -- plaintext is at most as long as ciphertext
-    outFPtr <- BSI.mallocByteString (fromIntegral maxOutLen)
-    alloca $ \outLenPtr -> do
-      poke outLenPtr 0
-      clearBoringSSLError
-      rc <- withForeignPtr outFPtr $ \outPtr ->
+    outFPtr <- liftIO $ BSI.mallocByteString (fromIntegral maxOutLen)
+    allocaE $ \outLenPtr -> do
+      liftIO $ poke outLenPtr 0
+      liftIO clearBoringSSLError
+      rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_open ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
       if rc == 1
         then do
-          actualLen <- peek outLenPtr
-          return (Right (BSI.BS outFPtr (fromIntegral actualLen)))
-        else do
+          actualLen <- liftIO $ peek outLenPtr
+          return (BSI.BS outFPtr (fromIntegral actualLen))
+        else ExceptT $ do
           merr <- getBoringSSLError
           case merr of
             Just e  -> return (Left e)

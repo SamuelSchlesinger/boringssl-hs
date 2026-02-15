@@ -28,12 +28,12 @@ module Crypto.BoringSSL.ECDSA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECDSA
 
@@ -49,17 +49,13 @@ ecdsaSign kp digest = withBoundThread $
     maxSigLen <- c_ECDSA_size keyPtr
     fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
     result <- withForeignPtr fptr $ \sigPtr ->
-      withByteString digest $ \digestPtr digestLen ->
-        alloca $ \sigLenPtr -> do
-          clearBoringSSLError
-          rc <- c_ECDSA_sign 0 digestPtr digestLen (castPtr sigPtr) sigLenPtr keyPtr
-          if rc /= 1
-            then do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "ecdsaSign: ECDSA_sign failed") id merr))
-            else do
-              sigLen <- peek sigLenPtr
-              return (Right (fromIntegral sigLen))
+      withByteString digest $ \digestPtr digestLen -> runExceptT $
+        allocaE $ \sigLenPtr -> do
+          liftIO clearBoringSSLError
+          rc <- liftIO $ c_ECDSA_sign 0 digestPtr digestLen (castPtr sigPtr) sigLenPtr keyPtr
+          checkRCError rc "ecdsaSign: ECDSA_sign failed"
+          sigLen <- liftIO $ peek sigLenPtr
+          return (fromIntegral sigLen)
     case result of
       Left err  -> return (Left err)
       Right len -> return (Right (BSI.BS fptr len))
@@ -92,17 +88,13 @@ ecdsaSignP1363 kp digest = withBoundThread $
     maxSigLen <- c_ECDSA_size_p1363 keyPtr
     fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
     result <- withForeignPtr fptr $ \sigPtr ->
-      withByteString digest $ \digestPtr digestLen ->
-        alloca $ \sigLenPtr -> do
-          clearBoringSSLError
-          rc <- c_ECDSA_sign_p1363 digestPtr digestLen (castPtr sigPtr) sigLenPtr maxSigLen keyPtr
-          if rc /= 1
-            then do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "ecdsaSignP1363: ECDSA_sign_p1363 failed") id merr))
-            else do
-              sigLen <- peek sigLenPtr
-              return (Right (fromIntegral sigLen))
+      withByteString digest $ \digestPtr digestLen -> runExceptT $
+        allocaE $ \sigLenPtr -> do
+          liftIO clearBoringSSLError
+          rc <- liftIO $ c_ECDSA_sign_p1363 digestPtr digestLen (castPtr sigPtr) sigLenPtr maxSigLen keyPtr
+          checkRCError rc "ecdsaSignP1363: ECDSA_sign_p1363 failed"
+          sigLen <- liftIO $ peek sigLenPtr
+          return (fromIntegral sigLen)
     case result of
       Left err  -> return (Left err)
       Right len -> return (Right (BSI.BS fptr len))

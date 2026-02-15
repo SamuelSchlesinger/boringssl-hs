@@ -27,15 +27,17 @@ description:
     .
     BoringSSL is compiled from source (included as a Git submodule), so no
     system-level installation is required. A C++17 compiler is needed.
-homepage:        https://github.com/SamuelSchlesinger/boringssl-hs
-bug-reports:     https://github.com/SamuelSchlesinger/boringssl-hs/issues
+homepage:        https://github.com/haskell-cryptography/boringssl-hs
+bug-reports:     https://github.com/haskell-cryptography/boringssl-hs/issues
 
 source-repository head
     type:     git
-    location: https://github.com/SamuelSchlesinger/boringssl-hs.git
+    location: https://github.com/haskell-cryptography/boringssl-hs.git
 
 common warnings
     ghc-options: -Wall
+                 -optc-Wno-incompatible-pointer-types-discards-qualifiers
+                 -optc-Wno-incompatible-pointer-types
 
 library
     import:           warnings

@@ -18,7 +18,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 import Control.Exception (mask_)
@@ -26,6 +25,7 @@ import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer (withByteString)
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.CMAC
 import Crypto.BoringSSL.Internal.FFI.Cipher (c_EVP_aes_128_cbc, c_EVP_aes_256_cbc)
 
@@ -71,23 +71,21 @@ cmacInit :: ByteString -> IO (Either CryptoError CMACCtx)
 cmacInit key
   | BS.length key /= 16 && BS.length key /= 32 =
       return (Left (InvalidInput "cmacInit: key must be 16 or 32 bytes"))
-  | otherwise = mask_ $ do
-      ctx <- c_CMAC_CTX_new
-      if ctx == nullPtr
-        then return (Left (AllocationFailure "cmacInit: CMAC_CTX_new returned NULL"))
+  | otherwise = mask_ $ runExceptT $ do
+      ctx <- liftIO c_CMAC_CTX_new
+        >>= \p -> nonNull p (AllocationFailure "cmacInit: CMAC_CTX_new returned NULL")
+      let cipher = case cipherForKeyLen (BS.length key) of
+            Just c  -> c
+            Nothing -> error "cmacInit: unreachable (key length already checked)"
+      rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
+        c_CMAC_Init ctx keyPtr keyLen cipher nullPtr
+      if rc == 1
+        then do
+          fptr <- liftIO $ newForeignPtr c_CMAC_CTX_free_funptr ctx
+          return (CMACCtx fptr)
         else do
-          let cipher = case cipherForKeyLen (BS.length key) of
-                Just c  -> c
-                Nothing -> error "cmacInit: unreachable (key length already checked)"
-          withByteString key $ \keyPtr keyLen -> do
-            rc <- c_CMAC_Init ctx keyPtr keyLen cipher nullPtr
-            if rc /= 1
-              then do
-                c_CMAC_CTX_free ctx
-                return (Left (OperationFailed "cmacInit: CMAC_Init failed"))
-              else do
-                fptr <- newForeignPtr c_CMAC_CTX_free_funptr ctx
-                return (Right (CMACCtx fptr))
+          liftIO $ c_CMAC_CTX_free ctx
+          throwE (OperationFailed "cmacInit: CMAC_Init failed")
 
 -- | Feed more data into the CMAC context.
 cmacUpdate :: CMACCtx -> ByteString -> IO (Either CryptoError ())
@@ -102,13 +100,11 @@ cmacUpdate (CMACCtx fptr) bs =
 -- | Finalize the CMAC and return the 16-byte authentication tag.
 cmacFinalize :: CMACCtx -> IO (Either CryptoError ByteString)
 cmacFinalize (CMACCtx fptr) =
-  withForeignPtr fptr $ \ctx -> do
-    fout <- BSI.mallocByteString cmacTagSize
-    withForeignPtr fout $ \outPtr ->
-      alloca $ \outLenPtr -> do
-        rc <- c_CMAC_Final ctx (castPtr outPtr) outLenPtr
-        if rc /= 1
-          then return (Left (OperationFailed "cmacFinalize: CMAC_Final failed"))
-          else do
-            actualLen <- fromIntegral <$> peek outLenPtr
-            return (Right (BSI.BS fout actualLen))
+  withForeignPtr fptr $ \ctx -> runExceptT $ do
+    fout <- liftIO $ BSI.mallocByteString cmacTagSize
+    ExceptT $ withForeignPtr fout $ \outPtr -> runExceptT $
+      allocaE $ \outLenPtr -> do
+        rc <- liftIO $ c_CMAC_Final ctx (castPtr outPtr) outLenPtr
+        checkRC rc (OperationFailed "cmacFinalize: CMAC_Final failed")
+        actualLen <- liftIO $ fromIntegral <$> peek outLenPtr
+        return (BSI.BS fout actualLen)
