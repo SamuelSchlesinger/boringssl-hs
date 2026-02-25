@@ -27,10 +27,10 @@ module Crypto.BoringSSL.ECDH
   ) where
 
 import Foreign.Ptr
-import Control.Exception (finally)
 
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ECKey
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECDH
 import Crypto.BoringSSL.Internal.SecureBytes
@@ -45,18 +45,14 @@ ecdhComputeSecret myKey peerPub outLen
       return (Left (InvalidInput "ecdhComputeSecret: output length must be 32, 48, or 64"))
   | otherwise = withBoundThread $
   withECKeyPair myKey $ \myKeyPtr ->
-    withECPublicKey peerPub $ \peerKeyPtr -> do
-      peerPoint <- c_EC_KEY_get0_public_key peerKeyPtr
-      clearBoringSSLError
-      ssSB <- createSecureBytes outLen $ \_ -> return ()
-      rc <- withSecureBytes ssSB $ \ptr _ ->
+    withECPublicKey peerPub $ \peerKeyPtr -> runExceptT $ do
+      peerPoint <- liftIO $ c_EC_KEY_get0_public_key peerKeyPtr
+      liftIO clearBoringSSLError
+      ssSB <- liftIO $ createSecureBytes outLen $ \_ -> return ()
+      rc <- liftIO $ withSecureBytes ssSB $ \ptr _ ->
         c_ECDH_compute_key_fips (castPtr ptr) (fromIntegral outLen) peerPoint myKeyPtr
-      if rc /= 1
-        then do
-          merr <- getBoringSSLError
-          return (Left (maybe (OperationFailed "ecdhComputeSecret: ECDH_compute_key_fips failed") id merr))
-        else
-          return (Right ssSB)
+      checkRCError rc "ecdhComputeSecret: ECDH_compute_key_fips failed"
+      return ssSB
 
 -- | Compute a raw ECDH shared secret (x-coordinate of shared point).
 -- Returns the x-coordinate of privKey * peerPubKey, zero-padded to the
@@ -64,46 +60,28 @@ ecdhComputeSecret myKey peerPub outLen
 ecdhComputeRawSecret :: ECKeyPair -> ECPublicKey -> IO (Either CryptoError SecureBytes)
 ecdhComputeRawSecret myKey peerPub = withBoundThread $
   withECKeyPair myKey $ \myKeyPtr ->
-    withECPublicKey peerPub $ \peerKeyPtr -> do
-      groupPtr <- c_EC_KEY_get0_group myKeyPtr
-      if groupPtr == nullPtr
-        then return (Left (OperationFailed "ecdhComputeRawSecret: EC_KEY_get0_group returned NULL"))
-        else do
-          degree <- c_EC_GROUP_get_degree groupPtr
-          let fieldBytes = fromIntegral ((degree + 7) `div` 8) :: Int
-          privBn <- c_EC_KEY_get0_private_key myKeyPtr
-          if privBn == nullPtr
-            then return (Left (OperationFailed "ecdhComputeRawSecret: no private key"))
-            else do
-              peerPoint <- c_EC_KEY_get0_public_key peerKeyPtr
-              if peerPoint == nullPtr
-                then return (Left (OperationFailed "ecdhComputeRawSecret: no peer public key"))
-                else do
-                  sharedPt <- c_EC_POINT_new groupPtr
-                  if sharedPt == nullPtr
-                    then return (Left (AllocationFailure "ecdhComputeRawSecret: EC_POINT_new failed"))
-                    else flip finally (c_EC_POINT_free sharedPt) $ do
-                      -- shared = privBn * peerPoint
-                      clearBoringSSLError
-                      rc <- c_EC_POINT_mul groupPtr sharedPt nullPtr peerPoint privBn nullPtr
-                      if rc /= 1
-                        then do
-                          merr <- getBoringSSLError
-                          return (Left (maybe (OperationFailed "ecdhComputeRawSecret: EC_POINT_mul failed") id merr))
-                        else do
-                          xBn <- c_BN_new
-                          if xBn == nullPtr
-                            then return (Left (AllocationFailure "ecdhComputeRawSecret: BN_new failed"))
-                            else flip finally (c_BN_clear_free xBn) $ do
-                              rc2 <- c_EC_POINT_get_affine_coordinates_GFp groupPtr sharedPt xBn nullPtr nullPtr
-                              if rc2 /= 1
-                                then do
-                                  merr <- getBoringSSLError
-                                  return (Left (maybe (OperationFailed "ecdhComputeRawSecret: get_affine_coordinates failed") id merr))
-                                else do
-                                  ssSB <- createSecureBytes fieldBytes $ \_ -> return ()
-                                  rc3 <- withSecureBytes ssSB $ \ptr _ ->
-                                    c_BN_bn2bin_padded (castPtr ptr) (fromIntegral fieldBytes) xBn
-                                  if rc3 /= 1
-                                    then return (Left (OperationFailed "ecdhComputeRawSecret: BN_bn2bin_padded failed"))
-                                    else return (Right ssSB)
+    withECPublicKey peerPub $ \peerKeyPtr -> runExceptT $ do
+      groupPtr <- liftIO (c_EC_KEY_get0_group myKeyPtr)
+        >>= \p -> nonNull p (OperationFailed "ecdhComputeRawSecret: EC_KEY_get0_group returned NULL")
+      degree <- liftIO $ c_EC_GROUP_get_degree groupPtr
+      let fieldBytes = fromIntegral ((degree + 7) `div` 8) :: Int
+      privBn <- liftIO (c_EC_KEY_get0_private_key myKeyPtr)
+        >>= \p -> nonNull p (OperationFailed "ecdhComputeRawSecret: no private key")
+      peerPoint <- liftIO (c_EC_KEY_get0_public_key peerKeyPtr)
+        >>= \p -> nonNull p (OperationFailed "ecdhComputeRawSecret: no peer public key")
+      sharedPt <- liftIO (c_EC_POINT_new groupPtr)
+        >>= \p -> nonNull p (AllocationFailure "ecdhComputeRawSecret: EC_POINT_new failed")
+      flip finallyE (c_EC_POINT_free sharedPt) $ do
+        liftIO clearBoringSSLError
+        rc <- liftIO $ c_EC_POINT_mul groupPtr sharedPt nullPtr peerPoint privBn nullPtr
+        checkRCError rc "ecdhComputeRawSecret: EC_POINT_mul failed"
+        xBn <- liftIO c_BN_new
+          >>= \p -> nonNull p (AllocationFailure "ecdhComputeRawSecret: BN_new failed")
+        flip finallyE (c_BN_clear_free xBn) $ do
+          rc2 <- liftIO $ c_EC_POINT_get_affine_coordinates_GFp groupPtr sharedPt xBn nullPtr nullPtr
+          checkRCError rc2 "ecdhComputeRawSecret: get_affine_coordinates failed"
+          ssSB <- liftIO $ createSecureBytes fieldBytes $ \_ -> return ()
+          rc3 <- liftIO $ withSecureBytes ssSB $ \ptr _ ->
+            c_BN_bn2bin_padded (castPtr ptr) (fromIntegral fieldBytes) xBn
+          checkRC rc3 (OperationFailed "ecdhComputeRawSecret: BN_bn2bin_padded failed")
+          return ssSB

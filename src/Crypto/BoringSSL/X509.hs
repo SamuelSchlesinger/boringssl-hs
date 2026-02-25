@@ -183,32 +183,24 @@ serialNumberHex (X509Cert fptr) = unsafePerformIO $
 
 notBefore :: X509Cert -> Either CryptoError Int64
 notBefore (X509Cert fptr) = unsafePerformIO $
-  withForeignPtr fptr $ \certPtr -> do
-    timePtr <- c_X509_get0_notBefore certPtr
-    if timePtr == nullPtr
-      then return (Left (OperationFailed "X509.notBefore: no notBefore time"))
-      else alloca $ \outPtr -> do
-        rc <- c_ASN1_TIME_to_posix timePtr outPtr
-        if rc == 1
-          then do
-            t <- peek outPtr
-            return (Right t)
-          else return (Left (OperationFailed "X509.notBefore: time conversion failed"))
+  withForeignPtr fptr $ \certPtr -> runExceptT $ do
+    timePtr <- liftIO (c_X509_get0_notBefore certPtr)
+      >>= \p -> nonNull p (OperationFailed "X509.notBefore: no notBefore time")
+    allocaE $ \outPtr -> do
+      rc <- liftIO $ c_ASN1_TIME_to_posix timePtr outPtr
+      checkRC rc (OperationFailed "X509.notBefore: time conversion failed")
+      liftIO $ peek outPtr
 {-# NOINLINE notBefore #-}
 
 notAfter :: X509Cert -> Either CryptoError Int64
 notAfter (X509Cert fptr) = unsafePerformIO $
-  withForeignPtr fptr $ \certPtr -> do
-    timePtr <- c_X509_get0_notAfter certPtr
-    if timePtr == nullPtr
-      then return (Left (OperationFailed "X509.notAfter: no notAfter time"))
-      else alloca $ \outPtr -> do
-        rc <- c_ASN1_TIME_to_posix timePtr outPtr
-        if rc == 1
-          then do
-            t <- peek outPtr
-            return (Right t)
-          else return (Left (OperationFailed "X509.notAfter: time conversion failed"))
+  withForeignPtr fptr $ \certPtr -> runExceptT $ do
+    timePtr <- liftIO (c_X509_get0_notAfter certPtr)
+      >>= \p -> nonNull p (OperationFailed "X509.notAfter: no notAfter time")
+    allocaE $ \outPtr -> do
+      rc <- liftIO $ c_ASN1_TIME_to_posix timePtr outPtr
+      checkRC rc (OperationFailed "X509.notAfter: time conversion failed")
+      liftIO $ peek outPtr
 {-# NOINLINE notAfter #-}
 
 verifySelfSigned :: X509Cert -> Bool
@@ -264,44 +256,34 @@ certPublicKey (X509Cert fptr) =
           else if keyType == evpPKeyED25519 then extractEd25519 pkey
           else return (Right (CertPubKeyUnknown (fromIntegral keyType)))
   where
-    extractRSA pkey = do
-      rsaPtr <- c_EVP_PKEY_get0_RSA pkey
-      if rsaPtr == nullPtr
-        then return (Left (OperationFailed "certPublicKey: EVP_PKEY_get0_RSA returned NULL"))
-        else alloca $ \outPtrPtr -> alloca $ \outLenPtr -> do
-          rc <- c_RSA_public_key_to_bytes outPtrPtr outLenPtr rsaPtr
-          if rc /= 1
-            then return (Left (OperationFailed "certPublicKey: RSA_public_key_to_bytes failed"))
-            else do
-              derBytes <- packOpenSSLBuffer outPtrPtr outLenPtr
-              result <- RSA.publicKeyFromBytes derBytes
-              return (fmap CertPubKeyRSA result)
+    extractRSA pkey = runExceptT $ do
+      rsaPtr <- liftIO (c_EVP_PKEY_get0_RSA pkey)
+        >>= \p -> nonNull p (OperationFailed "certPublicKey: EVP_PKEY_get0_RSA returned NULL")
+      allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
+        rc <- liftIO $ c_RSA_public_key_to_bytes outPtrPtr outLenPtr rsaPtr
+        checkRC rc (OperationFailed "certPublicKey: RSA_public_key_to_bytes failed")
+        derBytes <- liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
+        result <- ExceptT $ RSA.publicKeyFromBytes derBytes
+        return (CertPubKeyRSA result)
 
-    extractEC pkey = do
-      ecKey <- c_EVP_PKEY_get0_EC_KEY pkey
-      if ecKey == nullPtr
-        then return (Left (OperationFailed "certPublicKey: EVP_PKEY_get0_EC_KEY returned NULL"))
-        else do
-          groupPtr <- c_EC_KEY_get0_group ecKey
-          if groupPtr == nullPtr
-            then return (Left (OperationFailed "certPublicKey: EC_KEY_get0_group returned NULL"))
-            else do
-              nid <- c_EC_GROUP_get_curve_name groupPtr
-              case nidToCurve nid of
-                Nothing -> return (Right (CertPubKeyUnknown (fromIntegral nid)))
-                Just curve -> do
-                  pointPtr <- c_EC_KEY_get0_public_key ecKey
-                  if pointPtr == nullPtr
-                    then return (Left (OperationFailed "certPublicKey: no public point"))
-                    else do
-                      len <- c_EC_POINT_point2oct groupPtr pointPtr 4 nullPtr 0 nullPtr
-                      if len == 0
-                        then return (Left (OperationFailed "certPublicKey: point2oct size query failed"))
-                        else do
-                          pubBytes <- createByteString (fromIntegral len) $ \outPtr ->
-                            c_EC_POINT_point2oct groupPtr pointPtr 4 outPtr len nullPtr >> return ()
-                          result <- ecPublicKeyFromBytes curve pubBytes
-                          return (fmap (CertPubKeyEC curve) result)
+    extractEC pkey = runExceptT $ do
+      ecKey <- liftIO (c_EVP_PKEY_get0_EC_KEY pkey)
+        >>= \p -> nonNull p (OperationFailed "certPublicKey: EVP_PKEY_get0_EC_KEY returned NULL")
+      groupPtr <- liftIO (c_EC_KEY_get0_group ecKey)
+        >>= \p -> nonNull p (OperationFailed "certPublicKey: EC_KEY_get0_group returned NULL")
+      nid <- liftIO $ c_EC_GROUP_get_curve_name groupPtr
+      case nidToCurve nid of
+        Nothing -> return (CertPubKeyUnknown (fromIntegral nid))
+        Just curve -> do
+          pointPtr <- liftIO (c_EC_KEY_get0_public_key ecKey)
+            >>= \p -> nonNull p (OperationFailed "certPublicKey: no public point")
+          len <- liftIO $ c_EC_POINT_point2oct groupPtr pointPtr 4 nullPtr 0 nullPtr
+          checkRC (if len == 0 then 0 else 1)
+            (OperationFailed "certPublicKey: point2oct size query failed")
+          pubBytes <- liftIO $ createByteString (fromIntegral len) $ \outPtr ->
+            c_EC_POINT_point2oct groupPtr pointPtr 4 outPtr len nullPtr >> return ()
+          result <- ExceptT $ ecPublicKeyFromBytes curve pubBytes
+          return (CertPubKeyEC curve result)
 
     extractEd25519 pkey = runExceptT $ do
       bs <- ExceptT $ alloca $ \outLenPtr -> do
@@ -514,12 +496,10 @@ verifyCertChain :: X509Store -> X509Cert -> [X509Cert] -> IO VerifyResult
 verifyCertChain (X509Store storeFptr) (X509Cert targetFptr) intermediates =
   withForeignPtr storeFptr $ \storePtr ->
     withForeignPtr targetFptr $ \targetPtr -> do
-      -- Build STACK_OF(X509) for intermediates
       skPtr <- c_bssl_sk_X509_new_null
       if skPtr == nullPtr
         then return (VerifyFailed (-1) "sk_X509_new_null failed")
         else do
-          -- Push all intermediate certs (check for allocation failure)
           pushResults <- mapM (\(X509Cert fp) -> withForeignPtr fp $ \cp ->
             c_bssl_sk_X509_push skPtr cp) intermediates
           if any (== 0) pushResults
@@ -528,12 +508,11 @@ verifyCertChain (X509Store storeFptr) (X509Cert targetFptr) intermediates =
               mapM_ (\(X509Cert fp) -> touchForeignPtr fp) intermediates
               return (VerifyFailed (-1) "sk_X509_push allocation failed")
             else do
-              -- Create and initialize X509_STORE_CTX
               result <- bracket c_X509_STORE_CTX_new
                                 (\ctx -> if ctx /= nullPtr
                                            then c_X509_STORE_CTX_free ctx
                                            else return ())
-                       $ \ctx -> do
+                       $ \ctx ->
                 if ctx == nullPtr
                   then return (VerifyFailed (-1) "X509_STORE_CTX_new failed")
                   else do

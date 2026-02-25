@@ -28,12 +28,12 @@ module Crypto.BoringSSL.ECDSA
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.ECKey
 import Crypto.BoringSSL.Internal.FFI.ECDSA
 
@@ -47,22 +47,15 @@ ecdsaSign :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 ecdsaSign kp digest = withBoundThread $
   withECKeyPair kp $ \keyPtr -> do
     maxSigLen <- c_ECDSA_size keyPtr
-    fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
-    result <- withForeignPtr fptr $ \sigPtr ->
-      withByteString digest $ \digestPtr digestLen ->
-        alloca $ \sigLenPtr -> do
-          clearBoringSSLError
-          rc <- c_ECDSA_sign 0 digestPtr digestLen (castPtr sigPtr) sigLenPtr keyPtr
-          if rc /= 1
-            then do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "ecdsaSign: ECDSA_sign failed") id merr))
-            else do
-              sigLen <- peek sigLenPtr
-              return (Right (fromIntegral sigLen))
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS fptr len))
+    withByteString digest $ \digestPtr digestLen -> runExceptT $ do
+      fptr <- liftIO $ BSI.mallocByteString (fromIntegral maxSigLen)
+      allocaE $ \sigLenPtr -> do
+        liftIO clearBoringSSLError
+        rc <- liftIO $ withForeignPtr fptr $ \sigPtr ->
+          c_ECDSA_sign 0 digestPtr digestLen (castPtr sigPtr) sigLenPtr keyPtr
+        checkRCError rc "ecdsaSign: ECDSA_sign failed"
+        sigLen <- liftIO $ peek sigLenPtr
+        return (BSI.BS fptr (fromIntegral sigLen))
 
 -- | Verify an ECDSA signature on a pre-hashed digest.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
@@ -74,13 +67,7 @@ ecdsaVerify pubKey digest sig = withBoundThread $
       withByteString sig $ \sigPtr sigLen -> do
         clearBoringSSLError
         rc <- c_ECDSA_verify 0 digestPtr digestLen sigPtr sigLen keyPtr
-        if rc == 1
-          then return (Right True)
-          else if rc == 0
-            then return (Right False)
-            else do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "ecdsaVerify: internal error") id merr))
+        checkVerifyRC rc "ecdsaVerify: internal error"
 
 -- | Sign a pre-hashed digest with ECDSA, producing a fixed-size P1363
 -- signature (r || s, each zero-padded to the group order size).
@@ -90,22 +77,11 @@ ecdsaSignP1363 :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 ecdsaSignP1363 kp digest = withBoundThread $
   withECKeyPair kp $ \keyPtr -> do
     maxSigLen <- c_ECDSA_size_p1363 keyPtr
-    fptr <- BSI.mallocByteString (fromIntegral maxSigLen)
-    result <- withForeignPtr fptr $ \sigPtr ->
-      withByteString digest $ \digestPtr digestLen ->
-        alloca $ \sigLenPtr -> do
-          clearBoringSSLError
-          rc <- c_ECDSA_sign_p1363 digestPtr digestLen (castPtr sigPtr) sigLenPtr maxSigLen keyPtr
-          if rc /= 1
-            then do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "ecdsaSignP1363: ECDSA_sign_p1363 failed") id merr))
-            else do
-              sigLen <- peek sigLenPtr
-              return (Right (fromIntegral sigLen))
-    case result of
-      Left err  -> return (Left err)
-      Right len -> return (Right (BSI.BS fptr len))
+    withByteString digest $ \digestPtr digestLen -> runExceptT $
+      withOutputBuffer (fromIntegral maxSigLen)
+        (\outPtr outLenPtr ->
+          c_ECDSA_sign_p1363 digestPtr digestLen (castPtr outPtr) outLenPtr maxSigLen keyPtr)
+        "ecdsaSignP1363: ECDSA_sign_p1363 failed"
 
 -- | Verify a P1363 fixed-size ECDSA signature on a pre-hashed digest.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
@@ -117,10 +93,4 @@ ecdsaVerifyP1363 pubKey digest sig = withBoundThread $
       withByteString sig $ \sigPtr sigLen -> do
         clearBoringSSLError
         rc <- c_ECDSA_verify_p1363 digestPtr digestLen sigPtr sigLen keyPtr
-        if rc == 1
-          then return (Right True)
-          else if rc == 0
-            then return (Right False)
-            else do
-              merr <- getBoringSSLError
-              return (Left (maybe (OperationFailed "ecdsaVerifyP1363: internal error") id merr))
+        checkVerifyRC rc "ecdsaVerifyP1363: internal error"

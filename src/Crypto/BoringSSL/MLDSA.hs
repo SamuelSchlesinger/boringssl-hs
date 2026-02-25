@@ -32,6 +32,7 @@ module Crypto.BoringSSL.MLDSA
 
 import Control.Exception (mask_)
 import Data.ByteString (ByteString)
+import Data.Maybe (fromMaybe)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
@@ -115,8 +116,7 @@ generateKeyPair variant = withBoundThread $ mask_ $ do
         if rc /= 1
           then do
             c_OPENSSL_cleanse (castPtr seedPtr) (fromIntegral mldsaSeedBytes)
-            merr <- getBoringSSLError
-            return (Left (maybe (OperationFailed "MLDSA_generate_key failed") id merr))
+            Left . fromMaybe (OperationFailed "MLDSA_generate_key failed") <$> getBoringSSLError
           else do
             seedSB <- createSecureBytes mldsaSeedBytes $ \dstPtr ->
               copyBytes (castPtr dstPtr) (castPtr seedPtr) mldsaSeedBytes
@@ -203,8 +203,7 @@ sign (MLDSAPrivateKey variant skFPtr) msg context = withBoundThread $ do
   if rc == 1
     then return (Right (BSI.BS sigFPtr sigSize))
     else do
-      merr <- getBoringSSLError
-      return (Left (maybe (OperationFailed "MLDSA_sign failed") id merr))
+      Left . fromMaybe (OperationFailed "MLDSA_sign failed") <$> getBoringSSLError
 
 -- | Verify an ML-DSA signature (pure).
 -- Takes the public key, signature, message, and context.

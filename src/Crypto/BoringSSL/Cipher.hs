@@ -23,18 +23,17 @@ module Crypto.BoringSSL.Cipher
   , cipherBlockSize
   ) where
 
-import Control.Exception (bracket)
 import Control.Monad (when)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.Cipher
 
 -- | Supported symmetric cipher algorithms.
@@ -107,49 +106,32 @@ encrypt algo key iv plaintext
               if cipherIVLength algo == 0
                 then f nullPtr
                 else withByteString iv $ \ivPtr _ -> f ivPtr
-        ivAction $ \ivPtr ->
-          bracket c_EVP_CIPHER_CTX_new
-                  (\ctx -> when (ctx /= nullPtr) (c_EVP_CIPHER_CTX_free ctx))
-                  $ \ctx ->
-            if ctx == nullPtr
-              then return (Left (AllocationFailure "encrypt: EVP_CIPHER_CTX_new failed"))
-              else do
-                let maxOutLen = fromIntegral inLen + (16 :: Int)
-                fptr <- BSI.mallocByteString maxOutLen
-                result <- withForeignPtr fptr $ \outPtr -> do
-                  clearBoringSSLError
-                  rc1 <- c_EVP_EncryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
-                  if rc1 /= 1
-                    then do
-                      merr <- getBoringSSLError
-                      return (Left (maybe (OperationFailed "encrypt: EncryptInit failed") id merr))
-                    else do
-                      alloca $ \updateLenPtr ->
-                        alloca $ \finalLenPtr -> do
-                          poke updateLenPtr 0
-                          poke finalLenPtr 0
-                          rc2 <- c_EVP_EncryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
-                                   (fromIntegral maxOutLen) inPtr inLen
-                          if rc2 /= 1
-                            then do
-                              merr <- getBoringSSLError
-                              return (Left (maybe (OperationFailed "encrypt: EncryptUpdate failed") id merr))
-                            else do
-                              updateLen <- peek updateLenPtr
-                              let remaining = fromIntegral maxOutLen - updateLen
-                              rc3 <- c_EVP_EncryptFinal_ex2 ctx
-                                       (castPtr outPtr `plusPtr` fromIntegral updateLen)
-                                       finalLenPtr remaining
-                              if rc3 /= 1
-                                then do
-                                  merr <- getBoringSSLError
-                                  return (Left (maybe (OperationFailed "encrypt: EncryptFinal failed") id merr))
-                                else do
-                                  finalLen <- peek finalLenPtr
-                                  return (Right (fromIntegral (updateLen + finalLen)))
-                case result of
-                  Left err  -> return (Left err)
-                  Right len -> return (Right (BSI.BS fptr len))
+        ivAction $ \ivPtr -> do
+          let maxOutLen = fromIntegral inLen + (16 :: Int)
+          fptr <- BSI.mallocByteString maxOutLen
+          fmap (fmap (BSI.BS fptr)) $ withForeignPtr fptr $ \outPtr -> runExceptT $ do
+            ctx <- bracketE c_EVP_CIPHER_CTX_new
+                            (\c -> when (c /= nullPtr) (c_EVP_CIPHER_CTX_free c))
+                            $ \c -> do
+              _ <- nonNull c (AllocationFailure "encrypt: EVP_CIPHER_CTX_new failed")
+              liftIO clearBoringSSLError
+              rc1 <- liftIO $ c_EVP_EncryptInit_ex c (cipherPtr algo) nullPtr keyPtr ivPtr
+              checkRCError rc1 "encrypt: EncryptInit failed"
+              allocaE $ \updateLenPtr -> allocaE $ \finalLenPtr -> do
+                liftIO $ poke updateLenPtr 0
+                liftIO $ poke finalLenPtr 0
+                rc2 <- liftIO $ c_EVP_EncryptUpdate_ex c (castPtr outPtr) updateLenPtr
+                         (fromIntegral maxOutLen) inPtr inLen
+                checkRCError rc2 "encrypt: EncryptUpdate failed"
+                updateLen <- liftIO $ peek updateLenPtr
+                let remaining = fromIntegral maxOutLen - updateLen
+                rc3 <- liftIO $ c_EVP_EncryptFinal_ex2 c
+                         (castPtr outPtr `plusPtr` fromIntegral updateLen)
+                         finalLenPtr remaining
+                checkRCError rc3 "encrypt: EncryptFinal failed"
+                finalLen <- liftIO $ peek finalLenPtr
+                return (fromIntegral (updateLen + finalLen))
+            return ctx
 
 -- | Decrypt ciphertext. CBC and ECB modes remove PKCS#7 padding automatically.
 -- For ECB mode, pass an empty IV (@BS.empty@).
@@ -168,46 +150,29 @@ decrypt algo key iv ciphertext
               if cipherIVLength algo == 0
                 then f nullPtr
                 else withByteString iv $ \ivPtr _ -> f ivPtr
-        ivAction $ \ivPtr ->
-          bracket c_EVP_CIPHER_CTX_new
-                  (\ctx -> when (ctx /= nullPtr) (c_EVP_CIPHER_CTX_free ctx))
-                  $ \ctx ->
-            if ctx == nullPtr
-              then return (Left (AllocationFailure "decrypt: EVP_CIPHER_CTX_new failed"))
-              else do
-                let maxOutLen = fromIntegral inLen + (16 :: Int)
-                fptr <- BSI.mallocByteString maxOutLen
-                result <- withForeignPtr fptr $ \outPtr -> do
-                  clearBoringSSLError
-                  rc1 <- c_EVP_DecryptInit_ex ctx (cipherPtr algo) nullPtr keyPtr ivPtr
-                  if rc1 /= 1
-                    then do
-                      merr <- getBoringSSLError
-                      return (Left (maybe (OperationFailed "decrypt: decryption failed") id merr))
-                    else do
-                      alloca $ \updateLenPtr ->
-                        alloca $ \finalLenPtr -> do
-                          poke updateLenPtr 0
-                          poke finalLenPtr 0
-                          rc2 <- c_EVP_DecryptUpdate_ex ctx (castPtr outPtr) updateLenPtr
-                                   (fromIntegral maxOutLen) inPtr inLen
-                          if rc2 /= 1
-                            then do
-                              merr <- getBoringSSLError
-                              return (Left (maybe (OperationFailed "decrypt: decryption failed") id merr))
-                            else do
-                              updateLen <- peek updateLenPtr
-                              let remaining = fromIntegral maxOutLen - updateLen
-                              rc3 <- c_EVP_DecryptFinal_ex2 ctx
-                                       (castPtr outPtr `plusPtr` fromIntegral updateLen)
-                                       finalLenPtr remaining
-                              if rc3 /= 1
-                                then do
-                                  merr <- getBoringSSLError
-                                  return (Left (maybe (OperationFailed "decrypt: decryption failed") id merr))
-                                else do
-                                  finalLen <- peek finalLenPtr
-                                  return (Right (fromIntegral (updateLen + finalLen)))
-                case result of
-                  Left err  -> return (Left err)
-                  Right len -> return (Right (BSI.BS fptr len))
+        ivAction $ \ivPtr -> do
+          let maxOutLen = fromIntegral inLen + (16 :: Int)
+          fptr <- BSI.mallocByteString maxOutLen
+          fmap (fmap (BSI.BS fptr)) $ withForeignPtr fptr $ \outPtr -> runExceptT $ do
+            ctx <- bracketE c_EVP_CIPHER_CTX_new
+                            (\c -> when (c /= nullPtr) (c_EVP_CIPHER_CTX_free c))
+                            $ \c -> do
+              _ <- nonNull c (AllocationFailure "decrypt: EVP_CIPHER_CTX_new failed")
+              liftIO clearBoringSSLError
+              rc1 <- liftIO $ c_EVP_DecryptInit_ex c (cipherPtr algo) nullPtr keyPtr ivPtr
+              checkRCError rc1 "decrypt: decryption failed"
+              allocaE $ \updateLenPtr -> allocaE $ \finalLenPtr -> do
+                liftIO $ poke updateLenPtr 0
+                liftIO $ poke finalLenPtr 0
+                rc2 <- liftIO $ c_EVP_DecryptUpdate_ex c (castPtr outPtr) updateLenPtr
+                         (fromIntegral maxOutLen) inPtr inLen
+                checkRCError rc2 "decrypt: decryption failed"
+                updateLen <- liftIO $ peek updateLenPtr
+                let remaining = fromIntegral maxOutLen - updateLen
+                rc3 <- liftIO $ c_EVP_DecryptFinal_ex2 c
+                         (castPtr outPtr `plusPtr` fromIntegral updateLen)
+                         finalLenPtr remaining
+                checkRCError rc3 "decrypt: decryption failed"
+                finalLen <- liftIO $ peek finalLenPtr
+                return (fromIntegral (updateLen + finalLen))
+            return ctx
