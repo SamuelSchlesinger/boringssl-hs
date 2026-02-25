@@ -116,7 +116,7 @@ seal (AEADCtx algo lock fptr) nonce plaintext ad
       rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_seal ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
-      checkRCError rc "seal failed"
+      checkRCError "seal failed" rc
       actualLen <- liftIO $ peek outLenPtr
       return (BSI.BS outFPtr (fromIntegral actualLen))
 
@@ -144,7 +144,7 @@ open (AEADCtx algo lock fptr) nonce ciphertext ad
       rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_open ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
-      checkRCError rc "open failed: authentication error"
+      checkRCError "open failed: authentication error" rc
       actualLen <- liftIO $ peek outLenPtr
       return (BSI.BS outFPtr (fromIntegral actualLen))
 

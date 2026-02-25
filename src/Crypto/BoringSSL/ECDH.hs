@@ -51,7 +51,7 @@ ecdhComputeSecret myKey peerPub outLen
       ssSB <- liftIO $ createSecureBytes outLen $ \_ -> return ()
       rc <- liftIO $ withSecureBytes ssSB $ \ptr _ ->
         c_ECDH_compute_key_fips (castPtr ptr) (fromIntegral outLen) peerPoint myKeyPtr
-      checkRCError rc "ecdhComputeSecret: ECDH_compute_key_fips failed"
+      checkRCError "ecdhComputeSecret: ECDH_compute_key_fips failed" rc
       return ssSB
 
 -- | Compute a raw ECDH shared secret (x-coordinate of shared point).
@@ -62,26 +62,26 @@ ecdhComputeRawSecret myKey peerPub = withBoundThread $
   withECKeyPair myKey $ \myKeyPtr ->
     withECPublicKey peerPub $ \peerKeyPtr -> runExceptT $ do
       groupPtr <- liftIO (c_EC_KEY_get0_group myKeyPtr)
-        >>= \p -> nonNull p (OperationFailed "ecdhComputeRawSecret: EC_KEY_get0_group returned NULL")
+        >>= nonNull (OperationFailed "ecdhComputeRawSecret: EC_KEY_get0_group returned NULL")
       degree <- liftIO $ c_EC_GROUP_get_degree groupPtr
       let fieldBytes = fromIntegral ((degree + 7) `div` 8) :: Int
       privBn <- liftIO (c_EC_KEY_get0_private_key myKeyPtr)
-        >>= \p -> nonNull p (OperationFailed "ecdhComputeRawSecret: no private key")
+        >>= nonNull (OperationFailed "ecdhComputeRawSecret: no private key")
       peerPoint <- liftIO (c_EC_KEY_get0_public_key peerKeyPtr)
-        >>= \p -> nonNull p (OperationFailed "ecdhComputeRawSecret: no peer public key")
+        >>= nonNull (OperationFailed "ecdhComputeRawSecret: no peer public key")
       sharedPt <- liftIO (c_EC_POINT_new groupPtr)
-        >>= \p -> nonNull p (AllocationFailure "ecdhComputeRawSecret: EC_POINT_new failed")
+        >>= nonNull (AllocationFailure "ecdhComputeRawSecret: EC_POINT_new failed")
       flip finallyE (c_EC_POINT_free sharedPt) $ do
         liftIO clearBoringSSLError
         rc <- liftIO $ c_EC_POINT_mul groupPtr sharedPt nullPtr peerPoint privBn nullPtr
-        checkRCError rc "ecdhComputeRawSecret: EC_POINT_mul failed"
+        checkRCError "ecdhComputeRawSecret: EC_POINT_mul failed" rc
         xBn <- liftIO c_BN_new
-          >>= \p -> nonNull p (AllocationFailure "ecdhComputeRawSecret: BN_new failed")
+          >>= nonNull (AllocationFailure "ecdhComputeRawSecret: BN_new failed")
         flip finallyE (c_BN_clear_free xBn) $ do
           rc2 <- liftIO $ c_EC_POINT_get_affine_coordinates_GFp groupPtr sharedPt xBn nullPtr nullPtr
-          checkRCError rc2 "ecdhComputeRawSecret: get_affine_coordinates failed"
+          checkRCError "ecdhComputeRawSecret: get_affine_coordinates failed" rc2
           ssSB <- liftIO $ createSecureBytes fieldBytes $ \_ -> return ()
           rc3 <- liftIO $ withSecureBytes ssSB $ \ptr _ ->
             c_BN_bn2bin_padded (castPtr ptr) (fromIntegral fieldBytes) xBn
-          checkRC rc3 (OperationFailed "ecdhComputeRawSecret: BN_bn2bin_padded failed")
+          checkRC (OperationFailed "ecdhComputeRawSecret: BN_bn2bin_padded failed") rc3
           return ssSB

@@ -36,7 +36,7 @@ source-repository head
 
 common warnings
     ghc-options: -Wall
-                 -optc-Wno-incompatible-pointer-types-discards-qualifiers
+                 -optc-Wno-discards-qualifiers
                  -optc-Wno-incompatible-pointer-types
 
 library

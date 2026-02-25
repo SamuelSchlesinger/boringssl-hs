@@ -74,7 +74,7 @@ generateKey method keyId = do
           (castPtr privPtr) privLenPtr (fromIntegral maxPriv)
           (castPtr pubPtr) pubLenPtr (fromIntegral maxPub)
           keyId
-    checkRC rc (OperationFailed "generateKey: TRUST_TOKEN_generate_key failed")
+    checkRC (OperationFailed "generateKey: TRUST_TOKEN_generate_key failed") rc
     privLen <- liftIO $ peek privLenPtr
     pubLen  <- liftIO $ peek pubLenPtr
     return (BSI.BS privFPtr (fromIntegral privLen),
@@ -84,7 +84,7 @@ generateKey method keyId = do
 newClient :: TrustTokenMethod -> Int -> IO (Either CryptoError TrustTokenClient)
 newClient method maxBatchSize = runExceptT $ maskE_ $ do
   ctx <- liftIO (c_TRUST_TOKEN_CLIENT_new (methodPtr method) (fromIntegral maxBatchSize))
-    >>= \p -> nonNull p (AllocationFailure "newClient: TRUST_TOKEN_CLIENT_new failed")
+    >>= nonNull (AllocationFailure "newClient: TRUST_TOKEN_CLIENT_new failed")
   fptr <- liftIO $ newForeignPtr c_TRUST_TOKEN_CLIENT_free_funptr ctx
   return (TrustTokenClient fptr)
 
@@ -95,7 +95,7 @@ clientAddKey (TrustTokenClient fptr) key =
     allocaE $ \idxPtr -> do
       rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
         c_TRUST_TOKEN_CLIENT_add_key ctx idxPtr keyPtr keyLen
-      checkRC rc (OperationFailed "clientAddKey: TRUST_TOKEN_CLIENT_add_key failed")
+      checkRC (OperationFailed "clientAddKey: TRUST_TOKEN_CLIENT_add_key failed") rc
       idx <- liftIO $ peek idxPtr
       return (fromIntegral (idx :: CSize))
 
@@ -106,7 +106,7 @@ beginIssuance (TrustTokenClient fptr) count =
     allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
       rc <- liftIO $ c_TRUST_TOKEN_CLIENT_begin_issuance ctx outPtrPtr outLenPtr
               (fromIntegral count)
-      checkRC rc (OperationFailed "beginIssuance: TRUST_TOKEN_CLIENT_begin_issuance failed")
+      checkRC (OperationFailed "beginIssuance: TRUST_TOKEN_CLIENT_begin_issuance failed") rc
       liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Finish token issuance by processing the issuer's response.
@@ -117,7 +117,7 @@ finishIssuance (TrustTokenClient fptr) response =
     allocaE $ \keyIdxPtr -> do
       stack <- liftIO (withByteString response $ \respPtr respLen ->
         c_TRUST_TOKEN_CLIENT_finish_issuance ctx keyIdxPtr respPtr respLen)
-        >>= \p -> nonNull p (OperationFailed "finishIssuance: TRUST_TOKEN_CLIENT_finish_issuance failed")
+        >>= nonNull (OperationFailed "finishIssuance: TRUST_TOKEN_CLIENT_finish_issuance failed")
       result <- finallyE (liftIO $ extractTokens stack)
                          (c_boringssl_sk_TRUST_TOKEN_pop_free stack)
       keyIdx <- liftIO $ peek keyIdxPtr
@@ -145,13 +145,13 @@ beginRedemption (TrustTokenClient fptr) tokenData clientData =
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     tok <- liftIO (withByteString tokenData $ \tokDataPtr tokDataLen ->
       c_TRUST_TOKEN_new tokDataPtr tokDataLen)
-      >>= \p -> nonNull p (AllocationFailure "beginRedemption: TRUST_TOKEN_new failed")
+      >>= nonNull (AllocationFailure "beginRedemption: TRUST_TOKEN_new failed")
     finallyE
       (allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
         rc <- liftIO $ withByteString clientData $ \cdPtr cdLen ->
           c_TRUST_TOKEN_CLIENT_begin_redemption ctx outPtrPtr outLenPtr
             tok cdPtr cdLen 0
-        checkRC rc (OperationFailed "beginRedemption: TRUST_TOKEN_CLIENT_begin_redemption failed")
+        checkRC (OperationFailed "beginRedemption: TRUST_TOKEN_CLIENT_begin_redemption failed") rc
         liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr)
       (c_TRUST_TOKEN_free tok)
 
@@ -165,7 +165,7 @@ finishRedemption (TrustTokenClient fptr) response =
         rc <- liftIO $ withByteString response $ \respPtr respLen ->
           c_TRUST_TOKEN_CLIENT_finish_redemption ctx rrPtrPtr rrLenPtr
             sigPtrPtr sigLenPtr respPtr respLen
-        checkRC rc (OperationFailed "finishRedemption: TRUST_TOKEN_CLIENT_finish_redemption failed")
+        checkRC (OperationFailed "finishRedemption: TRUST_TOKEN_CLIENT_finish_redemption failed") rc
         rr <- liftIO $ packOpenSSLBuffer rrPtrPtr rrLenPtr
         sig <- liftIO $ packOpenSSLBuffer sigPtrPtr sigLenPtr
         return (rr, sig)
@@ -174,7 +174,7 @@ finishRedemption (TrustTokenClient fptr) response =
 newIssuer :: TrustTokenMethod -> Int -> IO (Either CryptoError TrustTokenIssuer)
 newIssuer method maxBatchSize = runExceptT $ maskE_ $ do
   ctx <- liftIO (c_TRUST_TOKEN_ISSUER_new (methodPtr method) (fromIntegral maxBatchSize))
-    >>= \p -> nonNull p (AllocationFailure "newIssuer: TRUST_TOKEN_ISSUER_new failed")
+    >>= nonNull (AllocationFailure "newIssuer: TRUST_TOKEN_ISSUER_new failed")
   fptr <- liftIO $ newForeignPtr c_TRUST_TOKEN_ISSUER_free_funptr ctx
   return (TrustTokenIssuer fptr)
 
@@ -184,7 +184,7 @@ issuerAddKey (TrustTokenIssuer fptr) key =
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
       c_TRUST_TOKEN_ISSUER_add_key ctx keyPtr keyLen
-    checkRC rc (OperationFailed "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed")
+    checkRC (OperationFailed "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed") rc
 
 -- | Set the metadata key for the issuer.
 issuerSetMetadataKey :: TrustTokenIssuer -> ByteString -> IO (Either CryptoError ())
@@ -192,7 +192,7 @@ issuerSetMetadataKey (TrustTokenIssuer fptr) key =
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
       c_TRUST_TOKEN_ISSUER_set_metadata_key ctx keyPtr keyLen
-    checkRC rc (OperationFailed "issuerSetMetadataKey: TRUST_TOKEN_ISSUER_set_metadata_key failed")
+    checkRC (OperationFailed "issuerSetMetadataKey: TRUST_TOKEN_ISSUER_set_metadata_key failed") rc
 
 -- | Issue tokens in response to a client request.
 -- Returns @Right (response, tokensIssued)@ on success.
@@ -205,7 +205,7 @@ issue (TrustTokenIssuer fptr) request publicMeta privateMeta maxIssuance =
         c_TRUST_TOKEN_ISSUER_issue ctx outPtrPtr outLenPtr
           tokensIssuedPtr reqPtr reqLen publicMeta privateMeta
           (fromIntegral maxIssuance)
-      checkRC rc (OperationFailed "issue: TRUST_TOKEN_ISSUER_issue failed")
+      checkRC (OperationFailed "issue: TRUST_TOKEN_ISSUER_issue failed") rc
       resp <- liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
       issued <- liftIO $ peek tokensIssuedPtr
       return (resp, fromIntegral (issued :: CSize))
@@ -221,7 +221,7 @@ redeem (TrustTokenIssuer fptr) request =
         rc <- liftIO $ withByteString request $ \reqPtr reqLen ->
           c_TRUST_TOKEN_ISSUER_redeem ctx pubPtr privPtr
             tokenPtrPtr cdPtrPtr cdLenPtr reqPtr reqLen
-        checkRC rc (OperationFailed "redeem: TRUST_TOKEN_ISSUER_redeem failed")
+        checkRC (OperationFailed "redeem: TRUST_TOKEN_ISSUER_redeem failed") rc
         pubMeta <- liftIO $ peek pubPtr
         privMeta <- liftIO $ peek privPtr
         tokenRawPtr <- liftIO $ peek tokenPtrPtr

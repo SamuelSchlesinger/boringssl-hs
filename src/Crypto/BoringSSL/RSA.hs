@@ -101,7 +101,7 @@ publicKeyToBytes (RSAKeyPair fptr) = withBoundThread $
     allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
       liftIO clearBoringSSLError
       rc <- liftIO $ c_RSA_public_key_to_bytes outPtrPtr outLenPtr rsa
-      checkRCError rc "publicKeyToBytes: RSA_public_key_to_bytes failed"
+      checkRCError "publicKeyToBytes: RSA_public_key_to_bytes failed" rc
       liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a public key from DER-encoded PKCS#1 format.
@@ -110,7 +110,7 @@ publicKeyFromBytes bs = withBoundThread $
   withByteString bs $ \ptr len -> runExceptT $ maskE_ $ do
     liftIO clearBoringSSLError
     rsa <- liftIO (c_RSA_public_key_from_bytes ptr len)
-      >>= \p -> nonNull p (OperationFailed "publicKeyFromBytes: RSA_public_key_from_bytes failed")
+      >>= nonNull (OperationFailed "publicKeyFromBytes: RSA_public_key_from_bytes failed")
     fptr <- liftIO $ newForeignPtr c_RSA_free_funptr rsa
     return (RSAPublicKey fptr)
 
@@ -121,7 +121,7 @@ privateKeyToBytes (RSAKeyPair fptr) = withBoundThread $
     allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
       liftIO clearBoringSSLError
       rc <- liftIO $ c_RSA_private_key_to_bytes outPtrPtr outLenPtr rsa
-      checkRCError rc "privateKeyToBytes: RSA_private_key_to_bytes failed"
+      checkRCError "privateKeyToBytes: RSA_private_key_to_bytes failed" rc
       liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
@@ -130,7 +130,7 @@ privateKeyFromBytes bs = withBoundThread $
   withByteString bs $ \ptr len -> runExceptT $ maskE_ $ do
     liftIO clearBoringSSLError
     rsa <- liftIO (c_RSA_private_key_from_bytes ptr len)
-      >>= \p -> nonNull p (OperationFailed "privateKeyFromBytes: RSA_private_key_from_bytes failed")
+      >>= nonNull (OperationFailed "privateKeyFromBytes: RSA_private_key_from_bytes failed")
     fptr <- liftIO $ newForeignPtr c_RSA_free_funptr rsa
     return (RSAKeyPair fptr)
 
@@ -162,7 +162,7 @@ rsaSign (RSAKeyPair fptr) algo digest = withBoundThread $ do
         liftIO clearBoringSSLError
         rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
           c_RSA_sign nid digestPtr digestLen (castPtr outPtr) outLenPtr rsa
-        checkRCError rc "rsaSign: RSA_sign failed"
+        checkRCError "rsaSign: RSA_sign failed" rc
         actualLen <- liftIO $ peek outLenPtr
         return (BSI.BS outFPtr (fromIntegral actualLen))
 

@@ -62,21 +62,21 @@ liftIO :: IO a -> ExceptT e IO a
 liftIO = ExceptT . fmap Right
 
 -- | Check that a pointer is non-null, throwing the given error if it is.
-nonNull :: Ptr a -> CryptoError -> ExceptT CryptoError IO (Ptr a)
-nonNull p err
+nonNull :: CryptoError -> Ptr a -> ExceptT CryptoError IO (Ptr a)
+nonNull err p
   | p == nullPtr = throwE err
   | otherwise    = pure p
 
 -- | Check that a C return code is 1 (success), throwing the given error otherwise.
-checkRC :: CInt -> CryptoError -> ExceptT CryptoError IO ()
-checkRC 1 _ = pure ()
-checkRC _ err = throwE err
+checkRC :: CryptoError -> CInt -> ExceptT CryptoError IO ()
+checkRC _ 1 = pure ()
+checkRC err _ = throwE err
 
 -- | Check that a C return code is 1 (success), consulting the BoringSSL
 -- error queue on failure and using the given string as fallback.
-checkRCError :: CInt -> String -> ExceptT CryptoError IO ()
-checkRCError 1 _ = pure ()
-checkRCError _ ctx = throwBoringSSLError (OperationFailed ctx)
+checkRCError :: String -> CInt -> ExceptT CryptoError IO ()
+checkRCError _ 1 = pure ()
+checkRCError ctx _ = throwBoringSSLError (OperationFailed ctx)
 
 -- | Consult the BoringSSL error queue and throw the resulting error,
 -- or throw the given fallback error if the queue is empty.
@@ -112,7 +112,7 @@ withOutputBuffer maxLen action errCtx = do
   allocaE $ \outLenPtr -> do
     liftIO clearBoringSSLError
     rc <- liftIO $ withForeignPtr outFPtr $ \outPtr -> action outPtr outLenPtr
-    checkRCError rc errCtx
+    checkRCError errCtx rc
     actualLen <- liftIO $ peek outLenPtr
     return (BSI.BS outFPtr (fromIntegral actualLen))
 

@@ -53,7 +53,7 @@ ecdsaSign kp digest = withBoundThread $
         liftIO clearBoringSSLError
         rc <- liftIO $ withForeignPtr fptr $ \sigPtr ->
           c_ECDSA_sign 0 digestPtr digestLen (castPtr sigPtr) sigLenPtr keyPtr
-        checkRCError rc "ecdsaSign: ECDSA_sign failed"
+        checkRCError "ecdsaSign: ECDSA_sign failed" rc
         sigLen <- liftIO $ peek sigLenPtr
         return (BSI.BS fptr (fromIntegral sigLen))
 

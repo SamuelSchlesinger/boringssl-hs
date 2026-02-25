@@ -70,10 +70,10 @@ loadPrivateKeyPEM :: ByteString -> IO (Either CryptoError SomePrivateKey)
 loadPrivateKeyPEM bs =
   withByteString bs $ \dataPtr dataLen -> runExceptT $ maskE_ $ do
     bio <- liftIO (c_BIO_new_mem_buf dataPtr (fromIntegral dataLen))
-      >>= \p -> nonNull p (AllocationFailure "loadPrivateKeyPEM: BIO_new_mem_buf failed")
+      >>= nonNull (AllocationFailure "loadPrivateKeyPEM: BIO_new_mem_buf failed")
     pkey <- liftIO $ c_PEM_read_bio_PrivateKey bio nullPtr nullPtr nullPtr
     _ <- liftIO $ c_BIO_free bio
-    _ <- nonNull pkey (DecodeError "loadPrivateKeyPEM: PEM_read_bio_PrivateKey failed")
+    _ <- nonNull (DecodeError "loadPrivateKeyPEM: PEM_read_bio_PrivateKey failed") pkey
     ExceptT $ bracket (return pkey) c_EVP_PKEY_free $ \pk ->
       evpPKeyToSomeKey pk
 
@@ -91,10 +91,10 @@ evpPKeyToSomeKey pkey = do
 extractRSA :: Ptr EVP_PKEY -> IO (Either CryptoError SomePrivateKey)
 extractRSA pkey = runExceptT $ do
   rsaPtr <- liftIO (c_EVP_PKEY_get0_RSA pkey)
-    >>= \p -> nonNull p (OperationFailed "loadPrivateKey: EVP_PKEY_get0_RSA returned NULL")
+    >>= nonNull (OperationFailed "loadPrivateKey: EVP_PKEY_get0_RSA returned NULL")
   allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
     rc <- liftIO $ c_RSA_private_key_to_bytes outPtrPtr outLenPtr rsaPtr
-    checkRC rc (OperationFailed "loadPrivateKey: RSA_private_key_to_bytes failed")
+    checkRC (OperationFailed "loadPrivateKey: RSA_private_key_to_bytes failed") rc
     derBytes <- liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
     result <- ExceptT $ RSA.privateKeyFromBytes derBytes
     return (SomeRSAKey result)
@@ -102,9 +102,9 @@ extractRSA pkey = runExceptT $ do
 extractEC :: Ptr EVP_PKEY -> IO (Either CryptoError SomePrivateKey)
 extractEC pkey = runExceptT $ do
   ecKey <- liftIO (c_EVP_PKEY_get0_EC_KEY pkey)
-    >>= \p -> nonNull p (OperationFailed "loadPrivateKey: EVP_PKEY_get0_EC_KEY returned NULL")
+    >>= nonNull (OperationFailed "loadPrivateKey: EVP_PKEY_get0_EC_KEY returned NULL")
   groupPtr <- liftIO (c_EC_KEY_get0_group ecKey)
-    >>= \p -> nonNull p (OperationFailed "loadPrivateKey: EC_KEY_get0_group returned NULL")
+    >>= nonNull (OperationFailed "loadPrivateKey: EC_KEY_get0_group returned NULL")
   nid <- liftIO $ c_EC_GROUP_get_curve_name groupPtr
   curve <- case nidToCurve nid of
     Nothing -> throwE (DecodeError ("loadPrivateKey: unsupported EC curve NID " ++ show nid))
@@ -112,11 +112,11 @@ extractEC pkey = runExceptT $ do
   degree <- liftIO $ c_EC_GROUP_get_degree groupPtr
   let numBytes = fromIntegral ((degree + 7) `div` 8) :: Int
   privBn <- liftIO (c_EC_KEY_get0_private_key ecKey)
-    >>= \p -> nonNull p (OperationFailed "loadPrivateKey: no private key")
+    >>= nonNull (OperationFailed "loadPrivateKey: no private key")
   bsFptr <- liftIO $ BSI.mallocByteString numBytes
   rc <- liftIO $ withForeignPtr bsFptr $ \ptr ->
     c_BN_bn2bin_padded (castPtr ptr) (fromIntegral numBytes) privBn
-  checkRC rc (OperationFailed "loadPrivateKey: BN_bn2bin_padded failed")
+  checkRC (OperationFailed "loadPrivateKey: BN_bn2bin_padded failed") rc
   let privBytes = BSI.BS bsFptr numBytes
   result <- ExceptT $ ecKeyPairFromPrivateBytes curve privBytes
   return (SomeECKey curve result)
@@ -138,7 +138,7 @@ getRawPrivateKey pkey expectedLen = runExceptT $
   allocaE $ \outLenPtr -> do
     liftIO $ poke outLenPtr 0
     rc <- liftIO $ c_EVP_PKEY_get_raw_private_key pkey nullPtr outLenPtr
-    checkRC rc (OperationFailed "getRawPrivateKey: size query failed")
+    checkRC (OperationFailed "getRawPrivateKey: size query failed") rc
     len <- liftIO $ peek outLenPtr
     let actualLen = fromIntegral len :: Int
     if actualLen /= expectedLen
@@ -147,7 +147,7 @@ getRawPrivateKey pkey expectedLen = runExceptT $
         fout <- liftIO $ BSI.mallocByteString actualLen
         rc2 <- liftIO $ withForeignPtr fout $ \outPtr ->
           c_EVP_PKEY_get_raw_private_key pkey (castPtr outPtr) outLenPtr
-        checkRC rc2 (OperationFailed "getRawPrivateKey: failed")
+        checkRC (OperationFailed "getRawPrivateKey: failed") rc2
         return (BSI.BS fout actualLen)
 
 nidToCurve :: CInt -> Maybe ECCurve
