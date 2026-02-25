@@ -73,7 +73,7 @@ cmacInit key
       return (Left (InvalidInput "cmacInit: key must be 16 or 32 bytes"))
   | otherwise = mask_ $ runExceptT $ do
       ctx <- liftIO c_CMAC_CTX_new
-        >>= \p -> nonNull p (AllocationFailure "cmacInit: CMAC_CTX_new returned NULL")
+        >>= nonNull (AllocationFailure "cmacInit: CMAC_CTX_new returned NULL")
       let cipher = case cipherForKeyLen (BS.length key) of
             Just c  -> c
             Nothing -> error "cmacInit: unreachable (key length already checked)"
@@ -105,6 +105,6 @@ cmacFinalize (CMACCtx fptr) =
     ExceptT $ withForeignPtr fout $ \outPtr -> runExceptT $
       allocaE $ \outLenPtr -> do
         rc <- liftIO $ c_CMAC_Final ctx (castPtr outPtr) outLenPtr
-        checkRC rc (OperationFailed "cmacFinalize: CMAC_Final failed")
+        checkRC (OperationFailed "cmacFinalize: CMAC_Final failed") rc
         actualLen <- liftIO $ fromIntegral <$> peek outLenPtr
         return (BSI.BS fout actualLen)

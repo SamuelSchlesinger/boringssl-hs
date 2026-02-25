@@ -113,22 +113,22 @@ encrypt algo key iv plaintext
             ctx <- bracketE c_EVP_CIPHER_CTX_new
                             (\c -> when (c /= nullPtr) (c_EVP_CIPHER_CTX_free c))
                             $ \c -> do
-              _ <- nonNull c (AllocationFailure "encrypt: EVP_CIPHER_CTX_new failed")
+              _ <- nonNull (AllocationFailure "encrypt: EVP_CIPHER_CTX_new failed") c
               liftIO clearBoringSSLError
               rc1 <- liftIO $ c_EVP_EncryptInit_ex c (cipherPtr algo) nullPtr keyPtr ivPtr
-              checkRCError rc1 "encrypt: EncryptInit failed"
+              checkRCError "encrypt: EncryptInit failed" rc1
               allocaE $ \updateLenPtr -> allocaE $ \finalLenPtr -> do
                 liftIO $ poke updateLenPtr 0
                 liftIO $ poke finalLenPtr 0
                 rc2 <- liftIO $ c_EVP_EncryptUpdate_ex c (castPtr outPtr) updateLenPtr
                          (fromIntegral maxOutLen) inPtr inLen
-                checkRCError rc2 "encrypt: EncryptUpdate failed"
+                checkRCError "encrypt: EncryptUpdate failed" rc2
                 updateLen <- liftIO $ peek updateLenPtr
                 let remaining = fromIntegral maxOutLen - updateLen
                 rc3 <- liftIO $ c_EVP_EncryptFinal_ex2 c
                          (castPtr outPtr `plusPtr` fromIntegral updateLen)
                          finalLenPtr remaining
-                checkRCError rc3 "encrypt: EncryptFinal failed"
+                checkRCError "encrypt: EncryptFinal failed" rc3
                 finalLen <- liftIO $ peek finalLenPtr
                 return (fromIntegral (updateLen + finalLen))
             return ctx
@@ -157,22 +157,22 @@ decrypt algo key iv ciphertext
             ctx <- bracketE c_EVP_CIPHER_CTX_new
                             (\c -> when (c /= nullPtr) (c_EVP_CIPHER_CTX_free c))
                             $ \c -> do
-              _ <- nonNull c (AllocationFailure "decrypt: EVP_CIPHER_CTX_new failed")
+              _ <- nonNull (AllocationFailure "decrypt: EVP_CIPHER_CTX_new failed") c
               liftIO clearBoringSSLError
               rc1 <- liftIO $ c_EVP_DecryptInit_ex c (cipherPtr algo) nullPtr keyPtr ivPtr
-              checkRCError rc1 "decrypt: decryption failed"
+              checkRCError "decrypt: decryption failed" rc1
               allocaE $ \updateLenPtr -> allocaE $ \finalLenPtr -> do
                 liftIO $ poke updateLenPtr 0
                 liftIO $ poke finalLenPtr 0
                 rc2 <- liftIO $ c_EVP_DecryptUpdate_ex c (castPtr outPtr) updateLenPtr
                          (fromIntegral maxOutLen) inPtr inLen
-                checkRCError rc2 "decrypt: decryption failed"
+                checkRCError "decrypt: decryption failed" rc2
                 updateLen <- liftIO $ peek updateLenPtr
                 let remaining = fromIntegral maxOutLen - updateLen
                 rc3 <- liftIO $ c_EVP_DecryptFinal_ex2 c
                          (castPtr outPtr `plusPtr` fromIntegral updateLen)
                          finalLenPtr remaining
-                checkRCError rc3 "decrypt: decryption failed"
+                checkRCError "decrypt: decryption failed" rc3
                 finalLen <- liftIO $ peek finalLenPtr
                 return (fromIntegral (updateLen + finalLen))
             return ctx

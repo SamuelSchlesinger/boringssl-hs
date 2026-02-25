@@ -59,10 +59,10 @@ generateECKeyPair :: ECCurve -> IO (Either CryptoError ECKeyPair)
 generateECKeyPair curve = withBoundThread $ mask_ $ runExceptT $ do
   liftIO clearBoringSSLError
   kp <- liftIO (c_EC_KEY_new_by_curve_name (curveNID curve))
-    >>= \p -> nonNull p (AllocationFailure "generateECKeyPair: EC_KEY_new_by_curve_name failed")
+    >>= nonNull (AllocationFailure "generateECKeyPair: EC_KEY_new_by_curve_name failed")
   fptr <- liftIO $ newForeignPtr c_EC_KEY_free_funptr kp
   rc <- liftIO $ withForeignPtr fptr $ \k -> c_EC_KEY_generate_key k
-  checkRCError rc "generateECKeyPair: EC_KEY_generate_key failed"
+  checkRCError "generateECKeyPair: EC_KEY_generate_key failed" rc
   return (ECKeyPair curve fptr)
 
 ------------------------------------------------------------------------
@@ -73,19 +73,19 @@ generateECKeyPair curve = withBoundThread $ mask_ $ runExceptT $ do
 ecPublicKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
 ecPublicKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runExceptT $ do
   grp <- liftIO (c_EC_KEY_get0_group keyPtr)
-    >>= \p -> nonNull p (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_group returned NULL")
+    >>= nonNull (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_group returned NULL")
   pt <- liftIO (c_EC_KEY_get0_public_key keyPtr)
-    >>= \p -> nonNull p (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_public_key returned NULL")
+    >>= nonNull (OperationFailed "ecPublicKeyBytes: EC_KEY_get0_public_key returned NULL")
   -- POINT_CONVERSION_UNCOMPRESSED = 4
   -- First query the size by passing NULL buffer
   len <- liftIO $ c_EC_POINT_point2oct grp pt 4 nullPtr 0 nullPtr
-  checkRC (if len == 0 then 0 else 1)
-    (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct size query failed")
+  checkRC (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct size query failed")
+    (if len == 0 then 0 else 1)
   bsFptr <- liftIO $ BSI.mallocByteString (fromIntegral len)
   written <- liftIO $ withForeignPtr bsFptr $ \ptr ->
     c_EC_POINT_point2oct grp pt 4 (castPtr ptr) len nullPtr
-  checkRC (if written == 0 then 0 else 1)
-    (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct failed")
+  checkRC (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct failed")
+    (if written == 0 then 0 else 1)
   return (BSI.BS bsFptr (fromIntegral written))
 
 -- | Get the private key as fixed-width big-endian bytes, zero-padded to the
@@ -95,15 +95,15 @@ ecPublicKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runE
 ecPrivateKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
 ecPrivateKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runExceptT $ do
   grp <- liftIO (c_EC_KEY_get0_group keyPtr)
-    >>= \p -> nonNull p (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_group returned NULL")
+    >>= nonNull (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_group returned NULL")
   degree <- liftIO $ c_EC_GROUP_get_degree grp
   let numBytes = fromIntegral ((degree + 7) `div` 8) :: Int
   bn <- liftIO (c_EC_KEY_get0_private_key keyPtr)
-    >>= \p -> nonNull p (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_private_key returned NULL")
+    >>= nonNull (OperationFailed "ecPrivateKeyBytes: EC_KEY_get0_private_key returned NULL")
   bsFptr <- liftIO $ BSI.mallocByteString numBytes
   rc <- liftIO $ withForeignPtr bsFptr $ \ptr ->
     c_BN_bn2bin_padded (castPtr ptr) (fromIntegral numBytes) bn
-  checkRC rc (OperationFailed "ecPrivateKeyBytes: BN_bn2bin_padded failed")
+  checkRC (OperationFailed "ecPrivateKeyBytes: BN_bn2bin_padded failed") rc
   return (BSI.BS bsFptr numBytes)
 
 ------------------------------------------------------------------------
@@ -115,56 +115,56 @@ ecKeyPairFromPrivateBytes :: ECCurve -> ByteString -> IO (Either CryptoError ECK
 ecKeyPairFromPrivateBytes curve privBytes = withBoundThread $ mask_ $ runExceptT $ do
   liftIO clearBoringSSLError
   kp <- liftIO (c_EC_KEY_new_by_curve_name (curveNID curve))
-    >>= \p -> nonNull p (AllocationFailure "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed")
+    >>= nonNull (AllocationFailure "ecKeyPairFromPrivateBytes: EC_KEY_new_by_curve_name failed")
   fptr <- liftIO $ newForeignPtr c_EC_KEY_free_funptr kp
   ExceptT $ withForeignPtr fptr $ \k -> runExceptT $ do
     setPrivateKey k
     derivePublicKey k
     rc <- liftIO $ c_EC_KEY_check_key k
-    checkRC rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_check_key failed")
+    checkRC (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_check_key failed") rc
   return (ECKeyPair curve fptr)
   where
     setPrivateKey kp = ExceptT $
       withByteString privBytes $ \privPtr privLen -> runExceptT $ do
         b <- liftIO (c_BN_bin2bn privPtr privLen nullPtr)
-          >>= \p -> nonNull p (AllocationFailure "ecKeyPairFromPrivateBytes: BN_bin2bn failed")
+          >>= nonNull (AllocationFailure "ecKeyPairFromPrivateBytes: BN_bin2bn failed")
         rc <- liftIO $ c_EC_KEY_set_private_key kp b
         liftIO $ c_BN_free b
-        checkRC rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed")
+        checkRC (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed") rc
 
     derivePublicKey kp = do
       grp <- liftIO (c_EC_KEY_get0_group kp)
-        >>= \p -> nonNull p (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_get0_group returned NULL")
+        >>= nonNull (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_get0_group returned NULL")
       bn <- liftIO (c_EC_KEY_get0_private_key kp)
-        >>= \p -> nonNull p (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_get0_private_key returned NULL")
+        >>= nonNull (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_get0_private_key returned NULL")
       pt <- liftIO (c_EC_POINT_new grp)
-        >>= \p -> nonNull p (AllocationFailure "ecKeyPairFromPrivateBytes: EC_POINT_new failed")
+        >>= nonNull (AllocationFailure "ecKeyPairFromPrivateBytes: EC_POINT_new failed")
       flip finallyE (c_EC_POINT_free pt) $ do
         rc <- liftIO $ c_EC_POINT_mul grp pt bn nullPtr nullPtr nullPtr
-        checkRC rc (OperationFailed "ecKeyPairFromPrivateBytes: EC_POINT_mul failed")
+        checkRC (OperationFailed "ecKeyPairFromPrivateBytes: EC_POINT_mul failed") rc
         rc2 <- liftIO $ c_EC_KEY_set_public_key kp pt
-        checkRC rc2 (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_public_key failed")
+        checkRC (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_public_key failed") rc2
 
 -- | Parse an EC public key from uncompressed point bytes.
 ecPublicKeyFromBytes :: ECCurve -> ByteString -> IO (Either CryptoError ECPublicKey)
 ecPublicKeyFromBytes curve pubBytes = withBoundThread $ mask_ $ runExceptT $ do
   liftIO clearBoringSSLError
   kp <- liftIO (c_EC_KEY_new_by_curve_name (curveNID curve))
-    >>= \p -> nonNull p (AllocationFailure "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed")
+    >>= nonNull (AllocationFailure "ecPublicKeyFromBytes: EC_KEY_new_by_curve_name failed")
   fptr <- liftIO $ newForeignPtr c_EC_KEY_free_funptr kp
   ExceptT $ withForeignPtr fptr $ \k -> runExceptT $ do
     grp <- liftIO (c_EC_KEY_get0_group k)
-      >>= \p -> nonNull p (OperationFailed "ecPublicKeyFromBytes: EC_KEY_get0_group returned NULL")
+      >>= nonNull (OperationFailed "ecPublicKeyFromBytes: EC_KEY_get0_group returned NULL")
     pt <- liftIO (c_EC_POINT_new grp)
-      >>= \p -> nonNull p (AllocationFailure "ecPublicKeyFromBytes: EC_POINT_new failed")
+      >>= nonNull (AllocationFailure "ecPublicKeyFromBytes: EC_POINT_new failed")
     flip finallyE (c_EC_POINT_free pt) $ ExceptT $
       withByteString pubBytes $ \bufPtr bufLen -> runExceptT $ do
         rc <- liftIO $ c_EC_POINT_oct2point grp pt bufPtr bufLen nullPtr
-        checkRC rc (DecodeError "ecPublicKeyFromBytes: EC_POINT_oct2point failed")
+        checkRC (DecodeError "ecPublicKeyFromBytes: EC_POINT_oct2point failed") rc
         rc2 <- liftIO $ c_EC_KEY_set_public_key k pt
-        checkRC rc2 (OperationFailed "ecPublicKeyFromBytes: EC_KEY_set_public_key failed")
+        checkRC (OperationFailed "ecPublicKeyFromBytes: EC_KEY_set_public_key failed") rc2
         rc3 <- liftIO $ c_EC_KEY_check_key k
-        checkRC rc3 (DecodeError "ecPublicKeyFromBytes: EC_KEY_check_key failed (point not on curve)")
+        checkRC (DecodeError "ecPublicKeyFromBytes: EC_KEY_check_key failed (point not on curve)") rc3
   return (ECPublicKey fptr)
 
 ------------------------------------------------------------------------

@@ -98,7 +98,7 @@ aeadPtr ChaChaPoly = c_EVP_hpke_chacha20_poly1305
 generateKey :: HPKEKEM -> IO (Either CryptoError HPKEKey)
 generateKey kem = withBoundThread $ mask_ $ runExceptT $ do
   key <- liftIO c_EVP_HPKE_KEY_new
-    >>= \p -> nonNull p (AllocationFailure "generateKey: EVP_HPKE_KEY_new failed")
+    >>= nonNull (AllocationFailure "generateKey: EVP_HPKE_KEY_new failed")
   liftIO clearBoringSSLError
   rc <- liftIO $ c_EVP_HPKE_KEY_generate key (kemPtr kem)
   if rc == 1
@@ -113,7 +113,7 @@ generateKey kem = withBoundThread $ mask_ $ runExceptT $ do
 keyFromPrivate :: HPKEKEM -> ByteString -> IO (Either CryptoError HPKEKey)
 keyFromPrivate kem privBytes = withBoundThread $ mask_ $ runExceptT $ do
   key <- liftIO c_EVP_HPKE_KEY_new
-    >>= \p -> nonNull p (AllocationFailure "keyFromPrivate: EVP_HPKE_KEY_new failed")
+    >>= nonNull (AllocationFailure "keyFromPrivate: EVP_HPKE_KEY_new failed")
   liftIO clearBoringSSLError
   rc <- liftIO $ withByteString privBytes $ \privPtr privLen ->
     c_EVP_HPKE_KEY_init key (kemPtr kem) privPtr privLen
@@ -151,7 +151,7 @@ setupSender :: HPKEKEM -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
             -> IO (Either CryptoError (ByteString, SenderCtx))
 setupSender kem kdf aead peerPubKey info = withBoundThread $ mask_ $ runExceptT $ do
   ctx <- liftIO c_EVP_HPKE_CTX_new
-    >>= \p -> nonNull p (AllocationFailure "setupSender: EVP_HPKE_CTX_new failed")
+    >>= nonNull (AllocationFailure "setupSender: EVP_HPKE_CTX_new failed")
   let maxEncLen = evpHPKEMaxEncLength
   encFPtr <- liftIO $ BSI.mallocByteString maxEncLen
   allocaE $ \encLenPtr -> do
@@ -177,7 +177,7 @@ setupRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                -> IO (Either CryptoError RecipientCtx)
 setupRecipient (HPKEKey keyFPtr) kdf aead enc info = withBoundThread $ mask_ $ runExceptT $ do
   ctx <- liftIO c_EVP_HPKE_CTX_new
-    >>= \p -> nonNull p (AllocationFailure "setupRecipient: EVP_HPKE_CTX_new failed")
+    >>= nonNull (AllocationFailure "setupRecipient: EVP_HPKE_CTX_new failed")
   liftIO clearBoringSSLError
   rc <- liftIO $ withForeignPtr keyFPtr $ \key ->
     withByteString enc $ \encPtr encLen ->
@@ -201,7 +201,7 @@ setupAuthSender :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                 -> IO (Either CryptoError (ByteString, SenderCtx))
 setupAuthSender (HPKEKey authKeyFPtr) kdf aead peerPubKey info = withBoundThread $ mask_ $ runExceptT $ do
   ctx <- liftIO c_EVP_HPKE_CTX_new
-    >>= \p -> nonNull p (AllocationFailure "setupAuthSender: EVP_HPKE_CTX_new failed")
+    >>= nonNull (AllocationFailure "setupAuthSender: EVP_HPKE_CTX_new failed")
   let maxEncLen = evpHPKEMaxEncLength
   encFPtr <- liftIO $ BSI.mallocByteString maxEncLen
   allocaE $ \encLenPtr -> do
@@ -230,7 +230,7 @@ setupAuthRecipient :: HPKEKey -> HPKEKDF -> HPKEAEAD -> ByteString -> ByteString
                    -> ByteString -> IO (Either CryptoError RecipientCtx)
 setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = withBoundThread $ mask_ $ runExceptT $ do
   ctx <- liftIO c_EVP_HPKE_CTX_new
-    >>= \p -> nonNull p (AllocationFailure "setupAuthRecipient: EVP_HPKE_CTX_new failed")
+    >>= nonNull (AllocationFailure "setupAuthRecipient: EVP_HPKE_CTX_new failed")
   liftIO clearBoringSSLError
   rc <- liftIO $ withForeignPtr keyFPtr $ \key ->
     withByteString enc $ \encPtr encLen ->
@@ -293,7 +293,7 @@ senderExport (SenderCtx lock fptr) context len = withBoundThread $
     rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
       withByteString context $ \ctxPtr ctxLen ->
         c_EVP_HPKE_CTX_export ctx (castPtr outPtr) (fromIntegral len) ctxPtr ctxLen
-    checkRCError rc "senderExport: EVP_HPKE_CTX_export failed"
+    checkRCError "senderExport: EVP_HPKE_CTX_export failed" rc
     return (BSI.BS outFPtr len)
 
 -- | Export a secret from the recipient context.
@@ -309,5 +309,5 @@ recipientExport (RecipientCtx lock fptr) context len = withBoundThread $
     rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
       withByteString context $ \ctxPtr ctxLen ->
         c_EVP_HPKE_CTX_export ctx (castPtr outPtr) (fromIntegral len) ctxPtr ctxLen
-    checkRCError rc "recipientExport: EVP_HPKE_CTX_export failed"
+    checkRCError "recipientExport: EVP_HPKE_CTX_export failed" rc
     return (BSI.BS outFPtr len)
