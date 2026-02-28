@@ -7,12 +7,35 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.MLDSA hiding (secureBytesToByteString, secureBytesLength)
+import Crypto.BoringSSL.SLHDSA (createSecureBytes)
 
 tests :: TestTree
 tests = testGroup "MLDSA"
   [ variantTests MLDSA44
   , variantTests MLDSA65
   , variantTests MLDSA87
+  , testGroup "privateKeyFromSeed"
+    [ testCase "reconstruct key from seed and sign/verify (ML-DSA-65)" $ do
+        Right (pubEncoded, seed, _priv) <- generateKeyPair MLDSA65
+        case privateKeyFromSeed MLDSA65 seed of
+          Left err -> assertFailure ("privateKeyFromSeed failed: " ++ show err)
+          Right priv2 -> do
+            let msg = BS8.pack "seed round-trip"
+                ctx = BS.empty
+            Right sig <- sign priv2 msg ctx
+            Right pubKey <- return (publicKeyFromBytes MLDSA65 pubEncoded)
+            assertBool "signature from seed-derived key should verify" (verify pubKey sig msg ctx)
+    , testCase "reject wrong seed length (31 bytes)" $ do
+        wrongSeed <- createSecureBytes 31 $ \_ -> return ()
+        case privateKeyFromSeed MLDSA65 wrongSeed of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject 31-byte seed"
+    , testCase "reject wrong seed length (33 bytes)" $ do
+        wrongSeed <- createSecureBytes 33 $ \_ -> return ()
+        case privateKeyFromSeed MLDSA65 wrongSeed of
+          Left _  -> return ()
+          Right _ -> assertFailure "should reject 33-byte seed"
+    ]
   , testGroup "Constants"
     [ testCase "ML-DSA-44 public key bytes" $
         publicKeyBytes MLDSA44 @?= 1312

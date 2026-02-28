@@ -11,9 +11,17 @@ import Crypto.BoringSSL.SLHDSA
 tests :: TestTree
 tests = testGroup "SLHDSA"
   [ variantTests SHA2_128S
-  -- SHAKE_256F signing is extremely slow (~seconds), so we only test SHA2_128S
-  -- in CI. Uncomment for thorough local testing:
-  -- , variantTests SHAKE_256F
+  , testGroup "SHAKE_256F"
+    [ testCase "sign/verify round-trip" $ do
+        (pub, priv) <- generateKeyPair SHAKE_256F
+        let msg = BS8.pack "SHAKE-256F test"
+            ctx = BS.empty
+        case sign SHAKE_256F priv msg ctx of
+          Left err -> assertFailure ("sign returned Left: " ++ show err)
+          Right sig -> do
+            BS.length sig @?= signatureBytes SHAKE_256F
+            assertBool "signature should be valid" (verify SHAKE_256F pub sig msg ctx)
+    ]
   , testGroup "Constants"
     [ testCase "SHA2-128S public key bytes" $
         publicKeyBytes SHA2_128S @?= 32

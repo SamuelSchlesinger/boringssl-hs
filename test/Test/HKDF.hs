@@ -59,6 +59,18 @@ tests = testGroup "HKDF"
         let okm = unwrap $ hkdfExpand SHA1 (secureBytesToByteString prk) info 42
         Base16.encode (secureBytesToByteString okm) @?= Base16.encode expectedOKM
         Base16.encode (secureBytesToByteString (unwrap $ hkdf SHA1 ikm salt info 42)) @?= Base16.encode expectedOKM
+    , testCase "Test Case 5 (SHA-1, long inputs)" $ do
+        let ikm  = hex "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f"
+            salt = hex "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf"
+            info = hex "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff"
+            expectedOKM = hex "0bd770a74d1160f7c9f12cd5912a06ebff6adcae899d92191fe4305673ba2ffe8fa3f1a4e5ad79f3f334b3b202b2173c486ea37ce3d397ed034c7f9dfeb15c5e927336d0441f4c4300e2cff0d0900b52d3b4"
+        Base16.encode (secureBytesToByteString (unwrap $ hkdf SHA1 ikm salt info 82)) @?= Base16.encode expectedOKM
+    , testCase "Test Case 6 (SHA-1, zero-length salt and info)" $ do
+        let ikm  = hex "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+            salt = BS.empty
+            info = BS.empty
+            expectedOKM = hex "0ac1af7002b3d761d1e55298da9d0506b9ae52057220a306e07b6b87e8df21d0ea00033de03984d34918"
+        Base16.encode (secureBytesToByteString (unwrap $ hkdf SHA1 ikm salt info 42)) @?= Base16.encode expectedOKM
     , testCase "Test Case 7 (SHA-1, empty salt and info)" $ do
         let ikm  = hex "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
             salt = BS.empty

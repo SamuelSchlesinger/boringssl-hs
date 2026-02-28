@@ -70,6 +70,14 @@ tests = testGroup "ECDSA"
         Right valid <- ecdsaVerifyP1363 pub digest badSig
         assertBool "bad P1363 signature should not verify" (not valid)
     ]
+  , testCase "cross-key verification failure (P-256)" $ do
+      Right kpA <- generateKeyPair P256
+      Right kpB <- generateKeyPair P256
+      Right pubB <- ecPublicKeyOfPair kpB
+      let digest = hashSHA256 "cross-key test"
+      Right sig <- ecdsaSign kpA digest
+      Right valid <- ecdsaVerify pubB digest sig
+      assertBool "signature from key A should not verify with key B" (not valid)
   , testGroup "P-384"
     [ testCase "sign/verify round-trip" $ do
         Right kp <- generateKeyPair P384

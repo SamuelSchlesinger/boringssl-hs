@@ -38,6 +38,14 @@ tests = testGroup "MLKEM"
         -- (with overwhelming probability)
         assertBool "different keypairs should differ"
           (secureBytesToByteString ss1 /= secureBytesToByteString ss2 || ct1 /= ct2)
+    , testCase "wrong-key decapsulation produces different shared secret" $ do
+        (_pub1, priv1) <- generateKeyPair MLKEM768
+        (_pub2, priv2) <- generateKeyPair MLKEM768
+        (ct, ssEncap) <- encapsulate priv1
+        -- Decapsulate with the wrong private key (implicit rejection)
+        Right ssWrong <- decapsulate priv2 ct
+        assertBool "wrong-key decapsulation should produce different shared secret"
+          (secureBytesToByteString ssWrong /= secureBytesToByteString ssEncap)
     ]
   , testGroup "ML-KEM-768 encapsulatePublic"
     [ testCase "encapsulatePublic round-trip" $ do
