@@ -104,7 +104,7 @@ generateKeyPair variant = withBoundThread $ mask_ $ do
   let pkSize = publicKeyBytes variant
       skSize = privateKeySize variant
   pubFPtr <- BSI.mallocByteString pkSize
-  skFPtr <- mallocForeignPtrBytes skSize
+  skFPtr <- mallocSecureForeignPtr skSize
   allocaBytes mldsaSeedBytes $ \seedPtr ->
     withForeignPtr pubFPtr $ \pubPtr ->
       withForeignPtr skFPtr $ \skPtr -> do
@@ -132,7 +132,7 @@ privateKeyFromSeed variant seed
       Left (InvalidInput "privateKeyFromSeed: seed must be 32 bytes")
   | otherwise = unsafePerformIO $ mask_ $ do
       let skSize = privateKeySize variant
-      skFPtr <- mallocForeignPtrBytes skSize
+      skFPtr <- mallocSecureForeignPtr skSize
       rc <- withForeignPtr skFPtr $ \skPtr ->
         withSecureBytes seed $ \seedPtr seedLen ->
           case variant of
@@ -184,6 +184,9 @@ publicKeyFromBytes variant bs
 
 -- | Sign a message with an ML-DSA private key.
 -- Takes a private key, message, and context string.
+-- The @context@ parameter provides domain separation per FIPS 204;
+-- pass an empty 'ByteString' for general-purpose use. The same context
+-- must be supplied when verifying the signature.
 sign :: MLDSAPrivateKey -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 sign (MLDSAPrivateKey variant skFPtr) msg context = withBoundThread $ do
   let sigSize = signatureBytes variant
@@ -207,6 +210,7 @@ sign (MLDSAPrivateKey variant skFPtr) msg context = withBoundThread $ do
 
 -- | Verify an ML-DSA signature (pure).
 -- Takes the public key, signature, message, and context.
+-- The @context@ must match the value used during signing.
 -- Returns True if the signature is valid.
 verify :: MLDSAPublicKey -> ByteString -> ByteString -> ByteString -> Bool
 verify (MLDSAPublicKey variant pkFPtr) sig msg context = unsafePerformIO $

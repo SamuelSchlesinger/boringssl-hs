@@ -31,12 +31,17 @@ import Crypto.BoringSSL.Internal.ECKey
 import qualified Crypto.BoringSSL.RSA as RSA
 import qualified Crypto.BoringSSL.Ed25519 as Ed25519
 
--- | A private key of any supported type.
+-- | A private key of any supported type, as detected by 'loadPrivateKeyDER'
+-- or 'loadPrivateKeyPEM'.
 data SomePrivateKey
   = SomeRSAKey RSA.RSAKeyPair
+    -- ^ An RSA private key.
   | SomeECKey ECCurve ECKeyPair
+    -- ^ An EC private key on the given curve (P-256, P-384, or P-521).
   | SomeEd25519Key Ed25519.PrivateKey
+    -- ^ An Ed25519 signing key.
   | SomeX25519Key ByteString
+    -- ^ An X25519 private key (32 raw bytes).
 
 instance Show SomePrivateKey where
   show (SomeRSAKey _)       = "SomeRSAKey <key>"

@@ -249,6 +249,8 @@ setupAuthRecipient (HPKEKey keyFPtr) kdf aead enc info senderPubKey = withBoundT
 
 -- | Encrypt and authenticate plaintext using the sender context.
 -- This is stateful: each call advances the internal sequence number.
+-- The recipient must call 'recipientOpen' in the same order that
+-- 'senderSeal' was called, otherwise decryption will fail.
 -- Thread-safe: concurrent calls are serialized.
 senderSeal :: SenderCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 senderSeal (SenderCtx lock fptr) plaintext ad = withBoundThread $
@@ -266,6 +268,8 @@ senderSeal (SenderCtx lock fptr) plaintext ad = withBoundThread $
 
 -- | Decrypt and verify ciphertext using the recipient context.
 -- This is stateful: each call advances the internal sequence number.
+-- Messages must be processed in the same order as 'senderSeal' produced
+-- them, otherwise decryption will fail.
 -- Thread-safe: concurrent calls are serialized.
 recipientOpen :: RecipientCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 recipientOpen (RecipientCtx lock fptr) ciphertext ad = withBoundThread $

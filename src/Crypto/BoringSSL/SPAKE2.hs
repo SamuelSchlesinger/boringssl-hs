@@ -2,6 +2,11 @@
 --
 -- Allows two parties sharing a password to agree on a shared key.
 -- An attacker can only test one password guess per protocol execution.
+--
+-- Each 'SPAKE2Ctx' supports exactly one key exchange: call
+-- 'generateMessage' once, then 'processMessage' once.
+-- After 'processMessage' returns, the context is consumed and should
+-- not be reused. Create a new context for each exchange.
 module Crypto.BoringSSL.SPAKE2
   ( -- * Types
     Role(..)
@@ -35,7 +40,9 @@ import Crypto.BoringSSL.Internal.FFI.SPAKE2
 import Crypto.BoringSSL.Internal.SecureBytes
 
 -- | The role in a SPAKE2 exchange. The two parties must use different roles.
-data Role = Alice | Bob
+data Role
+  = Alice  -- ^ The initiator role.
+  | Bob    -- ^ The responder role.
   deriving (Eq, Show)
 
 -- | A SPAKE2 context. Each context must be used for exactly one exchange.

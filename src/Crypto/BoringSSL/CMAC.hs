@@ -60,7 +60,8 @@ cmac key msg
               else return (Right (BSI.BS fptr cmacTagSize))
 {-# NOINLINE cmac #-}
 
--- | An incremental CMAC context.
+-- | An incremental AES-CMAC context. Automatically freed by GC.
+-- Not thread-safe: do not share a single context across threads.
 newtype CMACCtx = CMACCtx (ForeignPtr CMAC_CTX)
 
 -- | Initialize a streaming CMAC context.

@@ -9,6 +9,11 @@ module Crypto.BoringSSL.XWing
   , publicFromPrivate
   , encapsulate
   , decapsulate
+    -- * Secure memory
+  , SecureBytes
+  , secureBytesToByteString
+  , secureBytesLength
+    -- * Error type
   , CryptoError(..)
   ) where
 
@@ -22,6 +27,7 @@ import Foreign.Ptr
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.XWing
+import Crypto.BoringSSL.Internal.SecureBytes
 
 -- | An opaque X-Wing private key. Wraps the large @XWING_private_key@ struct
 -- via a 'ForeignPtr'. The struct contents must never leave the address space.
@@ -35,7 +41,7 @@ instance Show XWingPrivateKey where
 generateKeyPair :: IO (Either CryptoError (ByteString, XWingPrivateKey))
 generateKeyPair = mask_ $ do
   pubFPtr <- BSI.mallocByteString xwingPublicKeyBytes
-  skFPtr <- mallocForeignPtrBytes xwingPrivateKeyStructSize
+  skFPtr <- mallocSecureForeignPtr xwingPrivateKeyStructSize
   rc <- withForeignPtr pubFPtr $ \pubPtr ->
     withForeignPtr skFPtr $ \skPtr ->
       c_XWING_generate_key (castPtr pubPtr) (castPtr skPtr)
@@ -56,35 +62,37 @@ publicFromPrivate (XWingPrivateKey skFPtr) = do
 
 -- | Encapsulate a shared secret using an encoded public key.
 -- Takes a 1216-byte encoded public key and returns
--- @Right (ciphertext, sharedSecret)@ on success.
-encapsulate :: ByteString -> IO (Either CryptoError (ByteString, ByteString))
+-- @Right (ciphertext, sharedSecret)@ on success. The shared secret is
+-- returned as 'SecureBytes' and zeroized on finalization.
+encapsulate :: ByteString -> IO (Either CryptoError (ByteString, SecureBytes))
 encapsulate encodedPublicKey
   | BS.length encodedPublicKey /= xwingPublicKeyBytes =
       return (Left (InvalidInput "XWing.encapsulate: public key must be 1216 bytes"))
   | otherwise = do
       ctFPtr <- BSI.mallocByteString xwingCiphertextBytes
-      ssFPtr <- BSI.mallocByteString xwingSharedSecretBytes
+      ssSB <- createSecureBytes xwingSharedSecretBytes $ \_ -> return ()
       rc <- withForeignPtr ctFPtr $ \ctPtr ->
-        withForeignPtr ssFPtr $ \ssPtr ->
+        withSecureBytes ssSB $ \ssPtr _ ->
           withByteString encodedPublicKey $ \pkPtr _pkLen ->
             c_XWING_encap (castPtr ctPtr) (castPtr ssPtr) pkPtr
       if rc == 1
         then return (Right ( BSI.BS ctFPtr xwingCiphertextBytes
-                           , BSI.BS ssFPtr xwingSharedSecretBytes
+                           , ssSB
                            ))
         else return (Left (OperationFailed "XWing.encapsulate: encapsulation failed"))
 
 -- | Decapsulate a shared secret from a ciphertext using a private key.
-decapsulate :: XWingPrivateKey -> ByteString -> IO (Either CryptoError ByteString)
+-- The shared secret is returned as 'SecureBytes' and zeroized on finalization.
+decapsulate :: XWingPrivateKey -> ByteString -> IO (Either CryptoError SecureBytes)
 decapsulate (XWingPrivateKey skFPtr) ciphertext
   | BS.length ciphertext /= xwingCiphertextBytes =
       return (Left (InvalidInput "XWing.decapsulate: ciphertext must be 1120 bytes"))
   | otherwise = do
-      ssFPtr <- BSI.mallocByteString xwingSharedSecretBytes
-      rc <- withForeignPtr ssFPtr $ \ssPtr ->
+      ssSB <- createSecureBytes xwingSharedSecretBytes $ \_ -> return ()
+      rc <- withSecureBytes ssSB $ \ssPtr _ ->
         withByteString ciphertext $ \ctPtr _ctLen ->
           withForeignPtr skFPtr $ \skPtr ->
             c_XWING_decap (castPtr ssPtr) ctPtr (castPtr skPtr)
       if rc == 1
-        then return (Right (BSI.BS ssFPtr xwingSharedSecretBytes))
+        then return (Right ssSB)
         else return (Left (OperationFailed "XWing.decapsulate: decapsulation failed"))

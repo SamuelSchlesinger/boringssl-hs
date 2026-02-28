@@ -11,6 +11,10 @@
 -- __WARNING:__ ECB mode ('AES128ECB', 'AES256ECB') is insecure for
 -- general-purpose encryption. Identical plaintext blocks produce identical
 -- ciphertext blocks, leaking patterns.
+--
+-- __IV requirements:__ For CBC modes, IVs must be unpredictable (use random
+-- generation). For CTR and OFB modes, IVs (nonces) must be unique per key —
+-- reusing an IV under the same key compromises confidentiality.
 module Crypto.BoringSSL.Cipher
   ( -- * Algorithms
     CipherAlgorithm(..)
@@ -38,8 +42,14 @@ import Crypto.BoringSSL.Internal.FFI.Cipher
 
 -- | Supported symmetric cipher algorithms.
 data CipherAlgorithm
-  = AES128CBC | AES256CBC
-  | AES128CTR | AES256CTR
+  = AES128CBC
+    -- ^ AES-128 in CBC mode with PKCS#7 padding.
+  | AES256CBC
+    -- ^ AES-256 in CBC mode with PKCS#7 padding.
+  | AES128CTR
+    -- ^ AES-128 in CTR (counter) mode. No padding; stream cipher.
+  | AES256CTR
+    -- ^ AES-256 in CTR (counter) mode. No padding; stream cipher.
   | AES128ECB
     -- ^ __WARNING:__ ECB mode is insecure for general-purpose encryption.
     -- Identical plaintext blocks produce identical ciphertext blocks, leaking
@@ -48,7 +58,10 @@ data CipherAlgorithm
     -- ^ __WARNING:__ ECB mode is insecure for general-purpose encryption.
     -- Identical plaintext blocks produce identical ciphertext blocks, leaking
     -- patterns. Consider using CBC, CTR, or preferably AEAD instead.
-  | AES128OFB | AES256OFB
+  | AES128OFB
+    -- ^ AES-128 in OFB mode. No padding; stream cipher.
+  | AES256OFB
+    -- ^ AES-256 in OFB mode. No padding; stream cipher.
   deriving (Eq, Show)
 
 -- | Get the C cipher pointer.

@@ -13,6 +13,8 @@ module Crypto.BoringSSL.AEAD
     -- * Encryption and decryption
   , seal
   , open
+    -- * Nonce generation
+  , generateNonce
     -- * Algorithm properties
   , keyLength
   , nonceLength
@@ -32,6 +34,7 @@ import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI
+import Crypto.BoringSSL.Internal.FFI.Random (c_RAND_bytes)
 
 -- | Supported AEAD algorithms.
 data AEADAlgorithm
@@ -147,6 +150,24 @@ open (AEADCtx algo lock fptr) nonce ciphertext ad
       checkRCError "open failed: authentication error" rc
       actualLen <- liftIO $ peek outLenPtr
       return (BSI.BS outFPtr (fromIntegral actualLen))
+
+-- | Generate a cryptographically random nonce of the correct length
+-- for the given AEAD algorithm using BoringSSL's @RAND_bytes@.
+--
+-- For AES-GCM, each nonce must be unique for a given key. Using this
+-- function with a 96-bit (12-byte) nonce space gives a comfortable
+-- collision margin for up to ~2^32 messages, but callers encrypting
+-- very large numbers of messages under the same key should use a
+-- counter-based scheme or a nonce-misuse-resistant algorithm like
+-- AES-GCM-SIV instead.
+generateNonce :: AEADAlgorithm -> IO ByteString
+generateNonce algo = do
+  let n = nonceLength algo
+  createByteString n $ \ptr -> do
+    rc <- c_RAND_bytes ptr (fromIntegral n)
+    if rc /= 1
+      then fail "generateNonce: RAND_bytes failed"
+      else return ()
 
 -- | Query the expected key length for an AEAD algorithm.
 keyLength :: AEADAlgorithm -> Int

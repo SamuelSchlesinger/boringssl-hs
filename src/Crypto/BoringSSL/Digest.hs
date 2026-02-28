@@ -2,6 +2,16 @@
 --
 -- Supports SHA-1, SHA-2 (224\/256\/384\/512\/512-256), MD5, and BLAKE2b-256.
 -- Both one-shot hashing and incremental streaming APIs are provided.
+--
+-- __Algorithm security status:__
+--
+-- * __SHA-256, SHA-384, SHA-512, SHA-512\/256, SHA-224, BLAKE2b-256__ — safe
+--   for all uses including digital signatures and integrity.
+-- * __SHA-1__ — deprecated for digital signatures and certificate validation
+--   (NIST, since 2011). Acceptable for HMAC and non-collision-resistant uses.
+-- * __MD5__ — cryptographically broken. Provided only for legacy
+--   interoperability (e.g. existing protocol checksums). Do not use for
+--   signatures, integrity, or new designs.
 module Crypto.BoringSSL.Digest
   ( -- * Algorithms
     Algorithm(..)
@@ -22,11 +32,13 @@ module Crypto.BoringSSL.Digest
   , digestUpdate
   , digestFinalize
   , digestCopy
+    -- * Error type
+  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
-import Data.IORef
+import Control.Concurrent.MVar
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
@@ -35,6 +47,7 @@ import Control.Exception (mask_)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer
+import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Digest
 import Crypto.BoringSSL.Internal.Digest (Algorithm(..))
 import qualified Crypto.BoringSSL.Internal.Digest as ID
@@ -67,6 +80,10 @@ hashSHA512 bs = unsafePerformIO $
 {-# NOINLINE hashSHA512 #-}
 
 -- | Compute the SHA-1 hash of a ByteString (20 bytes).
+--
+-- __WARNING:__ SHA-1 is deprecated for digital signatures and certificate
+-- validation. It remains acceptable for HMAC and non-collision-resistant
+-- applications. For new designs, prefer 'hashSHA256' or stronger.
 hashSHA1 :: ByteString -> ByteString
 hashSHA1 bs = unsafePerformIO $
   withByteString bs $ \dataPtr dataLen ->
@@ -99,6 +116,11 @@ hashSHA512_256 bs = unsafePerformIO $
 {-# NOINLINE hashSHA512_256 #-}
 
 -- | Compute the MD5 hash of a ByteString (16 bytes).
+--
+-- __WARNING:__ MD5 is cryptographically broken — practical collision attacks
+-- exist. Provided only for legacy interoperability (e.g. existing protocol
+-- checksums) and HMAC. Do not use for digital signatures or integrity in new
+-- designs.
 hashMD5 :: ByteString -> ByteString
 hashMD5 bs = unsafePerformIO $
   withByteString bs $ \dataPtr dataLen ->
@@ -121,79 +143,77 @@ digestSize = ID.digestSize
 -- Streaming digest
 
 -- | An incremental digest context.
--- The 'IORef' 'Bool' tracks whether the context has been finalized
--- ('True' means finalized; further operations will fail).
-data DigestCtx = DigestCtx !(IORef Bool) !(ForeignPtr EVP_MD_CTX)
+-- Thread-safe: concurrent operations are serialized via an internal 'MVar'.
+-- Once finalized, further operations will fail.
+data DigestCtx = DigestCtx !(MVar (Maybe (ForeignPtr EVP_MD_CTX)))
 
 -- | Initialize a streaming digest context for the given algorithm.
-digestInit :: Algorithm -> IO DigestCtx
+digestInit :: Algorithm -> IO (Either CryptoError DigestCtx)
 digestInit algo = mask_ $ do
   ctx <- c_EVP_MD_CTX_new
   if ctx == nullPtr
-    then fail "digestInit: EVP_MD_CTX_new returned NULL"
+    then return (Left (AllocationFailure "digestInit: EVP_MD_CTX_new returned NULL"))
     else do
       rc <- c_EVP_DigestInit_ex ctx (ID.evpMD algo) nullPtr
       if rc /= 1
         then do
           c_EVP_MD_CTX_free ctx
-          fail "digestInit: EVP_DigestInit_ex failed"
+          return (Left (OperationFailed "digestInit: EVP_DigestInit_ex failed"))
         else do
           fptr <- newForeignPtr c_EVP_MD_CTX_free_funptr ctx
-          ref <- newIORef False
-          return (DigestCtx ref fptr)
+          mv <- newMVar (Just fptr)
+          return (Right (DigestCtx mv))
 
 -- | Feed more data into the digest context.
-digestUpdate :: DigestCtx -> ByteString -> IO ()
-digestUpdate (DigestCtx ref fptr) bs = do
-  finalized <- readIORef ref
-  if finalized
-    then fail "digestUpdate: context already finalized"
-    else withForeignPtr fptr $ \ctx ->
+digestUpdate :: DigestCtx -> ByteString -> IO (Either CryptoError ())
+digestUpdate (DigestCtx mv) bs =
+  withMVar mv $ \mfptr -> case mfptr of
+    Nothing -> return (Left (OperationFailed "digestUpdate: context already finalized"))
+    Just fptr -> withForeignPtr fptr $ \ctx ->
       withByteString bs $ \dataPtr dataLen -> do
         rc <- c_EVP_DigestUpdate ctx dataPtr dataLen
         if rc /= 1
-          then fail "digestUpdate: EVP_DigestUpdate failed"
-          else return ()
+          then return (Left (OperationFailed "digestUpdate: EVP_DigestUpdate failed"))
+          else return (Right ())
 
 -- | Create a copy of a digest context. The copy is independent:
 -- updating or finalizing one does not affect the other.
-digestCopy :: DigestCtx -> IO DigestCtx
-digestCopy (DigestCtx srcRef srcFPtr) = do
-  finalized <- readIORef srcRef
-  if finalized
-    then fail "digestCopy: context already finalized"
-    else mask_ $
+digestCopy :: DigestCtx -> IO (Either CryptoError DigestCtx)
+digestCopy (DigestCtx mv) =
+  withMVar mv $ \mfptr -> case mfptr of
+    Nothing -> return (Left (OperationFailed "digestCopy: context already finalized"))
+    Just srcFPtr -> mask_ $
       withForeignPtr srcFPtr $ \srcCtx -> do
         dstCtx <- c_EVP_MD_CTX_new
         if dstCtx == nullPtr
-          then fail "digestCopy: EVP_MD_CTX_new returned NULL"
+          then return (Left (AllocationFailure "digestCopy: EVP_MD_CTX_new returned NULL"))
           else do
             rc <- c_EVP_MD_CTX_copy_ex dstCtx srcCtx
             if rc /= 1
               then do
                 c_EVP_MD_CTX_free dstCtx
-                fail "digestCopy: EVP_MD_CTX_copy_ex failed"
+                return (Left (OperationFailed "digestCopy: EVP_MD_CTX_copy_ex failed"))
               else do
                 dstFPtr <- newForeignPtr c_EVP_MD_CTX_free_funptr dstCtx
-                dstRef <- newIORef False
-                return (DigestCtx dstRef dstFPtr)
+                dstMv <- newMVar (Just dstFPtr)
+                return (Right (DigestCtx dstMv))
 
 -- | Finalize the digest and return the hash. Marks the context as
 -- finalized; any subsequent operation on this context will fail.
-digestFinalize :: DigestCtx -> IO ByteString
-digestFinalize (DigestCtx ref fptr) = do
-  finalized <- readIORef ref
-  if finalized
-    then fail "digestFinalize: context already finalized"
-    else do
-      writeIORef ref True
-      withForeignPtr fptr $ \ctx -> do
+digestFinalize :: DigestCtx -> IO (Either CryptoError ByteString)
+digestFinalize (DigestCtx mv) =
+  modifyMVar mv $ \mfptr -> case mfptr of
+    Nothing -> return (Nothing, Left (OperationFailed "digestFinalize: context already finalized"))
+    Just fptr -> do
+      result <- withForeignPtr fptr $ \ctx -> do
         -- EVP_MAX_MD_SIZE is 64 (for SHA-512)
         fout <- BSI.mallocByteString 64
-        actualLen <- withForeignPtr fout $ \outPtr ->
+        withForeignPtr fout $ \outPtr ->
           alloca $ \outLenPtr -> do
             rc <- c_EVP_DigestFinal_ex ctx (castPtr outPtr) outLenPtr
             if rc /= 1
-              then fail "digestFinalize: EVP_DigestFinal_ex failed"
-              else fromIntegral <$> peek outLenPtr
-        return (BSI.BS fout actualLen)
+              then return (Left (OperationFailed "digestFinalize: EVP_DigestFinal_ex failed"))
+              else do
+                actualLen <- fromIntegral <$> peek outLenPtr
+                return (Right (BSI.BS fout actualLen))
+      return (Nothing, result)

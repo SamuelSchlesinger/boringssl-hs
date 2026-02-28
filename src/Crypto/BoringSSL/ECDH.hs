@@ -1,7 +1,23 @@
 -- | Elliptic curve Diffie-Hellman key agreement.
 --
--- Supports P-256 and P-384 curves using the FIPS-compliant
--- ECDH variant that hashes the shared point.
+-- Supports P-256, P-384, and P-521 curves.
+--
+-- Two variants are provided:
+--
+-- * 'ecdhComputeSecret' — FIPS-compliant variant that hashes the shared
+--   point's x-coordinate through SHA-256, SHA-384, or SHA-512 (selected by
+--   output length). This is appropriate for most applications.
+-- * 'ecdhComputeRawSecret' — returns the raw x-coordinate of the shared
+--   point, zero-padded to the curve field size. Use this when you need to
+--   feed the shared secret into your own KDF (e.g. HKDF).
+--
+-- __Cofactor and point validation:__ BoringSSL validates peer public keys
+-- (rejecting the point at infinity and points not on the curve). For
+-- prime-order curves (P-256, P-384, P-521) cofactor multiplication is not
+-- needed since the cofactor is 1.
+--
+-- __Forward secrecy:__ Generate ephemeral key pairs per session with
+-- 'generateECKeyPair' to achieve forward secrecy.
 module Crypto.BoringSSL.ECDH
   ( -- * Key types
     ECCurve(..)
@@ -16,6 +32,7 @@ module Crypto.BoringSSL.ECDH
     -- * Key serialization
   , ecPublicKeyBytes
   , ecPrivateKeyBytes
+  , ecPrivateKeySecureBytes
   , ecKeyPairFromPrivateBytes
   , ecPublicKeyFromBytes
     -- * Secure memory

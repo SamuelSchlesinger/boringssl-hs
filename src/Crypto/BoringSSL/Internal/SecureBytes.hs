@@ -24,6 +24,7 @@ module Crypto.BoringSSL.Internal.SecureBytes
   , withSecureBytes
   , secureBytesLength
   , secureBytesEq
+  , mallocSecureForeignPtr
   ) where
 
 import Data.ByteString (ByteString)
@@ -83,6 +84,18 @@ withSecureBytes (SecureBytes n fptr) f =
 -- | Return the length (in bytes) of the secure buffer.
 secureBytesLength :: SecureBytes -> Int
 secureBytesLength = sbLength
+
+-- | Allocate @n@ bytes of memory that will be zeroized via
+-- @OPENSSL_cleanse@ and then freed when the 'ForeignPtr' is finalized.
+-- Use this for opaque C structs (e.g. post-quantum private key structs)
+-- that contain secret material and need to be cleansed on GC.
+mallocSecureForeignPtr :: Int -> IO (ForeignPtr ())
+mallocSecureForeignPtr n = do
+  ptr <- mallocBytes n
+  fillBytes ptr 0 n
+  FC.newForeignPtr ptr $ do
+    c_OPENSSL_cleanse ptr (fromIntegral n)
+    free ptr
 
 -- | Constant-time equality comparison using BoringSSL's @CRYPTO_memcmp@.
 -- Returns 'False' immediately (non-constant-time) if lengths differ,

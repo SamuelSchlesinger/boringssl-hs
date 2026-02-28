@@ -114,7 +114,10 @@ withOutputBuffer maxLen action errCtx = do
     rc <- liftIO $ withForeignPtr outFPtr $ \outPtr -> action outPtr outLenPtr
     checkRCError errCtx rc
     actualLen <- liftIO $ peek outLenPtr
-    return (BSI.BS outFPtr (fromIntegral actualLen))
+    let actual = fromIntegral actualLen
+    if actual > maxLen
+      then throwE (OperationFailed (errCtx ++ ": output length exceeds buffer"))
+      else return (BSI.BS outFPtr actual)
 
 -- | Check a three-way verify return code: 1 = valid, 0 = invalid,
 -- other = internal error (consults the BoringSSL error queue).

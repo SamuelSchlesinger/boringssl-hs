@@ -150,9 +150,9 @@ prop_hashDifferentInputs algo (NonEmptyBS a) (NonEmptyBS b) =
 
 prop_streamingMatchesOneShot :: Algorithm -> ArbitraryBS -> Property
 prop_streamingMatchesOneShot algo (ArbitraryBS bs) = ioProperty $ do
-  ctx <- Digest.digestInit algo
-  Digest.digestUpdate ctx bs
-  streamResult <- Digest.digestFinalize ctx
+  Right ctx <- Digest.digestInit algo
+  Right () <- Digest.digestUpdate ctx bs
+  Right streamResult <- Digest.digestFinalize ctx
   let oneShotResult = Digest.hash algo bs
   return (streamResult === oneShotResult)
 
@@ -160,9 +160,9 @@ prop_streamingChunked :: Algorithm -> ArbitraryBS -> Property
 prop_streamingChunked algo (ArbitraryBS bs) =
   forAll (splitIntoChunks bs) $ \chunks ->
     ioProperty $ do
-      ctx <- Digest.digestInit algo
-      mapM_ (Digest.digestUpdate ctx) chunks
-      streamResult <- Digest.digestFinalize ctx
+      Right ctx <- Digest.digestInit algo
+      mapM_ (\chunk -> do Right () <- Digest.digestUpdate ctx chunk; return ()) chunks
+      Right streamResult <- Digest.digestFinalize ctx
       let oneShotResult = Digest.hash algo bs
       return (streamResult === oneShotResult)
 

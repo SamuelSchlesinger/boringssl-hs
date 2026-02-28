@@ -2,6 +2,24 @@
 --
 -- Supports PKCS#1 v1.5 and PSS signing, and OAEP encryption.
 -- Key serialization uses DER-encoded PKCS#1 format.
+--
+-- __Key size guidance:__
+--
+-- * 2048 bits is the minimum accepted by this library (and by NIST SP 800-131A
+--   through 2030).
+-- * 3072 bits provides ~128-bit security and is recommended for new
+--   applications.
+-- * 4096 bits is appropriate when long-term key durability matters.
+--
+-- __Signature scheme selection:__
+--
+-- * Prefer 'rsaSignPSS' \/ 'rsaVerifyPSS' (RSA-PSS) over PKCS#1 v1.5
+--   signatures. PSS has a security proof in the random-oracle model.
+-- * PKCS#1 v1.5 signatures are provided for interoperability with legacy
+--   protocols but are not recommended for new designs.
+-- * For encryption, use 'rsaEncrypt' \/ 'rsaDecrypt' (OAEP). PKCS#1 v1.5
+--   encryption is __deprecated__ due to Bleichenbacher-style padding-oracle
+--   attacks.
 module Crypto.BoringSSL.RSA
   ( -- * Key types
     RSAKeyPair(..)
@@ -12,6 +30,7 @@ module Crypto.BoringSSL.RSA
   , publicKeyToBytes
   , publicKeyFromBytes
   , privateKeyToBytes
+  , privateKeyToSecureBytes
   , privateKeyFromBytes
     -- * Properties
   , rsaBits
@@ -31,6 +50,10 @@ module Crypto.BoringSSL.RSA
     -- * Public key properties
   , rsaPublicBits
   , rsaPublicSize
+    -- * Secure memory
+  , SecureBytes
+  , secureBytesToByteString
+  , secureBytesLength
     -- * Error type
   , CryptoError(..)
   ) where
@@ -46,6 +69,7 @@ import Control.Exception (mask, onException)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
+import Crypto.BoringSSL.Internal.SecureBytes
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.Digest (Algorithm(..))
 import qualified Crypto.BoringSSL.Internal.Digest as ID
@@ -124,6 +148,19 @@ privateKeyToBytes (RSAKeyPair fptr) = withBoundThread $
       checkRCError "privateKeyToBytes: RSA_private_key_to_bytes failed" rc
       liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
 
+-- | Serialize the private key to DER-encoded PKCS#1 format, returning
+-- 'SecureBytes' that will be zeroized on finalization.
+-- Prefer this over 'privateKeyToBytes' to avoid leaving private key
+-- material in unprotected memory.
+privateKeyToSecureBytes :: RSAKeyPair -> IO (Either CryptoError SecureBytes)
+privateKeyToSecureBytes (RSAKeyPair fptr) = withBoundThread $
+  withForeignPtr fptr $ \rsa -> runExceptT $
+    allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
+      liftIO clearBoringSSLError
+      rc <- liftIO $ c_RSA_private_key_to_bytes outPtrPtr outLenPtr rsa
+      checkRCError "privateKeyToSecureBytes: RSA_private_key_to_bytes failed" rc
+      liftIO $ packOpenSSLBufferSecure outPtrPtr outLenPtr
+
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
 privateKeyFromBytes :: ByteString -> IO (Either CryptoError RSAKeyPair)
 privateKeyFromBytes bs = withBoundThread $
@@ -145,6 +182,9 @@ rsaSize (RSAKeyPair fptr) = withForeignPtr fptr $ \rsa ->
   fromIntegral <$> c_RSA_size rsa
 
 -- | PKCS#1 v1.5 sign a pre-hashed digest.
+-- The @digest@ parameter must be the hash of the message produced by the
+-- hash function corresponding to @algo@ (e.g. if @algo@ is 'SHA256',
+-- pass the output of 'Crypto.BoringSSL.Digest.hashSHA256').
 -- Returns 'Left' if the algorithm has no NID (e.g. BLAKE2b256).
 rsaSign :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
 rsaSign _ algo _
@@ -167,6 +207,8 @@ rsaSign (RSAKeyPair fptr) algo digest = withBoundThread $ do
         return (BSI.BS outFPtr (fromIntegral actualLen))
 
 -- | PKCS#1 v1.5 verify a signature on a pre-hashed digest.
+-- The @digest@ must be the hash of the original message using the hash
+-- function matching @algo@.
 -- Returns @Left@ if the algorithm has no NID, or @Right False@ for invalid
 -- signatures, or @Right True@ for valid signatures.
 rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)
@@ -186,6 +228,9 @@ rsaVerify (RSAPublicKey fptr) algo digest sig = withBoundThread $ do
 
 -- | RSA-PSS sign a pre-hashed digest. Uses the same hash for MGF1
 -- and salt length equal to the digest size.
+--
+-- The @digest@ parameter must be the hash of the message produced by the
+-- hash function corresponding to @algo@.
 rsaSignPSS :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
 rsaSignPSS (RSAKeyPair fptr) algo digest = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
@@ -200,6 +245,8 @@ rsaSignPSS (RSAKeyPair fptr) algo digest = withBoundThread $
         "rsaSignPSS: failed"
 
 -- | RSA-PSS verify a signature on a pre-hashed digest.
+-- The @digest@ must be the hash of the original message using the hash
+-- function matching @algo@.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors.
 rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)

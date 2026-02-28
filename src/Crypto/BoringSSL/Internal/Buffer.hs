@@ -3,6 +3,7 @@ module Crypto.BoringSSL.Internal.Buffer
   , createByteString
   , createByteStringLen
   , packOpenSSLBuffer
+  , packOpenSSLBufferSecure
   , constTimeEq
   ) where
 
@@ -18,7 +19,9 @@ import Foreign.Marshal.Utils (fillBytes)
 import Foreign.Ptr
 import Foreign.Storable
 
-import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_free, c_CRYPTO_memcmp)
+import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_free, c_OPENSSL_cleanse, c_CRYPTO_memcmp)
+import Crypto.BoringSSL.Internal.SecureBytes (SecureBytes, createSecureBytes)
+import Foreign.Marshal.Utils (copyBytes)
 import System.IO.Unsafe (unsafePerformIO)
 
 -- | Use a ByteString as a C pointer and length. For empty ByteStrings,
@@ -77,6 +80,24 @@ packOpenSSLBuffer bufPtrPtr lenPtr = do
       len <- peek lenPtr
       BS.packCStringLen (castPtr bufPtr, fromIntegral len)
         `finally` c_OPENSSL_free bufPtr
+
+-- | Pack a buffer allocated by BoringSSL (via OPENSSL_malloc) into 'SecureBytes',
+-- cleansing and freeing the original buffer. Use for private key serialization.
+packOpenSSLBufferSecure :: Ptr (Ptr CUChar) -> Ptr CSize -> IO SecureBytes
+packOpenSSLBufferSecure bufPtrPtr lenPtr = do
+  bufPtr <- peek bufPtrPtr
+  len <- peek lenPtr
+  let n = fromIntegral len
+  sb <- createSecureBytes n $ \dstPtr ->
+    if bufPtr == nullPtr
+      then return ()
+      else copyBytes (castPtr dstPtr) (castPtr bufPtr) n
+  if bufPtr /= nullPtr
+    then do
+      c_OPENSSL_cleanse bufPtr len
+      c_OPENSSL_free bufPtr
+    else return ()
+  return sb
 
 -- | Constant-time equality comparison for ByteStrings of equal length.
 -- Uses BoringSSL's CRYPTO_memcmp to avoid timing side-channel attacks.

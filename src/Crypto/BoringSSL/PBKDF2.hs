@@ -1,7 +1,25 @@
--- | PBKDF2 password-based key derivation.
+-- | PBKDF2 password-based key derivation (RFC 2898 \/ NIST SP 800-132).
 --
--- Derives key material from a password and salt using iterated
--- HMAC, as specified in RFC 2898.
+-- Derives key material from a password and salt using iterated HMAC.
+--
+-- __Iteration count guidance:__
+--
+-- * OWASP (2023) recommends a minimum of 600,000 iterations with SHA-256,
+--   or 210,000 with SHA-512.
+-- * The iteration count should be as high as your application can tolerate
+--   (targeting ~100ms–500ms of wall-clock time for interactive logins).
+-- * Increase iterations over time as hardware improves.
+--
+-- __Salt requirements:__
+--
+-- * Use a cryptographically random salt of at least 16 bytes.
+-- * Each password should have a unique salt; never reuse salts across users
+--   or password changes.
+--
+-- __Algorithm choice:__ For new applications that can choose freely,
+-- consider 'Crypto.BoringSSL.Scrypt.scrypt' which offers stronger resistance
+-- to GPU\/ASIC attacks due to its memory-hard design. PBKDF2 is appropriate
+-- when FIPS compliance or protocol interoperability is required.
 module Crypto.BoringSSL.PBKDF2
   ( pbkdf2
     -- * Secure memory
@@ -13,11 +31,11 @@ module Crypto.BoringSSL.PBKDF2
   ) where
 
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Unsafe as BSU
 import Data.Word (Word32)
 import Foreign.Ptr
 import System.IO.Unsafe (unsafePerformIO)
 
+import Crypto.BoringSSL.Internal.Buffer (withByteString)
 import Crypto.BoringSSL.Internal.Digest (Algorithm(..))
 import qualified Crypto.BoringSSL.Internal.Digest as ID
 import Crypto.BoringSSL.Internal.Error
@@ -36,13 +54,13 @@ pbkdf2 algo password salt iterations keyLen
   | iterations > fromIntegral (maxBound :: Word32) =
       Left (InvalidInput "pbkdf2: iterations exceeds uint32 maximum")
   | otherwise = unsafePerformIO $
-  BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
-    BSU.unsafeUseAsCStringLen salt $ \(saltPtr, saltLen) -> do
+  withByteString password $ \passPtr passLen ->
+    withByteString salt $ \saltPtr saltLen -> do
       sb <- createSecureBytes keyLen $ \_ -> return ()
       rc <- withSecureBytes sb $ \outPtr _ ->
         c_PKCS5_PBKDF2_HMAC
-                passPtr (fromIntegral passLen)
-                (castPtr saltPtr) (fromIntegral saltLen)
+                (castPtr passPtr) passLen
+                saltPtr saltLen
                 (fromIntegral iterations) (ID.evpMD algo)
                 (fromIntegral keyLen) (castPtr outPtr)
       if rc /= 1

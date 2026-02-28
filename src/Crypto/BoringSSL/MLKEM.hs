@@ -26,7 +26,7 @@ import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
 import Control.Exception (mask_)
 import Foreign.ForeignPtr
-import Foreign.Marshal.Alloc
+import Foreign.Marshal.Alloc (allocaBytes)
 import Foreign.Ptr
 
 import Crypto.BoringSSL.Internal.Buffer
@@ -63,7 +63,7 @@ generateKeyPair MLKEM768 = mask_ $ do
   let pkSize = mlkem768PublicKeyBytes
       skSize = mlkem768PrivateKeySize
   pubFPtr <- BSI.mallocByteString pkSize
-  skFPtr <- mallocForeignPtrBytes skSize
+  skFPtr <- mallocSecureForeignPtr skSize
   withForeignPtr pubFPtr $ \pubPtr ->
     withForeignPtr skFPtr $ \skPtr ->
       c_MLKEM768_generate_key (castPtr pubPtr) nullPtr (castPtr skPtr)
@@ -73,7 +73,7 @@ generateKeyPair MLKEM1024 = mask_ $ do
   let pkSize = mlkem1024PublicKeyBytes
       skSize = mlkem1024PrivateKeySize
   pubFPtr <- BSI.mallocByteString pkSize
-  skFPtr <- mallocForeignPtrBytes skSize
+  skFPtr <- mallocSecureForeignPtr skSize
   withForeignPtr pubFPtr $ \pubPtr ->
     withForeignPtr skFPtr $ \skPtr ->
       c_MLKEM1024_generate_key (castPtr pubPtr) nullPtr (castPtr skPtr)

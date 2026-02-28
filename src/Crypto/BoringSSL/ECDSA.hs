@@ -19,8 +19,13 @@ module Crypto.BoringSSL.ECDSA
     -- * Key serialization
   , ecPublicKeyBytes
   , ecPrivateKeyBytes
+  , ecPrivateKeySecureBytes
   , ecKeyPairFromPrivateBytes
   , ecPublicKeyFromBytes
+    -- * Secure memory
+  , SecureBytes
+  , secureBytesToByteString
+  , secureBytesLength
     -- * Error type
   , CryptoError(..)
   ) where
@@ -35,14 +40,21 @@ import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.ECKey
+import Crypto.BoringSSL.Internal.SecureBytes
 import Crypto.BoringSSL.Internal.FFI.ECDSA
 
--- | Generate a new EC key pair for ECDSA.
+-- | Generate a fresh random ECDSA key pair for the given curve.
+-- Uses BoringSSL's CSPRNG internally.
 generateKeyPair :: ECCurve -> IO (Either CryptoError ECKeyPair)
 generateKeyPair = generateECKeyPair
 
 -- | Sign a pre-hashed digest with ECDSA.
 -- Returns a DER-encoded ASN.1 signature.
+--
+-- The @digest@ parameter must be the output of a hash function (e.g.
+-- 'Crypto.BoringSSL.Digest.hashSHA256'), /not/ the raw message.
+-- Passing an unhashed message will produce a valid-looking but
+-- semantically incorrect signature that no standard verifier will accept.
 ecdsaSign :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 ecdsaSign kp digest = withBoundThread $
   withECKeyPair kp $ \keyPtr -> do
@@ -58,6 +70,8 @@ ecdsaSign kp digest = withBoundThread $
         return (BSI.BS fptr (fromIntegral sigLen))
 
 -- | Verify an ECDSA signature on a pre-hashed digest.
+-- The @digest@ must be the hash of the original message, matching
+-- the hash used during signing.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors (e.g. memory allocation failure).
 ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
@@ -73,6 +87,9 @@ ecdsaVerify pubKey digest sig = withBoundThread $
 -- signature (r || s, each zero-padded to the group order size).
 -- The signature length is always @2 * group_order_bytes@
 -- (64 for P-256, 96 for P-384, 132 for P-521).
+--
+-- The @digest@ parameter must be the output of a hash function (e.g.
+-- 'Crypto.BoringSSL.Digest.hashSHA256'), /not/ the raw message.
 ecdsaSignP1363 :: ECKeyPair -> ByteString -> IO (Either CryptoError ByteString)
 ecdsaSignP1363 kp digest = withBoundThread $
   withECKeyPair kp $ \keyPtr -> do
@@ -84,6 +101,8 @@ ecdsaSignP1363 kp digest = withBoundThread $
         "ecdsaSignP1363: ECDSA_sign_p1363 failed"
 
 -- | Verify a P1363 fixed-size ECDSA signature on a pre-hashed digest.
+-- The @digest@ must be the hash of the original message, matching
+-- the hash used during signing.
 -- Returns @Right True@ for valid, @Right False@ for invalid, or
 -- @Left@ for internal errors.
 ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)

@@ -1,7 +1,29 @@
--- | Scrypt password-based key derivation.
+-- | Scrypt password-based key derivation (RFC 7914).
 --
--- Derives key material from a password and salt using the scrypt
--- algorithm, as specified in RFC 7914.
+-- Derives key material from a password and salt using a memory-hard
+-- algorithm that resists GPU and ASIC attacks.
+--
+-- __Parameter selection:__
+--
+-- * @N@ — CPU\/memory cost. Must be a power of 2. Higher values use more
+--   memory (@N * r * 128@ bytes) and more CPU time. Typical values:
+--
+--     * @N = 2^14@ (16384) — interactive logins (~100ms)
+--     * @N = 2^17@ (131072) or higher — file encryption, key storage
+--
+-- * @r@ — block size. Controls sequential memory-read size. @r = 8@ is
+--   the standard recommendation from the original scrypt paper.
+-- * @p@ — parallelization factor. @p = 1@ is typical; increasing @p@
+--   multiplies CPU work without increasing peak memory.
+--
+-- __Salt requirements:__ Use a cryptographically random salt of at least
+-- 16 bytes. Each password should have a unique salt.
+--
+-- __Example (interactive login):__
+--
+-- @
+-- scrypt password salt 16384 8 1 32
+-- @
 module Crypto.BoringSSL.Scrypt
   ( scrypt
     -- * Secure memory
@@ -14,11 +36,11 @@ module Crypto.BoringSSL.Scrypt
 
 import Data.Bits ((.&.))
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Unsafe as BSU
 import Data.Word (Word64)
 import Foreign.Ptr (castPtr)
 import System.IO.Unsafe (unsafePerformIO)
 
+import Crypto.BoringSSL.Internal.Buffer (withByteString)
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Scrypt
 import Crypto.BoringSSL.Internal.SecureBytes
@@ -37,13 +59,13 @@ scrypt password salt n r p keyLen
   | r == 0 = Left (InvalidInput "scrypt: r must be > 0")
   | p == 0 = Left (InvalidInput "scrypt: p must be > 0")
   | otherwise = unsafePerformIO $
-  BSU.unsafeUseAsCStringLen password $ \(passPtr, passLen) ->
-    BSU.unsafeUseAsCStringLen salt $ \(saltPtr, saltLen) -> do
+  withByteString password $ \passPtr passLen ->
+    withByteString salt $ \saltPtr saltLen -> do
       sb <- createSecureBytes keyLen $ \_ -> return ()
       rc <- withSecureBytes sb $ \outPtr _ ->
         c_EVP_PBE_scrypt
-          passPtr (fromIntegral passLen)
-          (castPtr saltPtr) (fromIntegral saltLen)
+          (castPtr passPtr) passLen
+          saltPtr saltLen
           n r p 0
           (castPtr outPtr) (fromIntegral keyLen)
       if rc /= 1

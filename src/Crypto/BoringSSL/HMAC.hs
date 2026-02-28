@@ -54,7 +54,8 @@ hmac algo key msg = unsafePerformIO $
         Just actualLen -> return (Right (BSI.BS fptr actualLen))
 {-# NOINLINE hmac #-}
 
--- | An incremental HMAC context.
+-- | An incremental HMAC context. Automatically freed by GC.
+-- Not thread-safe: do not share a single context across threads.
 newtype HMACCtx = HMACCtx (ForeignPtr HMAC_CTX)
 
 -- | Initialize a streaming HMAC context.

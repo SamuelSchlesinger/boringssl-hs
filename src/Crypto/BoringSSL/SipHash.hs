@@ -1,6 +1,8 @@
 -- | SipHash-2-4, a fast secure pseudorandom function.
 --
--- Commonly used for hash table hashing. See
+-- SipHash is a keyed PRF designed for hash table hashing and short-input
+-- MACs. It is /not/ a collision-resistant hash function and is not suitable
+-- for digital signatures or content integrity. See
 -- <https://131002.net/siphash/siphash.pdf>.
 module Crypto.BoringSSL.SipHash
   ( sipHash24

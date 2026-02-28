@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+jobs:
+  build:
+    name: GHC ${{ matrix.ghc }} / ${{ matrix.os }}${{ matrix.flags != '' && format(' ({0})', matrix.flags) || '' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux — all GHC versions, no asm
+          - os: ubuntu-latest
+            ghc: '9.6'
+            flags: ''
+          - os: ubuntu-latest
+            ghc: '9.8'
+            flags: ''
+          - os: ubuntu-latest
+            ghc: '9.10'
+            flags: ''
+          # Linux — all GHC versions, with asm
+          - os: ubuntu-latest
+            ghc: '9.6'
+            flags: '-fasm'
+          - os: ubuntu-latest
+            ghc: '9.8'
+            flags: '-fasm'
+          - os: ubuntu-latest
+            ghc: '9.10'
+            flags: '-fasm'
+          # macOS — all GHC versions, no asm
+          - os: macos-latest
+            ghc: '9.6'
+            flags: ''
+          - os: macos-latest
+            ghc: '9.8'
+            flags: ''
+          - os: macos-latest
+            ghc: '9.10'
+            flags: ''
+          # macOS — all GHC versions, with asm
+          - os: macos-latest
+            ghc: '9.6'
+            flags: '-fasm'
+          - os: macos-latest
+            ghc: '9.8'
+            flags: '-fasm'
+          - os: macos-latest
+            ghc: '9.10'
+            flags: '-fasm'
+          # Windows — single GHC version, no asm
+          - os: windows-latest
+            ghc: '9.6'
+            flags: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up GHC ${{ matrix.ghc }}
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: ${{ matrix.ghc }}
+
+      - name: Cache cabal store
+        uses: actions/cache@v4
+        with:
+          path: ~/.cabal/store
+          key: ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ matrix.flags }}-${{ hashFiles('boringssl.cabal') }}
+          restore-keys: |
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-${{ matrix.flags }}-
+            ${{ runner.os }}-ghc-${{ matrix.ghc }}-
+
+      - name: Configure
+        run: cabal configure --enable-tests --enable-benchmarks ${{ matrix.flags }}
+
+      - name: Build dependencies
+        run: cabal build --only-dependencies
+
+      - name: Build
+        run: cabal build
+
+      - name: Run tests
+        run: cabal test --test-show-details=direct
+
+      - name: Check documentation
+        run: cabal haddock

@@ -5,6 +5,7 @@ module Crypto.BoringSSL.Internal.ECKey
   , generateECKeyPair
   , ecPublicKeyBytes
   , ecPrivateKeyBytes
+  , ecPrivateKeySecureBytes
   , ecKeyPairFromPrivateBytes
   , ecPublicKeyFromBytes
   , ecPublicKeyOfPair
@@ -23,6 +24,7 @@ import Control.Exception (mask_)
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
+import Crypto.BoringSSL.Internal.SecureBytes (SecureBytes, createSecureBytes, withSecureBytes)
 import Crypto.BoringSSL.Internal.FFI.Constants
 import Crypto.BoringSSL.Internal.FFI.ECKey
 
@@ -105,6 +107,24 @@ ecPrivateKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> run
     c_BN_bn2bin_padded (castPtr ptr) (fromIntegral numBytes) bn
   checkRC (OperationFailed "ecPrivateKeyBytes: BN_bn2bin_padded failed") rc
   return (BSI.BS bsFptr numBytes)
+
+-- | Get the private key as fixed-width big-endian 'SecureBytes', zero-padded
+-- to the full group order size. The memory will be zeroized on finalization.
+-- Prefer this over 'ecPrivateKeyBytes' to avoid leaving private key material
+-- in unprotected memory.
+ecPrivateKeySecureBytes :: ECKeyPair -> IO (Either CryptoError SecureBytes)
+ecPrivateKeySecureBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runExceptT $ do
+  grp <- liftIO (c_EC_KEY_get0_group keyPtr)
+    >>= nonNull (OperationFailed "ecPrivateKeySecureBytes: EC_KEY_get0_group returned NULL")
+  degree <- liftIO $ c_EC_GROUP_get_degree grp
+  let numBytes = fromIntegral ((degree + 7) `div` 8) :: Int
+  bn <- liftIO (c_EC_KEY_get0_private_key keyPtr)
+    >>= nonNull (OperationFailed "ecPrivateKeySecureBytes: EC_KEY_get0_private_key returned NULL")
+  ssSB <- liftIO $ createSecureBytes numBytes $ \_ -> return ()
+  rc <- liftIO $ withSecureBytes ssSB $ \ptr _ ->
+    c_BN_bn2bin_padded (castPtr ptr) (fromIntegral numBytes) bn
+  checkRC (OperationFailed "ecPrivateKeySecureBytes: BN_bn2bin_padded failed") rc
+  return ssSB
 
 ------------------------------------------------------------------------
 -- Key import

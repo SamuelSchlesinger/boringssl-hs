@@ -99,61 +99,61 @@ tests = testGroup "Digest"
     ]
   , testGroup "Streaming"
     [ testCase "SHA-256 streaming matches one-shot" $ do
-        ctx <- digestInit SHA256
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA256
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash SHA256 (BS8.pack "abc")
     , testCase "SHA-256 streaming multiple updates" $ do
-        ctx <- digestInit SHA256
-        digestUpdate ctx (BS8.pack "ab")
-        digestUpdate ctx (BS8.pack "c")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA256
+        Right () <- digestUpdate ctx (BS8.pack "ab")
+        Right () <- digestUpdate ctx (BS8.pack "c")
+        Right result <- digestFinalize ctx
         result @?= hash SHA256 (BS8.pack "abc")
     , testCase "SHA-512 streaming matches one-shot" $ do
-        ctx <- digestInit SHA512
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA512
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash SHA512 (BS8.pack "abc")
     , testCase "MD5 streaming matches one-shot" $ do
-        ctx <- digestInit MD5
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit MD5
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash MD5 (BS8.pack "abc")
     , testCase "SHA-1 streaming matches one-shot" $ do
-        ctx <- digestInit SHA1
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA1
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash SHA1 (BS8.pack "abc")
     , testCase "SHA-224 streaming matches one-shot" $ do
-        ctx <- digestInit SHA224
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA224
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash SHA224 (BS8.pack "abc")
     , testCase "SHA-384 streaming matches one-shot" $ do
-        ctx <- digestInit SHA384
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA384
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash SHA384 (BS8.pack "abc")
     , testCase "SHA-512/256 streaming matches one-shot" $ do
-        ctx <- digestInit SHA512_256
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA512_256
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash SHA512_256 (BS8.pack "abc")
     , testCase "BLAKE2b-256 streaming matches one-shot" $ do
-        ctx <- digestInit BLAKE2b256
-        digestUpdate ctx (BS8.pack "abc")
-        result <- digestFinalize ctx
+        Right ctx <- digestInit BLAKE2b256
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right result <- digestFinalize ctx
         result @?= hash BLAKE2b256 (BS8.pack "abc")
     , testCase "SHA-256 streaming with empty update" $ do
-        ctx <- digestInit SHA256
-        digestUpdate ctx BS.empty
-        digestUpdate ctx (BS8.pack "abc")
-        digestUpdate ctx BS.empty
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA256
+        Right () <- digestUpdate ctx BS.empty
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right () <- digestUpdate ctx BS.empty
+        Right result <- digestFinalize ctx
         result @?= hash SHA256 (BS8.pack "abc")
     , testCase "SHA-256 streaming empty input" $ do
-        ctx <- digestInit SHA256
-        result <- digestFinalize ctx
+        Right ctx <- digestInit SHA256
+        Right result <- digestFinalize ctx
         result @?= hash SHA256 BS.empty
     ]
   , testGroup "digestSize"
@@ -178,26 +178,26 @@ tests = testGroup "Digest"
     ]
   , testGroup "digestCopy"
     [ testCase "copy-then-finalize produces same result" $ do
-        ctx <- digestInit SHA256
-        digestUpdate ctx (BS8.pack "abc")
-        ctx2 <- digestCopy ctx
-        result1 <- digestFinalize ctx
-        result2 <- digestFinalize ctx2
+        Right ctx <- digestInit SHA256
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right ctx2 <- digestCopy ctx
+        Right result1 <- digestFinalize ctx
+        Right result2 <- digestFinalize ctx2
         result1 @?= result2
     , testCase "copy-then-diverge produces different results" $ do
-        ctx <- digestInit SHA256
-        digestUpdate ctx (BS8.pack "abc")
-        ctx2 <- digestCopy ctx
-        digestUpdate ctx (BS8.pack "def")
-        digestUpdate ctx2 (BS8.pack "xyz")
-        result1 <- digestFinalize ctx
-        result2 <- digestFinalize ctx2
+        Right ctx <- digestInit SHA256
+        Right () <- digestUpdate ctx (BS8.pack "abc")
+        Right ctx2 <- digestCopy ctx
+        Right () <- digestUpdate ctx (BS8.pack "def")
+        Right () <- digestUpdate ctx2 (BS8.pack "xyz")
+        Right result1 <- digestFinalize ctx
+        Right result2 <- digestFinalize ctx2
         assertBool "diverged contexts should produce different hashes" (result1 /= result2)
     , testCase "copy of fresh context works" $ do
-        ctx <- digestInit SHA256
-        ctx2 <- digestCopy ctx
-        digestUpdate ctx2 (BS8.pack "abc")
-        result <- digestFinalize ctx2
+        Right ctx <- digestInit SHA256
+        Right ctx2 <- digestCopy ctx
+        Right () <- digestUpdate ctx2 (BS8.pack "abc")
+        Right result <- digestFinalize ctx2
         result @?= hash SHA256 (BS8.pack "abc")
     ]
   , testGroup "large input"
@@ -206,10 +206,10 @@ tests = testGroup "Digest"
         BS.length (hash SHA256 big) @?= 32
     , testCase "SHA-256 1MB streaming matches one-shot" $ do
         let big = BS.replicate (1024 * 1024) 0x42
-        ctx <- digestInit SHA256
+        Right ctx <- digestInit SHA256
         -- feed in 4KB chunks
-        mapM_ (digestUpdate ctx) (chunksOf 4096 big)
-        result <- digestFinalize ctx
+        mapM_ (\chunk -> do Right () <- digestUpdate ctx chunk; return ()) (chunksOf 4096 big)
+        Right result <- digestFinalize ctx
         result @?= hash SHA256 big
     ]
   ]

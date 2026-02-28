@@ -22,8 +22,8 @@ tests = testGroup "XWing"
       Right (pub, priv) <- generateKeyPair
       Right (ct, ss1) <- encapsulate pub
       Right ss2 <- decapsulate priv ct
-      ss1 @?= ss2
-      BS.length ss1 @?= 32
+      secureBytesToByteString ss1 @?= secureBytesToByteString ss2
+      secureBytesLength ss1 @?= 32
 
   , testCase "ciphertext is 1120 bytes" $ do
       Right (pub, _priv) <- generateKeyPair
@@ -34,20 +34,23 @@ tests = testGroup "XWing"
       Right (pub, priv) <- generateKeyPair
       Right (ct1, ss1) <- encapsulate pub
       Right (ct2, ss2) <- encapsulate pub
-      assertBool "shared secrets should differ" (ss1 /= ss2)
+      let ss1bs = secureBytesToByteString ss1
+          ss2bs = secureBytesToByteString ss2
+      assertBool "shared secrets should differ" (ss1bs /= ss2bs)
       assertBool "ciphertexts should differ" (ct1 /= ct2)
       -- Both should still decapsulate correctly
       Right dec1 <- decapsulate priv ct1
       Right dec2 <- decapsulate priv ct2
-      dec1 @?= ss1
-      dec2 @?= ss2
+      secureBytesToByteString dec1 @?= ss1bs
+      secureBytesToByteString dec2 @?= ss2bs
 
   , testCase "wrong private key produces different shared secret" $ do
       Right (pub, _priv1) <- generateKeyPair
       Right (_pub2, priv2) <- generateKeyPair
       Right (ct, ss1) <- encapsulate pub
       Right ss2 <- decapsulate priv2 ct
-      assertBool "wrong key should produce different shared secret" (ss1 /= ss2)
+      assertBool "wrong key should produce different shared secret"
+        (secureBytesToByteString ss1 /= secureBytesToByteString ss2)
 
   , testCase "encapsulate rejects wrong-length public key" $ do
       result <- encapsulate "too short"

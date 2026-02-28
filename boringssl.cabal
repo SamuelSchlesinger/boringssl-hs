@@ -6,6 +6,7 @@ license-file:    LICENSE
 author:          Samuel Schlesinger
 maintainer:      sgschlesinger@gmail.com
 build-type:      Simple
+tested-with:     GHC == 9.6.7, GHC == 9.8.4, GHC == 9.10.1
 extra-doc-files: CHANGELOG.md
 category:        Cryptography
 synopsis:        Haskell bindings to Google's BoringSSL cryptography library
@@ -33,6 +34,19 @@ bug-reports:     https://github.com/haskell-cryptography/boringssl-hs/issues
 source-repository head
     type:     git
     location: https://github.com/haskell-cryptography/boringssl-hs.git
+
+flag asm
+  description:
+    Enable BoringSSL's hand-written assembly optimizations for improved
+    performance and constant-time guarantees on x86_64 and aarch64
+    (macOS and Linux). The assembly routines provide faster AES, SHA,
+    ChaCha20, Poly1305, P-256, Montgomery multiplication, and more.
+    They also offer stronger constant-time guarantees than the C
+    fallback implementations. On unsupported platforms (e.g. Windows),
+    the flag is silently ignored and the library falls back to
+    portable C implementations.
+  default: False
+  manual: True
 
 common warnings
     ghc-options: -Wall
@@ -116,13 +130,139 @@ library
                       cbits/constants.c
                       cbits/trust_token_helpers.c
                       cbits/x509_helpers.c
-    cc-options:       -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION
-    cxx-options:      -std=c++17 -DOPENSSL_NO_ASM -DBORINGSSL_IMPLEMENTATION -fno-exceptions -fno-rtti
+    cc-options:       -DBORINGSSL_IMPLEMENTATION
+    cxx-options:      -std=c++17 -DBORINGSSL_IMPLEMENTATION -fno-exceptions -fno-rtti
+    if flag(asm) && (os(darwin) || os(linux))
+      -- Pre-generated .S files contain preprocessor guards that select
+      -- the correct code for the target architecture (e.g.
+      -- #if defined(OPENSSL_AARCH64) && defined(__APPLE__)).
+      -- Including all files for the target OS is safe; files for
+      -- non-matching architectures compile to empty translation units.
+      c-sources:
+        -- Self-guarding non-generated assembly (ARM, x86_64 ADX)
+        third_party/boringssl/crypto/curve25519/asm/x25519-asm-arm.S
+        third_party/boringssl/crypto/hrss/asm/poly_rq_mul.S
+        third_party/boringssl/crypto/poly1305/poly1305_arm_asm.S
+        third_party/boringssl/third_party/fiat/asm/fiat_curve25519_adx_mul.S
+        third_party/boringssl/third_party/fiat/asm/fiat_curve25519_adx_square.S
+        third_party/boringssl/third_party/fiat/asm/fiat_p256_adx_mul.S
+        third_party/boringssl/third_party/fiat/asm/fiat_p256_adx_sqr.S
+      if os(darwin)
+        c-sources:
+          third_party/boringssl/gen/bcm/aes-gcm-avx2-x86_64-apple.S
+          third_party/boringssl/gen/bcm/aes-gcm-avx512-x86_64-apple.S
+          third_party/boringssl/gen/bcm/aesni-gcm-x86_64-apple.S
+          third_party/boringssl/gen/bcm/aesni-x86-apple.S
+          third_party/boringssl/gen/bcm/aesni-x86_64-apple.S
+          third_party/boringssl/gen/bcm/aesv8-armv8-apple.S
+          third_party/boringssl/gen/bcm/aesv8-gcm-armv8-apple.S
+          third_party/boringssl/gen/bcm/armv8-mont-apple.S
+          third_party/boringssl/gen/bcm/bn-586-apple.S
+          third_party/boringssl/gen/bcm/bn-armv8-apple.S
+          third_party/boringssl/gen/bcm/co-586-apple.S
+          third_party/boringssl/gen/bcm/ghash-neon-armv8-apple.S
+          third_party/boringssl/gen/bcm/ghash-ssse3-x86-apple.S
+          third_party/boringssl/gen/bcm/ghash-ssse3-x86_64-apple.S
+          third_party/boringssl/gen/bcm/ghash-x86-apple.S
+          third_party/boringssl/gen/bcm/ghash-x86_64-apple.S
+          third_party/boringssl/gen/bcm/ghashv8-armv8-apple.S
+          third_party/boringssl/gen/bcm/p256-armv8-asm-apple.S
+          third_party/boringssl/gen/bcm/p256-x86_64-asm-apple.S
+          third_party/boringssl/gen/bcm/p256_beeu-armv8-asm-apple.S
+          third_party/boringssl/gen/bcm/p256_beeu-x86_64-asm-apple.S
+          third_party/boringssl/gen/bcm/rdrand-x86_64-apple.S
+          third_party/boringssl/gen/bcm/rsaz-avx2-apple.S
+          third_party/boringssl/gen/bcm/sha1-586-apple.S
+          third_party/boringssl/gen/bcm/sha1-armv8-apple.S
+          third_party/boringssl/gen/bcm/sha1-x86_64-apple.S
+          third_party/boringssl/gen/bcm/sha256-586-apple.S
+          third_party/boringssl/gen/bcm/sha256-armv8-apple.S
+          third_party/boringssl/gen/bcm/sha256-x86_64-apple.S
+          third_party/boringssl/gen/bcm/sha512-586-apple.S
+          third_party/boringssl/gen/bcm/sha512-armv8-apple.S
+          third_party/boringssl/gen/bcm/sha512-x86_64-apple.S
+          third_party/boringssl/gen/bcm/vpaes-armv8-apple.S
+          third_party/boringssl/gen/bcm/vpaes-x86-apple.S
+          third_party/boringssl/gen/bcm/vpaes-x86_64-apple.S
+          third_party/boringssl/gen/bcm/x86-mont-apple.S
+          third_party/boringssl/gen/bcm/x86_64-mont-apple.S
+          third_party/boringssl/gen/bcm/x86_64-mont5-apple.S
+          third_party/boringssl/gen/crypto/aes128gcmsiv-x86_64-apple.S
+          third_party/boringssl/gen/crypto/chacha-armv8-apple.S
+          third_party/boringssl/gen/crypto/chacha-x86-apple.S
+          third_party/boringssl/gen/crypto/chacha-x86_64-apple.S
+          third_party/boringssl/gen/crypto/chacha20_poly1305_armv8-apple.S
+          third_party/boringssl/gen/crypto/chacha20_poly1305_x86_64-apple.S
+          third_party/boringssl/gen/crypto/md5-586-apple.S
+          third_party/boringssl/gen/crypto/md5-x86_64-apple.S
+      if os(linux)
+        c-sources:
+          third_party/boringssl/gen/bcm/aes-gcm-avx2-x86_64-linux.S
+          third_party/boringssl/gen/bcm/aes-gcm-avx512-x86_64-linux.S
+          third_party/boringssl/gen/bcm/aesni-gcm-x86_64-linux.S
+          third_party/boringssl/gen/bcm/aesni-x86-linux.S
+          third_party/boringssl/gen/bcm/aesni-x86_64-linux.S
+          third_party/boringssl/gen/bcm/aesv8-armv7-linux.S
+          third_party/boringssl/gen/bcm/aesv8-armv8-linux.S
+          third_party/boringssl/gen/bcm/aesv8-gcm-armv8-linux.S
+          third_party/boringssl/gen/bcm/armv4-mont-linux.S
+          third_party/boringssl/gen/bcm/armv8-mont-linux.S
+          third_party/boringssl/gen/bcm/bn-586-linux.S
+          third_party/boringssl/gen/bcm/bn-armv8-linux.S
+          third_party/boringssl/gen/bcm/bsaes-armv7-linux.S
+          third_party/boringssl/gen/bcm/co-586-linux.S
+          third_party/boringssl/gen/bcm/ghash-armv4-linux.S
+          third_party/boringssl/gen/bcm/ghash-neon-armv8-linux.S
+          third_party/boringssl/gen/bcm/ghash-ssse3-x86-linux.S
+          third_party/boringssl/gen/bcm/ghash-ssse3-x86_64-linux.S
+          third_party/boringssl/gen/bcm/ghash-x86-linux.S
+          third_party/boringssl/gen/bcm/ghash-x86_64-linux.S
+          third_party/boringssl/gen/bcm/ghashv8-armv7-linux.S
+          third_party/boringssl/gen/bcm/ghashv8-armv8-linux.S
+          third_party/boringssl/gen/bcm/p256-armv8-asm-linux.S
+          third_party/boringssl/gen/bcm/p256-x86_64-asm-linux.S
+          third_party/boringssl/gen/bcm/p256_beeu-armv8-asm-linux.S
+          third_party/boringssl/gen/bcm/p256_beeu-x86_64-asm-linux.S
+          third_party/boringssl/gen/bcm/rdrand-x86_64-linux.S
+          third_party/boringssl/gen/bcm/rsaz-avx2-linux.S
+          third_party/boringssl/gen/bcm/sha1-586-linux.S
+          third_party/boringssl/gen/bcm/sha1-armv4-large-linux.S
+          third_party/boringssl/gen/bcm/sha1-armv8-linux.S
+          third_party/boringssl/gen/bcm/sha1-x86_64-linux.S
+          third_party/boringssl/gen/bcm/sha256-586-linux.S
+          third_party/boringssl/gen/bcm/sha256-armv4-linux.S
+          third_party/boringssl/gen/bcm/sha256-armv8-linux.S
+          third_party/boringssl/gen/bcm/sha256-x86_64-linux.S
+          third_party/boringssl/gen/bcm/sha512-586-linux.S
+          third_party/boringssl/gen/bcm/sha512-armv4-linux.S
+          third_party/boringssl/gen/bcm/sha512-armv8-linux.S
+          third_party/boringssl/gen/bcm/sha512-x86_64-linux.S
+          third_party/boringssl/gen/bcm/vpaes-armv7-linux.S
+          third_party/boringssl/gen/bcm/vpaes-armv8-linux.S
+          third_party/boringssl/gen/bcm/vpaes-x86-linux.S
+          third_party/boringssl/gen/bcm/vpaes-x86_64-linux.S
+          third_party/boringssl/gen/bcm/x86-mont-linux.S
+          third_party/boringssl/gen/bcm/x86_64-mont-linux.S
+          third_party/boringssl/gen/bcm/x86_64-mont5-linux.S
+          third_party/boringssl/gen/crypto/aes128gcmsiv-x86_64-linux.S
+          third_party/boringssl/gen/crypto/chacha-armv4-linux.S
+          third_party/boringssl/gen/crypto/chacha-armv8-linux.S
+          third_party/boringssl/gen/crypto/chacha-x86-linux.S
+          third_party/boringssl/gen/crypto/chacha-x86_64-linux.S
+          third_party/boringssl/gen/crypto/chacha20_poly1305_armv8-linux.S
+          third_party/boringssl/gen/crypto/chacha20_poly1305_x86_64-linux.S
+          third_party/boringssl/gen/crypto/md5-586-linux.S
+          third_party/boringssl/gen/crypto/md5-x86_64-linux.S
+    else
+      cc-options:   -DOPENSSL_NO_ASM
+      cxx-options:  -DOPENSSL_NO_ASM
     if os(darwin)
         extra-libraries: c++
     if os(linux)
         extra-libraries: stdc++ pthread
         cxx-options:     -D_XOPEN_SOURCE=700
+    if os(windows)
+        extra-libraries: stdc++
     cxx-sources:
         third_party/boringssl/crypto/aes/aes.cc
         third_party/boringssl/crypto/asn1/a_bitstr.cc
