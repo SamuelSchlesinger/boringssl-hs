@@ -128,7 +128,7 @@ main = do
       [ bench "HMAC-SHA-256 1KB" $ nf (unsafeUnwrap "hmac" . HMAC.hmac SHA256 "key") input1KB
       ]
     , bgroup "HKDF"
-      [ bench "HKDF-SHA-256 32B output" $ nf (\s -> unsafeUnwrap "hkdf" $ HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
+      [ bench "HKDF-SHA-256 32B output" $ nf (\s -> HKDF.secureBytesToByteString $ unsafeUnwrap "hkdf" $ HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
       ]
     , bgroup "Ed25519"
       [ bench "generateKeyPair" $ nfIO (Ed25519.generateKeyPair >>= \(p, _) -> return (Ed25519.publicKeyToBytes p))
