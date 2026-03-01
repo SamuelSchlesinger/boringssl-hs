@@ -137,7 +137,7 @@ main = do
       ]
     , bgroup "X25519"
       [ bench "generateKeyPair" $ nfIO (X25519.generateKeyPair >>= \(p, _) -> return (X25519.publicKeyToBytes p))
-      , bench "sharedSecret" $ nf (\pk -> unsafeUnwrap "x25519" $ X25519.computeSharedSecret x25519PrivA pk) x25519PubB
+      , bench "sharedSecret" $ nf (\pk -> X25519.secureBytesToByteString $ unsafeUnwrap "x25519" $ X25519.computeSharedSecret x25519PrivA pk) x25519PubB
       ]
     , bgroup "ECDSA"
       [ bench "P-256 sign" $ nfIO $ unwrapRight "s" =<< ECDSA.ecdsaSign ecdsaKeyPair digest256
@@ -171,6 +171,6 @@ main = do
           msgA <- unwrapRight "s" =<< SPAKE2.generateMessage ctxA "password"
           msgB <- unwrapRight "s" =<< SPAKE2.generateMessage ctxB "password"
           _ <- unwrapRight "s" =<< SPAKE2.processMessage ctxA msgB
-          unwrapRight "s" =<< SPAKE2.processMessage ctxB msgA
+          SPAKE2.secureBytesToByteString <$> (unwrapRight "s" =<< SPAKE2.processMessage ctxB msgA)
       ]
     ]
