@@ -66,8 +66,8 @@ getBoringSSLError = do
 
 collectErrors :: CUInt -> [String] -> IO [String]
 collectErrors code acc = do
-  msg <- allocaArray 256 $ \buf -> do
-    c_ERR_error_string_n code buf 256
+  msg <- allocaArray 512 $ \buf -> do
+    c_ERR_error_string_n code buf 512
     peekCString buf
   nextCode <- c_ERR_get_error
   if nextCode == 0

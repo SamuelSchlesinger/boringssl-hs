@@ -211,19 +211,23 @@ sign (MLDSAPrivateKey variant skFPtr) msg context = withBoundThread $ do
 -- | Verify an ML-DSA signature (pure).
 -- Takes the public key, signature, message, and context.
 -- The @context@ must match the value used during signing.
--- Returns True if the signature is valid.
-verify :: MLDSAPublicKey -> ByteString -> ByteString -> ByteString -> Bool
-verify (MLDSAPublicKey variant pkFPtr) sig msg context = unsafePerformIO $
-  withForeignPtr pkFPtr $ \pkPtr ->
-    withByteString sig $ \sigPtr sigLen ->
-      withByteString msg $ \msgPtr msgLen ->
-        withByteString context $ \ctxPtr ctxLen -> do
-          rc <- case variant of
-            MLDSA44 -> c_MLDSA44_verify (castPtr pkPtr)
-                         sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
-            MLDSA65 -> c_MLDSA65_verify (castPtr pkPtr)
-                         sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
-            MLDSA87 -> c_MLDSA87_verify (castPtr pkPtr)
-                         sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
-          return (rc == 1)
+-- Returns @Right True@ if the signature is valid, @Right False@ if invalid,
+-- or @Left@ for input validation errors (e.g. wrong signature length).
+verify :: MLDSAPublicKey -> ByteString -> ByteString -> ByteString -> Either CryptoError Bool
+verify (MLDSAPublicKey variant pkFPtr) sig msg context
+  | BS.length sig /= signatureBytes variant =
+      Left (InvalidInput "verify: incorrect signature length")
+  | otherwise = unsafePerformIO $
+      withForeignPtr pkFPtr $ \pkPtr ->
+        withByteString sig $ \sigPtr sigLen ->
+          withByteString msg $ \msgPtr msgLen ->
+            withByteString context $ \ctxPtr ctxLen -> do
+              rc <- case variant of
+                MLDSA44 -> c_MLDSA44_verify (castPtr pkPtr)
+                             sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
+                MLDSA65 -> c_MLDSA65_verify (castPtr pkPtr)
+                             sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
+                MLDSA87 -> c_MLDSA87_verify (castPtr pkPtr)
+                             sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
+              return (Right (rc == 1))
 {-# NOINLINE verify #-}

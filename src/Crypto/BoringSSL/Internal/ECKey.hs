@@ -81,13 +81,15 @@ ecPublicKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runE
   -- POINT_CONVERSION_UNCOMPRESSED = 4
   -- First query the size by passing NULL buffer
   len <- liftIO $ c_EC_POINT_point2oct grp pt 4 nullPtr 0 nullPtr
-  checkRC (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct size query failed")
-    (if len == 0 then 0 else 1)
+  if len == 0
+    then throwE (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct size query failed")
+    else pure ()
   bsFptr <- liftIO $ BSI.mallocByteString (fromIntegral len)
   written <- liftIO $ withForeignPtr bsFptr $ \ptr ->
     c_EC_POINT_point2oct grp pt 4 (castPtr ptr) len nullPtr
-  checkRC (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct failed")
-    (if written == 0 then 0 else 1)
+  if written == 0
+    then throwE (OperationFailed "ecPublicKeyBytes: EC_POINT_point2oct failed")
+    else pure ()
   return (BSI.BS bsFptr (fromIntegral written))
 
 -- | Get the private key as fixed-width big-endian bytes, zero-padded to the
@@ -149,7 +151,7 @@ ecKeyPairFromPrivateBytes curve privBytes = withBoundThread $ mask_ $ runExceptT
         b <- liftIO (c_BN_bin2bn privPtr privLen nullPtr)
           >>= nonNull (AllocationFailure "ecKeyPairFromPrivateBytes: BN_bin2bn failed")
         rc <- liftIO $ c_EC_KEY_set_private_key kp b
-        liftIO $ c_BN_free b
+        liftIO $ c_BN_clear_free b
         checkRC (OperationFailed "ecKeyPairFromPrivateBytes: EC_KEY_set_private_key failed") rc
 
     derivePublicKey kp = do

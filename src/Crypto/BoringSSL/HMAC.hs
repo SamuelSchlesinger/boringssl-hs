@@ -89,8 +89,7 @@ hmacUpdate (HMACCtx fptr) bs =
 hmacFinalize :: HMACCtx -> IO (Either CryptoError ByteString)
 hmacFinalize (HMACCtx fptr) =
   withForeignPtr fptr $ \ctx -> do
-    -- EVP_MAX_MD_SIZE is 64
-    fout <- BSI.mallocByteString 64
+    fout <- BSI.mallocByteString ID.evpMaxMdSize
     result <- withForeignPtr fout $ \outPtr ->
       alloca $ \outLenPtr -> do
         rc <- c_HMAC_Final ctx (castPtr outPtr) outLenPtr

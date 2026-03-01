@@ -20,7 +20,7 @@ tests = testGroup "SLHDSA"
           Left err -> assertFailure ("sign returned Left: " ++ show err)
           Right sig -> do
             BS.length sig @?= signatureBytes SHAKE_256F
-            assertBool "signature should be valid" (verify SHAKE_256F pub sig msg ctx)
+            verify SHAKE_256F pub sig msg ctx @?= Right True
     ]
   , testGroup "Constants"
     [ testCase "SHA2-128S public key bytes" $
@@ -53,7 +53,7 @@ variantTests variant = testGroup (show variant)
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig -> do
           BS.length sig @?= signatureBytes variant
-          assertBool "signature should be valid" (verify variant pub sig msg ctx)
+          verify variant pub sig msg ctx @?= Right True
 
   , testCase "sign/verify with context" $ do
       (pub, priv) <- generateKeyPair variant
@@ -62,8 +62,7 @@ variantTests variant = testGroup (show variant)
       case sign variant priv msg ctx of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig ->
-          assertBool "signature with context should be valid"
-            (verify variant pub sig msg ctx)
+          verify variant pub sig msg ctx @?= Right True
 
   , testCase "verify rejects tampered signature" $ do
       (pub, priv) <- generateKeyPair variant
@@ -73,8 +72,7 @@ variantTests variant = testGroup (show variant)
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig -> do
           let tampered = BS.cons (BS.head sig + 1) (BS.tail sig)
-          assertBool "tampered signature should be invalid"
-            (not (verify variant pub tampered msg ctx))
+          verify variant pub tampered msg ctx @?= Right False
 
   , testCase "verify rejects wrong message" $ do
       (pub, priv) <- generateKeyPair variant
@@ -83,8 +81,7 @@ variantTests variant = testGroup (show variant)
       case sign variant priv msg ctx of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig ->
-          assertBool "wrong message should fail"
-            (not (verify variant pub sig "different" ctx))
+          verify variant pub sig "different" ctx @?= Right False
 
   , testCase "verify rejects wrong context" $ do
       (pub, priv) <- generateKeyPair variant
@@ -94,8 +91,7 @@ variantTests variant = testGroup (show variant)
       case sign variant priv msg ctx1 of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig ->
-          assertBool "wrong context should fail"
-            (not (verify variant pub sig msg ctx2))
+          verify variant pub sig msg ctx2 @?= Right False
 
   , testCase "sign rejects wrong-length private key" $ do
       -- Create a SecureBytes of incorrect length (1 byte instead of privateKeyBytes)
@@ -106,6 +102,7 @@ variantTests variant = testGroup (show variant)
         Right _ -> assertFailure "sign should reject wrong-length private key"
 
   , testCase "verify rejects wrong-length public key" $ do
-      assertBool "wrong-length public key should fail"
-        (not (verify variant "short" "sig" "msg" ""))
+      case verify variant "short" "sig" "msg" "" of
+        Left _ -> return ()
+        Right _ -> assertFailure "should return Left for wrong-length public key"
   ]

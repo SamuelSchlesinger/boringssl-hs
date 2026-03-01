@@ -34,7 +34,7 @@ import qualified Foreign.Concurrent as FC
 import Foreign.ForeignPtr (ForeignPtr, withForeignPtr)
 import Foreign.Marshal.Alloc (mallocBytes, free)
 import Foreign.Marshal.Utils (fillBytes)
-import Foreign.Ptr (Ptr, castPtr)
+import Foreign.Ptr (Ptr, castPtr, nullPtr)
 import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.FFI.Memory (c_OPENSSL_cleanse, c_CRYPTO_memcmp)
@@ -55,6 +55,9 @@ data SecureBytes = SecureBytes
 createSecureBytes :: Int -> (Ptr CUChar -> IO ()) -> IO SecureBytes
 createSecureBytes n f = do
   ptr <- mallocBytes n
+  if ptr == nullPtr
+    then error "createSecureBytes: malloc failed (out of memory)"
+    else return ()
   fillBytes ptr 0 n          -- zero-init for safety
   f (castPtr ptr)
   -- Use Foreign.Concurrent.newForeignPtr so we can capture @n@ and @ptr@
@@ -92,6 +95,9 @@ secureBytesLength = sbLength
 mallocSecureForeignPtr :: Int -> IO (ForeignPtr ())
 mallocSecureForeignPtr n = do
   ptr <- mallocBytes n
+  if ptr == nullPtr
+    then error "mallocSecureForeignPtr: malloc failed (out of memory)"
+    else return ()
   fillBytes ptr 0 n
   FC.newForeignPtr ptr $ do
     c_OPENSSL_cleanse ptr (fromIntegral n)

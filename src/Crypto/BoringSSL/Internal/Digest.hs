@@ -2,6 +2,7 @@ module Crypto.BoringSSL.Internal.Digest
   ( Algorithm(..)
   , evpMD
   , digestSize
+  , evpMaxMdSize
   , algorithmNID
   ) where
 
@@ -36,6 +37,11 @@ digestSize SHA512     = 64
 digestSize SHA512_256 = 32
 digestSize MD5        = 16
 digestSize BLAKE2b256 = 32
+
+-- | Maximum output size for any supported digest algorithm
+-- (@EVP_MAX_MD_SIZE@, currently 64 for SHA-512).
+evpMaxMdSize :: Int
+evpMaxMdSize = 64
 
 -- | NID value for each algorithm (used by RSA_sign etc.).
 -- Returns 'Nothing' for algorithms that have no NID (e.g. BLAKE2b256),

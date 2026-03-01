@@ -24,7 +24,7 @@ tests = testGroup "MLDSA"
                 ctx = BS.empty
             Right sig <- sign priv2 msg ctx
             Right pubKey <- return (publicKeyFromBytes MLDSA65 pubEncoded)
-            assertBool "signature from seed-derived key should verify" (verify pubKey sig msg ctx)
+            verify pubKey sig msg ctx @?= Right True
     , testCase "reject wrong seed length (31 bytes)" $ do
         wrongSeed <- createSecureBytes 31 $ \_ -> return ()
         case privateKeyFromSeed MLDSA65 wrongSeed of
@@ -67,8 +67,7 @@ variantTests variant = testGroup (show variant)
       Right sig <- sign priv msg ctx
       BS.length sig @?= signatureBytes variant
       Right pubKey <- return (publicKeyFromPrivate priv)
-      let valid = verify pubKey sig msg ctx
-      assertBool "signature should be valid" valid
+      verify pubKey sig msg ctx @?= Right True
 
   , testCase "sign/verify with context" $ do
       Right (_pub, _seed, priv) <- generateKeyPair variant
@@ -76,8 +75,7 @@ variantTests variant = testGroup (show variant)
           ctx = BS8.pack "my-application-context"
       Right sig <- sign priv msg ctx
       Right pubKey <- return (publicKeyFromPrivate priv)
-      let valid = verify pubKey sig msg ctx
-      assertBool "signature with context should be valid" valid
+      verify pubKey sig msg ctx @?= Right True
 
   , testCase "verify rejects invalid signature" $ do
       Right (_pub, _seed, priv) <- generateKeyPair variant
@@ -87,8 +85,7 @@ variantTests variant = testGroup (show variant)
       -- Tamper with the signature
       let tampered = BS.cons (BS.head sig + 1) (BS.tail sig)
       Right pubKey <- return (publicKeyFromPrivate priv)
-      let valid = verify pubKey tampered msg ctx
-      assertBool "tampered signature should be invalid" (not valid)
+      verify pubKey tampered msg ctx @?= Right False
 
   , testCase "verify rejects wrong message" $ do
       Right (_pub, _seed, priv) <- generateKeyPair variant
@@ -97,8 +94,7 @@ variantTests variant = testGroup (show variant)
       Right sig <- sign priv msg ctx
       let wrongMsg = BS8.pack "different message"
       Right pubKey <- return (publicKeyFromPrivate priv)
-      let valid = verify pubKey sig wrongMsg ctx
-      assertBool "wrong message should fail" (not valid)
+      verify pubKey sig wrongMsg ctx @?= Right False
 
   , testCase "verify rejects wrong context" $ do
       Right (_pub, _seed, priv) <- generateKeyPair variant
@@ -107,8 +103,7 @@ variantTests variant = testGroup (show variant)
           ctx2 = BS8.pack "context-b"
       Right sig <- sign priv msg ctx1
       Right pubKey <- return (publicKeyFromPrivate priv)
-      let valid = verify pubKey sig msg ctx2
-      assertBool "wrong context should fail" (not valid)
+      verify pubKey sig msg ctx2 @?= Right False
 
   , testCase "different keys produce different signatures" $ do
       Right (_pub1, _seed1, priv1) <- generateKeyPair variant
@@ -126,9 +121,8 @@ variantTests variant = testGroup (show variant)
       Right sig <- sign priv msg ctx
       case publicKeyFromBytes variant pubEncoded of
         Left _ -> assertFailure "publicKeyFromBytes returned Left"
-        Right pubKey -> do
-          let valid = verify pubKey sig msg ctx
-          assertBool "verify with parsed public key should succeed" valid
+        Right pubKey ->
+          verify pubKey sig msg ctx @?= Right True
 
   , testCase "publicKeyFromBytes rejects wrong length" $ do
       let result = publicKeyFromBytes variant "too short"
@@ -145,8 +139,6 @@ variantTests variant = testGroup (show variant)
       case publicKeyFromBytes variant pubEncoded of
         Left _ -> assertFailure "publicKeyFromBytes returned Left"
         Right pubFromBytes -> do
-          let valid1 = verify pubFromPriv sig msg ctx
-          let valid2 = verify pubFromBytes sig msg ctx
-          assertBool "verify via publicKeyFromPrivate" valid1
-          assertBool "verify via publicKeyFromBytes" valid2
+          verify pubFromPriv sig msg ctx @?= Right True
+          verify pubFromBytes sig msg ctx @?= Right True
   ]

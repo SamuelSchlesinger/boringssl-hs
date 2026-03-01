@@ -106,13 +106,15 @@ sign variant privKey msg ctx
 
 -- | Verify an SLH-DSA signature.
 --
--- Takes (publicKey, signature, message, context) and returns 'True' if the
--- signature is valid, 'False' otherwise.
+-- Takes (publicKey, signature, message, context) and returns @Right True@ if
+-- the signature is valid, @Right False@ if invalid, or @Left@ for input
+-- validation errors (e.g. wrong-length public key).
 --
 -- This function is pure (uses 'unsafePerformIO').
-verify :: SLHDSAVariant -> ByteString -> ByteString -> ByteString -> ByteString -> Bool
+verify :: SLHDSAVariant -> ByteString -> ByteString -> ByteString -> ByteString -> Either CryptoError Bool
 verify variant pubKey sig msg ctx
-  | BS.length pubKey /= publicKeyBytes variant = False
+  | BS.length pubKey /= publicKeyBytes variant =
+      Left (InvalidInput "verify: incorrect public key length")
   | otherwise = unsafePerformIO $
       withByteString sig $ \sigPtr sigLen ->
         withByteString pubKey $ \pubPtr _ ->
@@ -123,5 +125,5 @@ verify variant pubKey sig msg ctx
                                 sigPtr sigLen pubPtr msgPtr msgLen ctxPtr ctxLen
                 SHAKE_256F -> c_SLHDSA_SHAKE_256F_verify
                                 sigPtr sigLen pubPtr msgPtr msgLen ctxPtr ctxLen
-              return (rc == 1)
+              return (Right (rc == 1))
 {-# NOINLINE verify #-}

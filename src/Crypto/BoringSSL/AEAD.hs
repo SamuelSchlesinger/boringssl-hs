@@ -166,7 +166,7 @@ generateNonce algo = do
   createByteString n $ \ptr -> do
     rc <- c_RAND_bytes ptr (fromIntegral n)
     if rc /= 1
-      then fail "generateNonce: RAND_bytes failed"
+      then error "generateNonce: RAND_bytes failed"
       else return ()
 
 -- | Query the expected key length for an AEAD algorithm.

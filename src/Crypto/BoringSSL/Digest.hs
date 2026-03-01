@@ -206,8 +206,7 @@ digestFinalize (DigestCtx mv) =
     Nothing -> return (Nothing, Left (OperationFailed "digestFinalize: context already finalized"))
     Just fptr -> do
       result <- withForeignPtr fptr $ \ctx -> do
-        -- EVP_MAX_MD_SIZE is 64 (for SHA-512)
-        fout <- BSI.mallocByteString 64
+        fout <- BSI.mallocByteString ID.evpMaxMdSize
         withForeignPtr fout $ \outPtr ->
           alloca $ \outLenPtr -> do
             rc <- c_EVP_DigestFinal_ex ctx (castPtr outPtr) outLenPtr
