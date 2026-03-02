@@ -263,6 +263,7 @@ library
         cxx-options:     -D_XOPEN_SOURCE=700
     if os(windows)
         extra-libraries: stdc++
+        cc-options:      -DWIN32_LEAN_AND_MEAN
     cxx-sources:
         third_party/boringssl/crypto/aes/aes.cc
         third_party/boringssl/crypto/asn1/a_bitstr.cc
