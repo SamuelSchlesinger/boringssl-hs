@@ -55,6 +55,11 @@ jobs:
             ghc: '9.10'
             flags: '-fasm'
           # Windows — single GHC version, no asm
+          # TODO: Windows builds but the test binary crashes instantly at
+          # runtime (exit code 1, no test output). Needs debugging — likely
+          # a Haskell exception during initialization. The build itself
+          # succeeds after fixing the wincrypt.h X509_NAME clash
+          # (WIN32_LEAN_AND_MEAN) and linking advapi32/bcrypt/ws2_32.
           - os: windows-latest
             ghc: '9.6'
             flags: ''
