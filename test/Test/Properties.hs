@@ -366,22 +366,24 @@ prop_cipherRoundTrip algo (NonEmptyBS plaintext) = ioProperty $ do
         Left err -> return $ counterexample ("decrypt failed: " ++ show err) False
         Right pt -> return $ pt === plaintext
 
-prop_cipherDifferentKeys :: CipherAlgorithm -> NonEmptyBS -> Property
-prop_cipherDifferentKeys algo (NonEmptyBS plaintext) = ioProperty $ do
-  key1 <- Random.randomBytes (Cipher.cipherKeyLength algo)
-  key2 <- Random.randomBytes (Cipher.cipherKeyLength algo)
-  iv   <- if Cipher.cipherIVLength algo == 0
-             then return BS.empty
-             else Random.randomBytes (Cipher.cipherIVLength algo)
-  if key1 == key2
-    then return $ property True
-    else do
-      r1 <- Cipher.encrypt algo key1 iv plaintext
-      r2 <- Cipher.encrypt algo key2 iv plaintext
-      case (r1, r2) of
-        (Right ct1, Right ct2) ->
-          return $ counterexample "same ciphertext with different keys" (ct1 /= ct2)
-        _ -> return $ property True
+prop_cipherDifferentKeys :: CipherAlgorithm -> Property
+prop_cipherDifferentKeys algo =
+  -- Use at least 16 bytes (one AES block) so collision probability is ~2^-128
+  forAll (genBytes 16) $ \plaintext -> ioProperty $ do
+    key1 <- Random.randomBytes (Cipher.cipherKeyLength algo)
+    key2 <- Random.randomBytes (Cipher.cipherKeyLength algo)
+    iv   <- if Cipher.cipherIVLength algo == 0
+               then return BS.empty
+               else Random.randomBytes (Cipher.cipherIVLength algo)
+    if key1 == key2
+      then return $ property True
+      else do
+        r1 <- Cipher.encrypt algo key1 iv plaintext
+        r2 <- Cipher.encrypt algo key2 iv plaintext
+        case (r1, r2) of
+          (Right ct1, Right ct2) ->
+            return $ counterexample "same ciphertext with different keys" (ct1 /= ct2)
+          _ -> return $ property True
 
 -- ---------------------------------------------------------------------------
 -- Ed25519 Properties
