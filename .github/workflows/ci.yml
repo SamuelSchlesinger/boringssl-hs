@@ -115,5 +115,30 @@ jobs:
       - name: Run tests
         run: cabal test --test-show-details=direct
 
+      # Bisect the Windows test-binary crash (builds fine, exits 1 instantly
+      # with no output). Each probe narrows where startup dies:
+      #   hello       -> GHC RTS / toolchain sanity
+      #   --help      -> tasty startup, no tests executed, no crypto FFI
+      #   -p nomatch  -> full test-tree construction, zero tests run
+      #   -p Base64   -> smallest real FFI slice into BoringSSL
+      - name: Windows crash diagnostics
+        if: runner.os == 'Windows' && always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          'main = putStrLn "rts-ok"' | Out-File -Encoding ascii Hello.hs
+          ghc -threaded Hello.hs -o hello-probe.exe
+          ./hello-probe.exe
+          Write-Host "hello exit: $LASTEXITCODE"
+          $exe = Get-ChildItem -Recurse dist-newstyle -Filter 'boringssl-test.exe' |
+            Select-Object -First 1 -ExpandProperty FullName
+          Write-Host "test binary: $exe"
+          & $exe --help 2>&1 | Out-Host
+          Write-Host "--help exit: $LASTEXITCODE"
+          & $exe -p 'zzz-no-such-test' 2>&1 | Out-Host
+          Write-Host "tree-only exit: $LASTEXITCODE"
+          & $exe -p 'Base64' 2>&1 | Out-Host
+          Write-Host "base64 exit: $LASTEXITCODE"
+
       - name: Check documentation
         run: cabal haddock
