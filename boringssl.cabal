@@ -258,13 +258,16 @@ library
     else
       cc-options:   -DOPENSSL_NO_ASM
       cxx-options:  -DOPENSSL_NO_ASM
-    if os(darwin)
-        extra-libraries: c++
+    -- system-cxx-std-lib (GHC >= 9.4) links the C++ runtime that matches
+    -- GHC's own toolchain. Hand-picking stdc++/c++ per platform is fragile:
+    -- GHC's Windows distribution is Clang/LLVM-based and uses libc++, so
+    -- linking GNU libstdc++ there mixes two C++ runtimes.
+    build-depends:    system-cxx-std-lib >=1.0 && <1.1
     if os(linux)
-        extra-libraries: stdc++ pthread
+        extra-libraries: pthread
         cxx-options:     -D_XOPEN_SOURCE=700
     if os(windows)
-        extra-libraries: stdc++ advapi32 bcrypt ws2_32
+        extra-libraries: advapi32 bcrypt ws2_32
     cxx-sources:
         third_party/boringssl/crypto/aes/aes.cc
         third_party/boringssl/crypto/asn1/a_bitstr.cc
