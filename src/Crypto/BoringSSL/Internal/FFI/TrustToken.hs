@@ -34,7 +34,6 @@ module Crypto.BoringSSL.Internal.FFI.TrustToken
   , c_TRUST_TOKEN_ISSUER_free
   , c_TRUST_TOKEN_ISSUER_free_funptr
   , c_TRUST_TOKEN_ISSUER_add_key
-  , c_TRUST_TOKEN_ISSUER_set_metadata_key
   , c_TRUST_TOKEN_ISSUER_issue
   , c_TRUST_TOKEN_ISSUER_redeem
     -- * Stack helpers (from cbits)
@@ -183,12 +182,6 @@ foreign import ccall unsafe "&TRUST_TOKEN_ISSUER_free"
 --     TRUST_TOKEN_ISSUER *ctx, const uint8_t *key, size_t key_len)
 foreign import capi unsafe "openssl/trust_token.h TRUST_TOKEN_ISSUER_add_key"
   c_TRUST_TOKEN_ISSUER_add_key
-    :: Ptr TRUST_TOKEN_ISSUER -> Ptr CUChar -> CSize -> IO CInt
-
--- | int TRUST_TOKEN_ISSUER_set_metadata_key(
---     TRUST_TOKEN_ISSUER *ctx, const uint8_t *key, size_t len)
-foreign import capi unsafe "openssl/trust_token.h TRUST_TOKEN_ISSUER_set_metadata_key"
-  c_TRUST_TOKEN_ISSUER_set_metadata_key
     :: Ptr TRUST_TOKEN_ISSUER -> Ptr CUChar -> CSize -> IO CInt
 
 -- | int TRUST_TOKEN_ISSUER_issue(

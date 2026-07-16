@@ -19,7 +19,6 @@ module Crypto.BoringSSL.TrustToken
   , TrustTokenIssuer
   , newIssuer
   , issuerAddKey
-  , issuerSetMetadataKey
   , issue
   , redeem
     -- * Error type
@@ -185,14 +184,6 @@ issuerAddKey (TrustTokenIssuer fptr) key =
     rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
       c_TRUST_TOKEN_ISSUER_add_key ctx keyPtr keyLen
     checkRC (OperationFailed "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed") rc
-
--- | Set the metadata key for the issuer.
-issuerSetMetadataKey :: TrustTokenIssuer -> ByteString -> IO (Either CryptoError ())
-issuerSetMetadataKey (TrustTokenIssuer fptr) key =
-  withForeignPtr fptr $ \ctx -> runExceptT $ do
-    rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
-      c_TRUST_TOKEN_ISSUER_set_metadata_key ctx keyPtr keyLen
-    checkRC (OperationFailed "issuerSetMetadataKey: TRUST_TOKEN_ISSUER_set_metadata_key failed") rc
 
 -- | Issue tokens in response to a client request.
 -- Returns @Right (response, tokensIssued)@ on success.

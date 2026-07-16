@@ -363,14 +363,17 @@ library
         third_party/boringssl/crypto/evp/evp.cc
         third_party/boringssl/crypto/evp/evp_asn1.cc
         third_party/boringssl/crypto/evp/evp_ctx.cc
+        third_party/boringssl/crypto/evp/evp_kem.cc
         third_party/boringssl/crypto/evp/p_dh.cc
         third_party/boringssl/crypto/evp/p_dsa.cc
         third_party/boringssl/crypto/evp/p_ec.cc
         third_party/boringssl/crypto/evp/p_ed25519.cc
         third_party/boringssl/crypto/evp/p_hkdf.cc
         third_party/boringssl/crypto/evp/p_mldsa.cc
+        third_party/boringssl/crypto/evp/p_mlkem.cc
         third_party/boringssl/crypto/evp/p_rsa.cc
         third_party/boringssl/crypto/evp/p_x25519.cc
+        third_party/boringssl/crypto/evp/p_xwing.cc
         third_party/boringssl/crypto/evp/pbkdf.cc
         third_party/boringssl/crypto/evp/print.cc
         third_party/boringssl/crypto/evp/scrypt.cc
@@ -412,7 +415,6 @@ library
         third_party/boringssl/crypto/rand/forkunsafe.cc
         third_party/boringssl/crypto/rand/getentropy.cc
         third_party/boringssl/crypto/rand/ios.cc
-        third_party/boringssl/crypto/rand/passive.cc
         third_party/boringssl/crypto/rand/rand.cc
         third_party/boringssl/crypto/rand/trusty.cc
         third_party/boringssl/crypto/rand/urandom.cc

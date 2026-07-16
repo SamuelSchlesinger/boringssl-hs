@@ -4,7 +4,6 @@ module Test.TrustToken (tests) where
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.Random (randomBytes)
 import Crypto.BoringSSL.TrustToken
 
 tests :: TestTree
@@ -28,8 +27,6 @@ fullRoundTrip method = do
   -- Set up issuer
   Right issuer <- newIssuer method 10
   Right () <- issuerAddKey issuer privKey
-  metadataKey <- randomBytes 32
-  Right () <- issuerSetMetadataKey issuer metadataKey
 
   -- Client begins issuance
   Right request <- beginIssuance client 1
@@ -59,8 +56,6 @@ batchIssuance method = do
 
   Right issuer <- newIssuer method 10
   Right () <- issuerAddKey issuer privKey
-  metadataKey <- randomBytes 32
-  Right () <- issuerSetMetadataKey issuer metadataKey
 
   -- Request 5 tokens
   Right request <- beginIssuance client 5
