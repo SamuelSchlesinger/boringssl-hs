@@ -125,15 +125,15 @@ rsaPubKey = unsafePerformIO $ do
 digestProperties :: TestTree
 digestProperties = testGroup "Digest"
   [ testProperty "hash is deterministic" $
-      withMaxSuccess 100 prop_hashDeterministic
+      prop_hashDeterministic
   , testProperty "hash output length matches digestSize" $
-      withMaxSuccess 100 prop_hashLength
+      prop_hashLength
   , testProperty "different inputs produce different hashes" $
-      withMaxSuccess 100 prop_hashDifferentInputs
+      prop_hashDifferentInputs
   , testProperty "streaming matches one-shot" $
-      withMaxSuccess 100 prop_streamingMatchesOneShot
+      prop_streamingMatchesOneShot
   , testProperty "chunked streaming matches one-shot" $
-      withMaxSuccess 100 prop_streamingChunked
+      prop_streamingChunked
   ]
 
 prop_hashDeterministic :: Algorithm -> ArbitraryBS -> Bool
@@ -173,13 +173,13 @@ prop_streamingChunked algo (ArbitraryBS bs) =
 aeadProperties :: TestTree
 aeadProperties = testGroup "AEAD"
   [ testProperty "seal then open recovers plaintext" $
-      withMaxSuccess 100 prop_aeadRoundTrip
+      prop_aeadRoundTrip
   , testProperty "modifying ciphertext causes open to fail" $
-      withMaxSuccess 100 prop_aeadAuthFailure
+      prop_aeadAuthFailure
   , testProperty "different nonces produce different ciphertexts" $
-      withMaxSuccess 100 prop_aeadDifferentNonce
+      prop_aeadDifferentNonce
   , testProperty "changing AD causes open to fail" $
-      withMaxSuccess 100 prop_aeadAAD
+      prop_aeadAAD
   ]
 
 prop_aeadRoundTrip :: AEADAlgorithm -> ArbitraryBS -> ArbitraryBS -> Property
@@ -255,13 +255,13 @@ prop_aeadAAD algo (ArbitraryBS plaintext) = ioProperty $ do
 hmacProperties :: TestTree
 hmacProperties = testGroup "HMAC"
   [ testProperty "hmac is deterministic" $
-      withMaxSuccess 100 prop_hmacDeterministic
+      prop_hmacDeterministic
   , testProperty "hmac output length matches digest size" $
-      withMaxSuccess 100 prop_hmacLength
+      prop_hmacLength
   , testProperty "streaming matches one-shot" $
-      withMaxSuccess 100 prop_hmacStreamingMatchesOneShot
+      prop_hmacStreamingMatchesOneShot
   , testProperty "different keys produce different MACs" $
-      withMaxSuccess 100 prop_hmacDifferentKeys
+      prop_hmacDifferentKeys
   ]
 
 prop_hmacDeterministic :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Bool
@@ -305,11 +305,11 @@ prop_hmacDifferentKeys algo (NonEmptyBS msg) = ioProperty $ do
 hkdfProperties :: TestTree
 hkdfProperties = testGroup "HKDF"
   [ testProperty "hkdf is deterministic" $
-      withMaxSuccess 100 prop_hkdfDeterministic
+      prop_hkdfDeterministic
   , testProperty "hkdf output has requested length" $
-      withMaxSuccess 100 prop_hkdfLength
+      prop_hkdfLength
   , testProperty "extract then expand matches full hkdf" $
-      withMaxSuccess 100 prop_hkdfExtractExpandMatchesFull
+      prop_hkdfExtractExpandMatchesFull
   ]
 
 prop_hkdfDeterministic :: ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
@@ -346,9 +346,9 @@ prop_hkdfExtractExpandMatchesFull algo (ArbitraryBS secret) (ArbitraryBS salt) (
 cipherProperties :: TestTree
 cipherProperties = testGroup "Cipher"
   [ testProperty "encrypt then decrypt recovers plaintext" $
-      withMaxSuccess 100 prop_cipherRoundTrip
+      prop_cipherRoundTrip
   , testProperty "different keys produce different ciphertexts" $
-      withMaxSuccess 100 prop_cipherDifferentKeys
+      prop_cipherDifferentKeys
   ]
 
 prop_cipherRoundTrip :: CipherAlgorithm -> NonEmptyBS -> Property
@@ -392,11 +392,11 @@ prop_cipherDifferentKeys algo =
 ed25519Properties :: TestTree
 ed25519Properties = testGroup "Ed25519"
   [ testProperty "sign then verify succeeds" $
-      withMaxSuccess 100 prop_ed25519SignVerify
+      prop_ed25519SignVerify
   , testProperty "verify fails with wrong message" $
-      withMaxSuccess 100 prop_ed25519WrongMessage
+      prop_ed25519WrongMessage
   , testProperty "signing is deterministic" $
-      withMaxSuccess 100 prop_ed25519DeterministicSign
+      prop_ed25519DeterministicSign
   ]
 
 prop_ed25519SignVerify :: ArbitraryBS -> Property
@@ -428,9 +428,9 @@ prop_ed25519DeterministicSign (ArbitraryBS msg) = ioProperty $ do
 x25519Properties :: TestTree
 x25519Properties = testGroup "X25519"
   [ testProperty "shared secret is symmetric" $
-      withMaxSuccess 100 prop_x25519SharedSecretSymmetric
+      prop_x25519SharedSecretSymmetric
   , testProperty "publicFromPrivate is deterministic" $
-      withMaxSuccess 100 prop_x25519PublicKeyDeterministic
+      prop_x25519PublicKeyDeterministic
   ]
 
 prop_x25519SharedSecretSymmetric :: Property
@@ -452,16 +452,18 @@ prop_x25519PublicKeyDeterministic = ioProperty $ do
 -- ECDSA Properties
 -- ---------------------------------------------------------------------------
 
+-- Keygen-heavy groups run 20 cases instead of the default 100 to keep CI
+-- time reasonable.
 ecdsaProperties :: TestTree
-ecdsaProperties = testGroup "ECDSA"
+ecdsaProperties = localOption (QuickCheckTests 20) $ testGroup "ECDSA"
   [ testProperty "sign then verify succeeds (P256)" $
-      withMaxSuccess 20 (prop_ecdsaSignVerify P256)
+      (prop_ecdsaSignVerify P256)
   , testProperty "sign then verify succeeds (P384)" $
-      withMaxSuccess 20 (prop_ecdsaSignVerify P384)
+      (prop_ecdsaSignVerify P384)
   , testProperty "verify fails with wrong digest (P256)" $
-      withMaxSuccess 20 (prop_ecdsaWrongDigest P256)
+      (prop_ecdsaWrongDigest P256)
   , testProperty "verify fails with wrong digest (P384)" $
-      withMaxSuccess 20 (prop_ecdsaWrongDigest P384)
+      (prop_ecdsaWrongDigest P384)
   ]
 
 prop_ecdsaSignVerify :: ECCurve -> Property
@@ -504,11 +506,11 @@ prop_ecdsaWrongDigest curve = ioProperty $ do
 -- ---------------------------------------------------------------------------
 
 ecdhProperties :: TestTree
-ecdhProperties = testGroup "ECDH"
+ecdhProperties = localOption (QuickCheckTests 20) $ testGroup "ECDH"
   [ testProperty "shared secret is symmetric (P256)" $
-      withMaxSuccess 20 (prop_ecdhSymmetric P256)
+      (prop_ecdhSymmetric P256)
   , testProperty "shared secret is symmetric (P384)" $
-      withMaxSuccess 20 (prop_ecdhSymmetric P384)
+      (prop_ecdhSymmetric P384)
   ]
 
 prop_ecdhSymmetric :: ECCurve -> Property
@@ -529,15 +531,15 @@ prop_ecdhSymmetric curve = ioProperty $ do
 -- ---------------------------------------------------------------------------
 
 rsaProperties :: TestTree
-rsaProperties = testGroup "RSA"
+rsaProperties = localOption (QuickCheckTests 20) $ testGroup "RSA"
   [ testProperty "PKCS#1 sign then verify round-trip" $
-      withMaxSuccess 20 prop_rsaPKCS1SignVerify
+      prop_rsaPKCS1SignVerify
   , testProperty "PSS sign then verify round-trip" $
-      withMaxSuccess 20 prop_rsaPSSSignVerify
+      prop_rsaPSSSignVerify
   , testProperty "OAEP encrypt then decrypt recovers plaintext" $
-      withMaxSuccess 20 prop_rsaOAEPRoundTrip
+      prop_rsaOAEPRoundTrip
   , testProperty "key serialization round-trip" $
-      withMaxSuccess 20 prop_rsaKeySerializationRoundTrip
+      prop_rsaKeySerializationRoundTrip
   ]
 
 prop_rsaPKCS1SignVerify :: Property
@@ -597,9 +599,9 @@ prop_rsaKeySerializationRoundTrip = ioProperty $ do
 base64Properties :: TestTree
 base64Properties = testGroup "Base64"
   [ testProperty "encode then decode recovers original" $
-      withMaxSuccess 100 prop_base64RoundTrip
+      prop_base64RoundTrip
   , testProperty "encoded output is always valid (decodable)" $
-      withMaxSuccess 100 prop_base64EncodedLength
+      prop_base64EncodedLength
   ]
 
 prop_base64RoundTrip :: ArbitraryBS -> Property
@@ -625,9 +627,9 @@ prop_base64EncodedLength (ArbitraryBS bs) =
 randomProperties :: TestTree
 randomProperties = testGroup "Random"
   [ testProperty "randomBytes n produces exactly n bytes" $
-      withMaxSuccess 100 prop_randomLength
+      prop_randomLength
   , testProperty "two calls produce different output (n >= 16)" $
-      withMaxSuccess 100 prop_randomDistinct
+      prop_randomDistinct
   ]
 
 prop_randomLength :: Positive Int -> Property
