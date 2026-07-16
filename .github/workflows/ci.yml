@@ -13,7 +13,6 @@ jobs:
   build:
     name: GHC ${{ matrix.ghc }} / ${{ matrix.os }}${{ matrix.flags != '' && format(' ({0})', matrix.flags) || '' }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.experimental == true }}
     strategy:
       fail-fast: false
       matrix:
@@ -70,18 +69,13 @@ jobs:
           - os: macos-latest
             ghc: '9.12'
             flags: '-fasm'
-          # Windows — single GHC version, no asm
-          # TODO: Windows builds but the test binary crashes instantly at
-          # runtime (exit code 1, no test output). Needs debugging — likely
-          # a Haskell exception during initialization. The build itself
-          # succeeds after fixing the wincrypt.h X509_NAME clash
-          # (WIN32_LEAN_AND_MEAN) and linking advapi32/bcrypt/ws2_32.
-          # Until that is fixed, the job is experimental (continue-on-error)
-          # so it cannot turn the whole workflow red.
+          # Windows — single GHC version, no asm. Requires linking the C++
+          # runtime via system-cxx-std-lib: GHC's Windows toolchain is
+          # Clang/libc++-based, and hand-linking GNU libstdc++ made the test
+          # binary crash at startup.
           - os: windows-latest
             ghc: '9.6'
             flags: ''
-            experimental: true
 
     steps:
       - name: Checkout
@@ -114,31 +108,6 @@ jobs:
 
       - name: Run tests
         run: cabal test --test-show-details=direct
-
-      # Bisect the Windows test-binary crash (builds fine, exits 1 instantly
-      # with no output). Each probe narrows where startup dies:
-      #   hello       -> GHC RTS / toolchain sanity
-      #   --help      -> tasty startup, no tests executed, no crypto FFI
-      #   -p nomatch  -> full test-tree construction, zero tests run
-      #   -p Base64   -> smallest real FFI slice into BoringSSL
-      - name: Windows crash diagnostics
-        if: runner.os == 'Windows' && always()
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          'main = putStrLn "rts-ok"' | Out-File -Encoding ascii Hello.hs
-          ghc -threaded Hello.hs -o hello-probe.exe
-          ./hello-probe.exe
-          Write-Host "hello exit: $LASTEXITCODE"
-          $exe = Get-ChildItem -Recurse dist-newstyle -Filter 'boringssl-test.exe' |
-            Select-Object -First 1 -ExpandProperty FullName
-          Write-Host "test binary: $exe"
-          & $exe --help 2>&1 | Out-Host
-          Write-Host "--help exit: $LASTEXITCODE"
-          & $exe -p 'zzz-no-such-test' 2>&1 | Out-Host
-          Write-Host "tree-only exit: $LASTEXITCODE"
-          & $exe -p 'Base64' 2>&1 | Out-Host
-          Write-Host "base64 exit: $LASTEXITCODE"
 
       - name: Check documentation
         run: cabal haddock
