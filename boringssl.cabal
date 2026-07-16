@@ -62,7 +62,9 @@ library
         Crypto.BoringSSL.AEAD
         Crypto.BoringSSL.HMAC
         Crypto.BoringSSL.HKDF
+        Crypto.BoringSSL.Error
         Crypto.BoringSSL.Random
+        Crypto.BoringSSL.SecureBytes
         Crypto.BoringSSL.Cipher
         Crypto.BoringSSL.Ed25519
         Crypto.BoringSSL.X25519
@@ -130,6 +132,7 @@ library
     include-dirs:     third_party/boringssl/include cbits
     c-sources:        cbits/cbs_helpers.c
                       cbits/constants.c
+                      cbits/secure_alloc.c
                       cbits/trust_token_helpers.c
                       cbits/x509_helpers.c
     cc-options:       -DBORINGSSL_IMPLEMENTATION

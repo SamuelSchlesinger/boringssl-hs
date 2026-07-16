@@ -28,6 +28,11 @@ data CryptoError
     -- queue was empty or was not consulted.
   | DecodeError !String
     -- ^ Parsing or deserialization of input data failed.
+  | AuthenticationFailed
+    -- ^ Authenticated decryption rejected the input: the authentication
+    -- tag did not verify, meaning the ciphertext or associated data was
+    -- tampered with (or the wrong key\/nonce was used). Distinct from
+    -- 'InvalidInput' so callers can tell tampering from their own bugs.
   deriving (Eq)
 
 instance Show CryptoError where
@@ -41,6 +46,8 @@ instance Show CryptoError where
     "OperationFailed: " ++ msg
   show (DecodeError msg) =
     "DecodeError: " ++ msg
+  show AuthenticationFailed =
+    "AuthenticationFailed: authentication tag mismatch (tampered input or wrong key/nonce)"
 
 instance Exception CryptoError
 
