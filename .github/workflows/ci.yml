@@ -28,6 +28,9 @@ jobs:
           - os: ubuntu-latest
             ghc: '9.10'
             flags: ''
+          - os: ubuntu-latest
+            ghc: '9.12'
+            flags: ''
           # Linux — all GHC versions, with asm
           - os: ubuntu-latest
             ghc: '9.6'
@@ -37,6 +40,9 @@ jobs:
             flags: '-fasm'
           - os: ubuntu-latest
             ghc: '9.10'
+            flags: '-fasm'
+          - os: ubuntu-latest
+            ghc: '9.12'
             flags: '-fasm'
           # macOS — all GHC versions, no asm
           - os: macos-latest
@@ -48,6 +54,9 @@ jobs:
           - os: macos-latest
             ghc: '9.10'
             flags: ''
+          - os: macos-latest
+            ghc: '9.12'
+            flags: ''
           # macOS — all GHC versions, with asm
           - os: macos-latest
             ghc: '9.6'
@@ -57,6 +66,9 @@ jobs:
             flags: '-fasm'
           - os: macos-latest
             ghc: '9.10'
+            flags: '-fasm'
+          - os: macos-latest
+            ghc: '9.12'
             flags: '-fasm'
           # Windows — single GHC version, no asm
           # TODO: Windows builds but the test binary crashes instantly at

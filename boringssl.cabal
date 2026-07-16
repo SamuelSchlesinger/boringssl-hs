@@ -6,7 +6,7 @@ license-file:    LICENSE
 author:          Samuel Schlesinger
 maintainer:      sgschlesinger@gmail.com
 build-type:      Simple
-tested-with:     GHC == 9.6.7, GHC == 9.8.4, GHC == 9.10.1
+tested-with:     GHC == 9.6.7, GHC == 9.8.4, GHC == 9.10.1, GHC == 9.12.4
 extra-doc-files: CHANGELOG.md
 category:        Cryptography
 synopsis:        Haskell bindings to Google's BoringSSL cryptography library
