@@ -39,9 +39,9 @@ fullRoundTrip method = do
 
   -- Client finishes issuance
   Right (tokens, _keyIdx) <- finishIssuance client response
-  assertBool "should get at least one token" (not (null tokens))
-
-  let token = head tokens
+  token <- case tokens of
+    []    -> assertFailure "should get at least one token"
+    t : _ -> pure t
 
   -- Client begins redemption
   Right redemptionReq <- beginRedemption client token "client data"

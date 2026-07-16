@@ -1,4 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
+-- rsaEncryptPKCS1/rsaDecryptPKCS1 are deprecated but still shipped, so we
+-- keep test coverage for them.
+{-# OPTIONS_GHC -Wno-deprecations #-}
 module Test.RSA (tests) where
 
 import qualified Data.ByteString as BS
