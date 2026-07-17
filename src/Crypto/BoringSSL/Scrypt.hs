@@ -22,16 +22,12 @@
 -- __Example (interactive login):__
 --
 -- @
--- scrypt password salt 16384 8 1 32
+-- scrypt password salt defaultScryptParams { scryptN = 16384 }
 -- @
 module Crypto.BoringSSL.Scrypt
   ( scrypt
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
+  , ScryptParams(..)
+  , defaultScryptParams
   ) where
 
 import Data.Bits ((.&.))
@@ -45,15 +41,39 @@ import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.Scrypt
 import Crypto.BoringSSL.Internal.SecureBytes
 
+-- | Scrypt tuning parameters, named so the cost factors cannot be
+-- transposed. Start from 'defaultScryptParams'.
+data ScryptParams = ScryptParams
+  { scryptN      :: !Word64
+    -- ^ CPU\/memory cost; must be a power of 2 (memory use is
+    -- @N * r * 128@ bytes).
+  , scryptR      :: !Word64
+    -- ^ Block size; 8 is the standard recommendation.
+  , scryptP      :: !Word64
+    -- ^ Parallelization factor; 1 is typical.
+  , scryptLength :: !Int
+    -- ^ Number of bytes of key material to derive.
+  } deriving (Eq, Show)
+
+-- | OWASP's 2023 first-choice scrypt parameters: @N = 2^17@, @r = 8@,
+-- @p = 1@ (128 MiB, suitable for interactive logins on servers), with a
+-- 32-byte output.
+defaultScryptParams :: ScryptParams
+defaultScryptParams = ScryptParams
+  { scryptN = 131072
+  , scryptR = 8
+  , scryptP = 1
+  , scryptLength = 32
+  }
+
 -- | Derive a key using scrypt.
 --
--- @scrypt password salt n r p keyLen@ computes @keyLen@ bytes of key
--- material from @password@ and @salt@ using the scrypt parameters @n@
--- (CPU\/memory cost), @r@ (block size), and @p@ (parallelization).
+-- @scrypt password salt params@ computes 'scryptLength' bytes of key
+-- material from @password@ and @salt@.
 --
 -- Returns 'Left' on failure (e.g. invalid parameters).
-scrypt :: ByteString -> ByteString -> Word64 -> Word64 -> Word64 -> Int -> Either CryptoError SecureBytes
-scrypt password salt n r p keyLen
+scrypt :: ByteString -> ByteString -> ScryptParams -> Either CryptoError SecureBytes
+scrypt password salt (ScryptParams n r p keyLen)
   | keyLen <= 0 = Left (InvalidInput "scrypt: key length must be positive")
   | n < 2 || (n .&. (n - 1)) /= 0 = Left (InvalidInput "scrypt: N must be >= 2 and a power of 2")
   | r == 0 = Left (InvalidInput "scrypt: r must be > 0")

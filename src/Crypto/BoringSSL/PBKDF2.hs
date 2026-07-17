@@ -22,12 +22,7 @@
 -- when FIPS compliance or protocol interoperability is required.
 module Crypto.BoringSSL.PBKDF2
   ( pbkdf2
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
+  , PBKDF2Params(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -42,13 +37,23 @@ import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.PBKDF2
 import Crypto.BoringSSL.Internal.SecureBytes
 
+-- | PBKDF2 tuning parameters, named so iteration count and output
+-- length cannot be transposed. See the module header for iteration
+-- guidance.
+data PBKDF2Params = PBKDF2Params
+  { pbkdf2Iterations :: !Int
+    -- ^ Number of HMAC iterations (OWASP 2023: >= 600,000 for SHA-256).
+  , pbkdf2Length     :: !Int
+    -- ^ Number of bytes of key material to derive.
+  } deriving (Eq, Show)
+
 -- | Derive a key using PBKDF2-HMAC.
 --
--- @pbkdf2 algo password salt iterations keyLength@ computes @keyLength@ bytes
--- of key material from @password@ and @salt@ using @iterations@ rounds of
--- PBKDF2 with HMAC using the specified hash @algo@.
-pbkdf2 :: Algorithm -> ByteString -> ByteString -> Int -> Int -> Either CryptoError SecureBytes
-pbkdf2 algo password salt iterations keyLen
+-- @pbkdf2 algo password salt params@ computes 'pbkdf2Length' bytes of
+-- key material from @password@ and @salt@ using 'pbkdf2Iterations'
+-- rounds of PBKDF2 with HMAC over the given hash @algo@.
+pbkdf2 :: Algorithm -> ByteString -> ByteString -> PBKDF2Params -> Either CryptoError SecureBytes
+pbkdf2 algo password salt (PBKDF2Params iterations keyLen)
   | keyLen <= 0 = Left (InvalidInput "pbkdf2: key length must be positive")
   | iterations <= 0 = Left (InvalidInput "pbkdf2: iterations must be positive")
   | iterations > fromIntegral (maxBound :: Word32) =

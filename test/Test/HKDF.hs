@@ -6,8 +6,10 @@ import qualified Data.ByteString.Base16 as Base16
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.Digest (Algorithm(..), digestSize)
+import Crypto.BoringSSL.Digest (Algorithm(..))
+import Crypto.BoringSSL.Error (CryptoError)
 import Crypto.BoringSSL.HKDF
+import Crypto.BoringSSL.SecureBytes
 
 hex :: BS.ByteString -> BS.ByteString
 hex s = case Base16.decode s of
@@ -27,11 +29,11 @@ tests = testGroup "HKDF"
             info = hex "f0f1f2f3f4f5f6f7f8f9"
             expectedPRK = hex "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5"
             expectedOKM = hex "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
-        -- Test extract
+        -- Test extract (constant-time PRK equality against the vector)
         let prk = unwrap $ hkdfExtract SHA256 ikm salt
-        Base16.encode (secureBytesToByteString prk) @?= Base16.encode expectedPRK
+        assertBool "PRK matches RFC vector" (prk == prkFromBytes expectedPRK)
         -- Test expand
-        let okm = unwrap $ hkdfExpand SHA256 (secureBytesToByteString prk) info 42
+        let okm = unwrap $ hkdfExpand SHA256 prk info 42
         Base16.encode (secureBytesToByteString okm) @?= Base16.encode expectedOKM
         -- Test full hkdf
         let fullOkm = unwrap $ hkdf SHA256 ikm salt info 42
@@ -55,8 +57,8 @@ tests = testGroup "HKDF"
             expectedPRK = hex "9b6c18c432a7bf8f0e71c8eb88f4b30baa2ba243"
             expectedOKM = hex "085a01ea1b10f36933068b56efa5ad81a4f14b822f5b091568a9cdd4f155fda2c22e422478d305f3f896"
         let prk = unwrap $ hkdfExtract SHA1 ikm salt
-        Base16.encode (secureBytesToByteString prk) @?= Base16.encode expectedPRK
-        let okm = unwrap $ hkdfExpand SHA1 (secureBytesToByteString prk) info 42
+        assertBool "PRK matches RFC vector" (prk == prkFromBytes expectedPRK)
+        let okm = unwrap $ hkdfExpand SHA1 prk info 42
         Base16.encode (secureBytesToByteString okm) @?= Base16.encode expectedOKM
         Base16.encode (secureBytesToByteString (unwrap $ hkdf SHA1 ikm salt info 42)) @?= Base16.encode expectedOKM
     , testCase "Test Case 5 (SHA-1, long inputs)" $ do
@@ -78,16 +80,23 @@ tests = testGroup "HKDF"
             expectedOKM = hex "2c91117204d745f3500d636a62f64f0ab3bae548aa53d423b0d1f27ebba6f5e5673a081d70cce7acfc48"
         Base16.encode (secureBytesToByteString (unwrap $ hkdf SHA1 ikm salt info 42)) @?= Base16.encode expectedOKM
     ]
-  , testGroup "extract output length"
-    [ testCase "SHA-256 extract = 32 bytes" $ do
-        let prk = unwrap $ hkdfExtract SHA256 "secret" "salt"
-        secureBytesLength prk @?= digestSize SHA256
-    , testCase "SHA-512 extract = 64 bytes" $ do
-        let prk = unwrap $ hkdfExtract SHA512 "secret" "salt"
-        secureBytesLength prk @?= digestSize SHA512
-    , testCase "SHA-1 extract = 20 bytes" $ do
-        let prk = unwrap $ hkdfExtract SHA1 "secret" "salt"
-        secureBytesLength prk @?= digestSize SHA1
+  , testGroup "PRK behaviour"
+    [ testCase "extract is deterministic" $ do
+        let p1 = unwrap $ hkdfExtract SHA256 "secret" "salt"
+            p2 = unwrap $ hkdfExtract SHA256 "secret" "salt"
+        assertBool "same inputs give equal PRK" (p1 == p2)
+    , testCase "different secrets give different PRKs" $ do
+        let p1 = unwrap $ hkdfExtract SHA256 "secret1" "salt"
+            p2 = unwrap $ hkdfExtract SHA256 "secret2" "salt"
+        assertBool "different inputs give different PRK" (p1 /= p2)
+    , testCase "expanding an imported PRK matches the RFC vector" $ do
+        -- RFC 5869 Test Case 1: import the published PRK with
+        -- prkFromBytes and check expansion hits the published OKM.
+        let vectorPRK = hex "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5"
+            info = hex "f0f1f2f3f4f5f6f7f8f9"
+            expectedOKM = hex "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865"
+            okm = unwrap $ hkdfExpand SHA256 (prkFromBytes vectorPRK) info 42
+        Base16.encode (secureBytesToByteString okm) @?= Base16.encode expectedOKM
     ]
   , testGroup "output length"
     [ testCase "hkdf returns requested length" $ do
@@ -95,22 +104,19 @@ tests = testGroup "HKDF"
         secureBytesLength okm @?= 64
     , testCase "hkdfExpand returns requested length" $ do
         let prk = unwrap $ hkdfExtract SHA256 "secret" "salt"
-            okm = unwrap $ hkdfExpand SHA256 (secureBytesToByteString prk) "info" 100
+            okm = unwrap $ hkdfExpand SHA256 prk "info" 100
         secureBytesLength okm @?= 100
     ]
   , testGroup "SHA-512"
     [ testCase "SHA-512 full round-trip" $ do
-        let ikm = "input keying material"
-            salt = "salt value"
-            info = "context info"
-            okm = unwrap $ hkdf SHA512 ikm salt info 64
+        let okm = unwrap $ hkdf SHA512 "input keying material" "salt value" "context info" 64
         secureBytesLength okm @?= 64
     , testCase "SHA-512 extract then expand matches full" $ do
         let ikm = "input keying material"
             salt = "salt value"
             info = "context info"
         let prk = unwrap $ hkdfExtract SHA512 ikm salt
-            okm1 = unwrap $ hkdfExpand SHA512 (secureBytesToByteString prk) info 64
+            okm1 = unwrap $ hkdfExpand SHA512 prk info 64
             okm2 = unwrap $ hkdf SHA512 ikm salt info 64
         secureBytesToByteString okm1 @?= secureBytesToByteString okm2
     ]
@@ -118,7 +124,7 @@ tests = testGroup "HKDF"
     [ testCase "expand rejects too-long output" $ do
         -- max output for SHA-256 is 255 * 32 = 8160
         let prk = unwrap $ hkdfExtract SHA256 "secret" "salt"
-            result = hkdfExpand SHA256 (secureBytesToByteString prk) "info" 8161
+            result = hkdfExpand SHA256 prk "info" 8161
         case result of
           Left _ -> return ()
           Right _ -> assertFailure "should reject output > 255*hashLen"

@@ -27,6 +27,7 @@ import Crypto.BoringSSL.ECDSA (ECCurve(..))
 import qualified Crypto.BoringSSL.ECDH as ECDH
 import qualified Crypto.BoringSSL.RSA as RSA
 import qualified Crypto.BoringSSL.Base64 as Base64
+import qualified Crypto.BoringSSL.SecureBytes as SB
 
 -- ---------------------------------------------------------------------------
 -- Arbitrary instances
@@ -313,8 +314,8 @@ hkdfProperties = testGroup "HKDF"
 prop_hkdfDeterministic :: ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hkdfDeterministic (ArbitraryBS secret) (ArbitraryBS salt) (ArbitraryBS info) =
   let outLen = 32
-      r1 = fmap HKDF.secureBytesToByteString $ HKDF.hkdf SHA256 secret salt info outLen
-      r2 = fmap HKDF.secureBytesToByteString $ HKDF.hkdf SHA256 secret salt info outLen
+      r1 = fmap SB.secureBytesToByteString $ HKDF.hkdf SHA256 secret salt info outLen
+      r2 = fmap SB.secureBytesToByteString $ HKDF.hkdf SHA256 secret salt info outLen
   in r1 === r2
 
 prop_hkdfLength :: Algorithm -> ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
@@ -323,7 +324,7 @@ prop_hkdfLength algo (ArbitraryBS secret) (ArbitraryBS salt) (ArbitraryBS info) 
       outLen = min 64 maxOut
   in outLen > 0 ==>
      case HKDF.hkdf algo secret salt info outLen of
-       Right sb -> HKDF.secureBytesLength sb == outLen
+       Right sb -> SB.secureBytesLength sb == outLen
        Left _   -> False
 
 prop_hkdfExtractExpandMatchesFull :: Algorithm -> ArbitraryBS -> ArbitraryBS -> ArbitraryBS -> Property
@@ -333,9 +334,9 @@ prop_hkdfExtractExpandMatchesFull algo (ArbitraryBS secret) (ArbitraryBS salt) (
        Left _ -> property $ counterexample "hkdf failed" False
        Right full -> case HKDF.hkdfExtract algo secret salt of
          Left _ -> property $ counterexample "hkdfExtract failed" False
-         Right prk -> case HKDF.hkdfExpand algo (HKDF.secureBytesToByteString prk) info outLen of
+         Right prk -> case HKDF.hkdfExpand algo prk info outLen of
            Left _ -> property $ counterexample "hkdfExpand failed" False
-           Right expanded -> HKDF.secureBytesToByteString full === HKDF.secureBytesToByteString expanded
+           Right expanded -> SB.secureBytesToByteString full === SB.secureBytesToByteString expanded
 
 -- ---------------------------------------------------------------------------
 -- Cipher Properties
@@ -435,8 +436,8 @@ prop_x25519SharedSecretSymmetric :: Property
 prop_x25519SharedSecretSymmetric = ioProperty $ do
   (pubA, privA) <- X25519.generateKeyPair
   (pubB, privB) <- X25519.generateKeyPair
-  let secretAB = fmap X25519.secureBytesToByteString (X25519.computeSharedSecret privA pubB)
-      secretBA = fmap X25519.secureBytesToByteString (X25519.computeSharedSecret privB pubA)
+  let secretAB = fmap SB.secureBytesToByteString (X25519.computeSharedSecret privA pubB)
+      secretBA = fmap SB.secureBytesToByteString (X25519.computeSharedSecret privB pubA)
   return $ secretAB === secretBA
 
 prop_x25519PublicKeyDeterministic :: Property
@@ -520,7 +521,7 @@ prop_ecdhSymmetric curve = ioProperty $ do
   secretAB <- ECDH.ecdhComputeSecret kpA pubB 32
   secretBA <- ECDH.ecdhComputeSecret kpB pubA 32
   case (secretAB, secretBA) of
-    (Right sAB, Right sBA) -> return $ ECDH.secureBytesToByteString sAB === ECDH.secureBytesToByteString sBA
+    (Right sAB, Right sBA) -> return $ SB.secureBytesToByteString sAB === SB.secureBytesToByteString sBA
     (Left err, _) -> return $ counterexample ("A->B failed: " ++ show err) False
     (_, Left err) -> return $ counterexample ("B->A failed: " ++ show err) False
 
