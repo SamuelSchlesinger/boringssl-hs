@@ -15,7 +15,7 @@ tests = testGroup "PrivateKey"
   [ testCase "RSA DER round-trip" $ do
       Right kp <- generateRSAKeyPair 2048
       Right privBytes <- privateKeyToBytes kp
-      result <- loadPrivateKeyDER privBytes
+      result <- pure $ loadPrivateKeyDER privBytes
       case result of
         Right (SomeRSAKey _) -> return ()
         Right other -> assertFailure ("expected RSA key, got: " ++ show other)
@@ -27,20 +27,20 @@ tests = testGroup "PrivateKey"
       pem <- case pemEncode "RSA PRIVATE KEY" privBytes of
         Left err -> assertFailure ("pemEncode failed: " ++ show err) >> error "unreachable"
         Right p -> return p
-      result <- loadPrivateKeyPEM pem
+      result <- pure $ loadPrivateKeyPEM pem
       case result of
         Right (SomeRSAKey _) -> return ()
         Right other -> assertFailure ("expected RSA key, got: " ++ show other)
         Left err -> assertFailure ("loadPrivateKeyPEM failed: " ++ show err)
 
   , testCase "garbage DER rejected" $ do
-      result <- loadPrivateKeyDER (BS.replicate 32 0xFF)
+      result <- pure $ loadPrivateKeyDER (BS.replicate 32 0xFF)
       case result of
         Left _ -> return ()
         Right _ -> assertFailure "should reject garbage DER"
 
   , testCase "garbage PEM rejected" $ do
-      result <- loadPrivateKeyPEM "not a pem"
+      result <- pure $ loadPrivateKeyPEM "not a pem"
       case result of
         Left _ -> return ()
         Right _ -> assertFailure "should reject garbage PEM"

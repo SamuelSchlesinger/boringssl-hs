@@ -51,6 +51,25 @@ tests = testGroup "PEM"
         Left _  -> return ()
         Right _ -> assertFailure "pemDecode should reject garbage"
 
+  , testGroup "label validation"
+    [ testCase "encode rejects empty label" $
+        case pemEncode "" "data" of
+          Left _  -> return ()
+          Right _ -> assertFailure "pemEncode should reject an empty label"
+    , testCase "encode rejects label containing dashes (framing injection)" $
+        case pemEncode "X-----END X-----\n-----BEGIN EVIL" "data" of
+          Left _  -> return ()
+          Right _ -> assertFailure "pemEncode should reject a label with dashes"
+    , testCase "encode rejects label containing a newline" $
+        case pemEncode "GOOD\nEVIL" "data" of
+          Left _  -> return ()
+          Right _ -> assertFailure "pemEncode should reject a label with a newline"
+    , testCase "encode accepts a normal label with spaces" $
+        case pemEncode "RSA PRIVATE KEY" "data" of
+          Left err -> assertFailure ("should accept a normal label: " ++ show err)
+          Right _  -> return ()
+    ]
+
   , testCase "decode rejects missing footer" $ do
       let incomplete = BS8.pack "-----BEGIN TEST-----\nYWJj\n"
       case pemDecode incomplete of

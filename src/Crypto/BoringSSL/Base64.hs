@@ -5,7 +5,6 @@
 module Crypto.BoringSSL.Base64
   ( encode
   , decode
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)

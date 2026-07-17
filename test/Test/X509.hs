@@ -89,8 +89,8 @@ tests = testGroup "X509"
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER should parse the test certificate: " ++ show err)
         Right cert -> do
-          let subj = subjectName cert
-              iss  = issuerName cert
+          Right subj <- pure (subjectName cert)
+          Right iss  <- pure (issuerName cert)
           assertBool ("subjectName should contain 'Test', got: " ++ subj)
             (isInfixOf' "Test" subj)
           assertBool ("issuerName should contain 'BoringSSL', got: " ++ iss)
@@ -100,8 +100,8 @@ tests = testGroup "X509"
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER should parse: " ++ show err)
         Right cert -> do
-          let subj = subjectName cert
-              iss  = issuerName cert
+          Right subj <- pure (subjectName cert)
+          Right iss  <- pure (issuerName cert)
           subj @?= iss
 
     -- Feature 6: public key extraction
@@ -155,23 +155,23 @@ tests = testGroup "X509"
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER failed: " ++ show err)
         Right cert -> do
-          store <- newX509Store
-          addTrustAnchor store cert
-          result <- verifyCertChain store cert []
+          Right store <- newX509Store
+          Right () <- addTrustAnchor store cert
+          Right result <- verifyCertChain store cert []
           case result of
-            VerifyOK -> return ()
-            VerifyFailed code msg -> assertFailure
+            ChainVerified -> return ()
+            ChainRejected code msg -> assertFailure
               ("verification should succeed but got: " ++ show code ++ " " ++ msg)
 
   , testCase "untrusted cert fails against empty store" $ do
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER failed: " ++ show err)
         Right cert -> do
-          store <- newX509Store  -- empty store
-          result <- verifyCertChain store cert []
+          Right store <- newX509Store  -- empty store
+          Right result <- verifyCertChain store cert []
           case result of
-            VerifyFailed _ _ -> return ()
-            VerifyOK -> assertFailure "verification should fail against empty store"
+            ChainRejected _ _ -> return ()
+            ChainVerified -> assertFailure "verification should fail against empty store"
 
     -- Feature 9: signature algorithm
   , testCase "certSignatureAlgorithm on test cert" $ do
@@ -190,22 +190,22 @@ tests = testGroup "X509"
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER failed: " ++ show err)
         Right cert -> do
-          der <- certSubjectDER cert
+          Right der <- pure (certSubjectDER cert)
           assertBool "subject DER should be non-empty" (not (BS.null der))
 
   , testCase "certSubjectDER == certIssuerDER for self-signed" $ do
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER failed: " ++ show err)
         Right cert -> do
-          subjDER <- certSubjectDER cert
-          issDER <- certIssuerDER cert
+          Right subjDER <- pure (certSubjectDER cert)
+          Right issDER <- pure (certIssuerDER cert)
           subjDER @?= issDER
 
   , testCase "certSubjectDER starts with SEQUENCE tag 0x30" $ do
       case parseDER testCertDER of
         Left err -> assertFailure ("parseDER failed: " ++ show err)
         Right cert -> do
-          der <- certSubjectDER cert
+          Right der <- pure (certSubjectDER cert)
           assertBool "should start with 0x30" (not (BS.null der) && BS.head der == 0x30)
   ]
 

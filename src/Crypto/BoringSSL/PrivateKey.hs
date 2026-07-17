@@ -6,7 +6,6 @@ module Crypto.BoringSSL.PrivateKey
   ( SomePrivateKey(..)
   , loadPrivateKeyDER
   , loadPrivateKeyPEM
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -17,6 +16,7 @@ import Foreign.Ptr
 import Foreign.Marshal.Alloc (alloca)
 import Foreign.Storable
 import Control.Exception (bracket, mask_)
+import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -58,8 +58,9 @@ evpPKeyX25519  = 948
 
 -- | Load a private key from DER encoding.
 -- Automatically detects PKCS#1 (RSA), PKCS#8, and SEC1 (EC) formats.
-loadPrivateKeyDER :: ByteString -> IO (Either CryptoError SomePrivateKey)
-loadPrivateKeyDER bs =
+-- Pure: parsing is deterministic.
+loadPrivateKeyDER :: ByteString -> Either CryptoError SomePrivateKey
+loadPrivateKeyDER bs = unsafePerformIO $
   withByteString bs $ \dataPtr dataLen ->
     alloca $ \inpPtr -> do
       poke inpPtr dataPtr
@@ -69,10 +70,12 @@ loadPrivateKeyDER bs =
           then return (Left (DecodeError "loadPrivateKeyDER: d2i_AutoPrivateKey failed"))
           else bracket (return pkey) c_EVP_PKEY_free $ \pk ->
             evpPKeyToSomeKey pk
+{-# NOINLINE loadPrivateKeyDER #-}
 
--- | Load a private key from PEM encoding.
-loadPrivateKeyPEM :: ByteString -> IO (Either CryptoError SomePrivateKey)
-loadPrivateKeyPEM bs =
+-- | Load a private key from PEM encoding. Pure: parsing is
+-- deterministic.
+loadPrivateKeyPEM :: ByteString -> Either CryptoError SomePrivateKey
+loadPrivateKeyPEM bs = unsafePerformIO $
   withByteString bs $ \dataPtr dataLen -> runExceptT $ maskE_ $ do
     bio <- liftIO (c_BIO_new_mem_buf dataPtr (fromIntegral dataLen))
       >>= nonNull (AllocationFailure "loadPrivateKeyPEM: BIO_new_mem_buf failed")
@@ -81,6 +84,7 @@ loadPrivateKeyPEM bs =
     _ <- nonNull (DecodeError "loadPrivateKeyPEM: PEM_read_bio_PrivateKey failed") pkey
     ExceptT $ bracket (return pkey) c_EVP_PKEY_free $ \pk ->
       evpPKeyToSomeKey pk
+{-# NOINLINE loadPrivateKeyPEM #-}
 
 -- | Convert an EVP_PKEY to a SomePrivateKey by detecting type and
 -- serializing the key material into Haskell-managed types.

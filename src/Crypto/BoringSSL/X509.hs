@@ -29,7 +29,7 @@ module Crypto.BoringSSL.X509
   , X509Store
   , newX509Store
   , addTrustAnchor
-  , VerifyResult(..)
+  , ChainVerifyResult(..)
   , verifyCertChain
     -- * Signature algorithm (Feature 9)
   , SignatureAlgInfo(..)
@@ -37,8 +37,6 @@ module Crypto.BoringSSL.X509
     -- * DN as DER (Feature 10)
   , certSubjectDER
   , certIssuerDER
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Control.Exception (bracket, mask_)
@@ -127,30 +125,42 @@ toDER (X509Cert fptr) = unsafePerformIO $
 -- Accessors
 ------------------------------------------------------------------------
 
-subjectName :: X509Cert -> String
+-- | The certificate subject in OpenSSL @oneline@ format.
+-- Pure; fails with 'Left' instead of silently returning an empty string.
+subjectName :: X509Cert -> Either CryptoError String
 subjectName (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     namePtr <- c_X509_get_subject_name certPtr
     if namePtr == nullPtr
-      then return ""
-      else allocaArray 1024 $ \buf -> do
-        result <- c_X509_NAME_oneline namePtr buf 1024
-        if result == nullPtr
-          then return ""
-          else peekCString buf
+      then return (Left (OperationFailed "X509.subjectName: certificate has no name"))
+      else do
+        -- A NULL buffer makes X509_NAME_oneline allocate: no truncation.
+        strPtr <- c_X509_NAME_oneline namePtr nullPtr 0
+        if strPtr == nullPtr
+          then return (Left (OperationFailed "X509.subjectName: X509_NAME_oneline failed"))
+          else do
+            str <- peekCString strPtr
+            c_OPENSSL_free strPtr
+            return (Right str)
 {-# NOINLINE subjectName #-}
 
-issuerName :: X509Cert -> String
+-- | The certificate issuer in OpenSSL @oneline@ format.
+-- Pure; fails with 'Left' instead of silently returning an empty string.
+issuerName :: X509Cert -> Either CryptoError String
 issuerName (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     namePtr <- c_X509_get_issuer_name certPtr
     if namePtr == nullPtr
-      then return ""
-      else allocaArray 1024 $ \buf -> do
-        result <- c_X509_NAME_oneline namePtr buf 1024
-        if result == nullPtr
-          then return ""
-          else peekCString buf
+      then return (Left (OperationFailed "X509.issuerName: certificate has no name"))
+      else do
+        -- A NULL buffer makes X509_NAME_oneline allocate: no truncation.
+        strPtr <- c_X509_NAME_oneline namePtr nullPtr 0
+        if strPtr == nullPtr
+          then return (Left (OperationFailed "X509.issuerName: X509_NAME_oneline failed"))
+          else do
+            str <- peekCString strPtr
+            c_OPENSSL_free strPtr
+            return (Right str)
 {-# NOINLINE issuerName #-}
 
 version :: X509Cert -> Int
@@ -160,25 +170,27 @@ version (X509Cert fptr) = unsafePerformIO $
     return (fromIntegral v + 1)
 {-# NOINLINE version #-}
 
-serialNumberHex :: X509Cert -> String
+-- | The certificate serial number as a hex string. Pure; fails with
+-- 'Left' instead of silently returning an empty string.
+serialNumberHex :: X509Cert -> Either CryptoError String
 serialNumberHex (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     serialPtr <- c_X509_get0_serialNumber certPtr
     if serialPtr == nullPtr
-      then return ""
+      then return (Left (OperationFailed "X509.serialNumberHex: certificate has no serial number"))
       else do
         bnPtr <- c_ASN1_INTEGER_to_BN serialPtr nullPtr
         if bnPtr == nullPtr
-          then return ""
+          then return (Left (AllocationFailure "X509.serialNumberHex: ASN1_INTEGER_to_BN failed"))
           else do
             hexPtr <- c_BN_bn2hex bnPtr
             c_BN_free bnPtr
             if hexPtr == nullPtr
-              then return ""
+              then return (Left (AllocationFailure "X509.serialNumberHex: BN_bn2hex failed"))
               else do
                 hexStr <- peekCString hexPtr
                 c_OPENSSL_free hexPtr
-                return hexStr
+                return (Right hexStr)
 {-# NOINLINE serialNumberHex #-}
 
 notBefore :: X509Cert -> Either CryptoError Int64
@@ -327,7 +339,8 @@ data KeyUsageFlag
   deriving (Eq, Show)
 
 -- | Get the key usage flags from a certificate.
--- Returns @Nothing@ if the key usage extension is not present.
+-- @Nothing@ means the key-usage extension is absent (the underlying C
+-- API cannot distinguish a malformed extension from an absent one).
 certKeyUsage :: X509Cert -> Maybe [KeyUsageFlag]
 certKeyUsage (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
@@ -355,7 +368,9 @@ certKeyUsage (X509Cert fptr) = unsafePerformIO $
 {-# NOINLINE certKeyUsage #-}
 
 -- | Get the basic constraints extension.
--- Returns @Nothing@ if not present, @Just (isCA, maybePathLen)@ otherwise.
+-- @Nothing@ means the extension is absent (the underlying C API cannot
+-- distinguish a malformed extension from an absent one);
+-- @Just (isCA, maybePathLen)@ otherwise.
 certBasicConstraints :: X509Cert -> Maybe (Bool, Maybe Int)
 certBasicConstraints (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
@@ -396,7 +411,8 @@ data GeneralName
   deriving (Eq, Show)
 
 -- | Get the subject alternative names from a certificate.
--- Returns an empty list if the extension is not present.
+-- Returns an empty list if the extension is absent. Entries of types we
+-- do not decode are reported as 'GNOther' with their GEN_* type code.
 certSubjectAltNames :: X509Cert -> [GeneralName]
 certSubjectAltNames (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
@@ -414,7 +430,8 @@ certSubjectAltNames (X509Cert fptr) = unsafePerformIO $
     extractGen gens i = do
       gen <- c_bssl_sk_GENERAL_NAME_value gens i
       if gen == nullPtr
-        then return (GNOther (-1) BS.empty)
+        -- Cannot happen for indices < sk_num; defensive skip marker.
+        then return (GNOther 0 BS.empty)
         else do
           genType <- c_bssl_general_name_type gen
           let typeInt = fromIntegral genType
@@ -465,40 +482,45 @@ safeReadHex s
 -- | A trust store containing trust anchor certificates.
 newtype X509Store = X509Store (ForeignPtr X509_STORE)
 
--- | The result of X.509 chain verification.
-data VerifyResult
-  = VerifyOK
-  | VerifyFailed Int String
+-- | The result of X.509 chain verification. 'ChainRejected' carries a
+-- genuine X.509 verification error code and its description; internal
+-- failures (allocation etc.) are reported as 'Left' by
+-- 'verifyCertChain', never smuggled into this type.
+data ChainVerifyResult
+  = ChainVerified
+  | ChainRejected !Int !String
   deriving (Eq, Show)
 
 -- | Create a new empty trust store.
-newX509Store :: IO X509Store
+newX509Store :: IO (Either CryptoError X509Store)
 newX509Store = mask_ $ do
   storePtr <- c_X509_STORE_new
   if storePtr == nullPtr
-    then fail "newX509Store: X509_STORE_new returned NULL"
+    then return (Left (AllocationFailure "newX509Store: X509_STORE_new returned NULL"))
     else do
       fptr <- newForeignPtr c_X509_STORE_free_funptr storePtr
-      return (X509Store fptr)
+      return (Right (X509Store fptr))
 
 -- | Add a trust anchor certificate to the store.
-addTrustAnchor :: X509Store -> X509Cert -> IO ()
+addTrustAnchor :: X509Store -> X509Cert -> IO (Either CryptoError ())
 addTrustAnchor (X509Store storeFptr) (X509Cert certFptr) =
   withForeignPtr storeFptr $ \storePtr ->
     withForeignPtr certFptr $ \certPtr -> do
       rc <- c_X509_STORE_add_cert storePtr certPtr
       if rc /= 1
-        then fail "addTrustAnchor: X509_STORE_add_cert failed"
-        else return ()
+        then return (Left (OperationFailed "addTrustAnchor: X509_STORE_add_cert failed"))
+        else return (Right ())
 
--- | Verify a certificate chain against a trust store.
-verifyCertChain :: X509Store -> X509Cert -> [X509Cert] -> IO VerifyResult
+-- | Verify a certificate chain against a trust store. Genuine
+-- verification failures come back as 'Right' ('ChainRejected' code
+-- message); internal failures (allocation, context setup) as 'Left'.
+verifyCertChain :: X509Store -> X509Cert -> [X509Cert] -> IO (Either CryptoError ChainVerifyResult)
 verifyCertChain (X509Store storeFptr) (X509Cert targetFptr) intermediates =
   withForeignPtr storeFptr $ \storePtr ->
     withForeignPtr targetFptr $ \targetPtr -> do
       skPtr <- c_bssl_sk_X509_new_null
       if skPtr == nullPtr
-        then return (VerifyFailed (-1) "sk_X509_new_null failed")
+        then return (Left (AllocationFailure "verifyCertChain: sk_X509_new_null failed"))
         else do
           pushResults <- mapM (\(X509Cert fp) -> withForeignPtr fp $ \cp ->
             c_bssl_sk_X509_push skPtr cp) intermediates
@@ -506,7 +528,7 @@ verifyCertChain (X509Store storeFptr) (X509Cert targetFptr) intermediates =
             then do
               c_bssl_sk_X509_free skPtr
               mapM_ (\(X509Cert fp) -> touchForeignPtr fp) intermediates
-              return (VerifyFailed (-1) "sk_X509_push allocation failed")
+              return (Left (AllocationFailure "verifyCertChain: sk_X509_push failed"))
             else do
               result <- bracket c_X509_STORE_CTX_new
                                 (\ctx -> if ctx /= nullPtr
@@ -514,22 +536,22 @@ verifyCertChain (X509Store storeFptr) (X509Cert targetFptr) intermediates =
                                            else return ())
                        $ \ctx ->
                 if ctx == nullPtr
-                  then return (VerifyFailed (-1) "X509_STORE_CTX_new failed")
+                  then return (Left (AllocationFailure "verifyCertChain: X509_STORE_CTX_new failed"))
                   else do
                     rc <- c_X509_STORE_CTX_init ctx storePtr targetPtr skPtr
                     if rc /= 1
-                      then return (VerifyFailed (-1) "X509_STORE_CTX_init failed")
+                      then return (Left (OperationFailed "verifyCertChain: X509_STORE_CTX_init failed"))
                       else do
                         vrc <- c_X509_verify_cert ctx
                         if vrc == 1
-                          then return VerifyOK
+                          then return (Right ChainVerified)
                           else do
                             errCode <- c_X509_STORE_CTX_get_error ctx
                             errStr <- c_X509_verify_cert_error_string (fromIntegral errCode)
                             errMsg <- if errStr == nullPtr
                                         then return "unknown"
                                         else peekCString errStr
-                            return (VerifyFailed (fromIntegral errCode) errMsg)
+                            return (Right (ChainRejected (fromIntegral errCode) errMsg))
               c_bssl_sk_X509_free skPtr
               -- Keep intermediate ForeignPtrs alive through verification
               mapM_ (\(X509Cert fp) -> touchForeignPtr fp) intermediates
@@ -564,29 +586,33 @@ certSignatureAlgorithm (X509Cert fptr) =
 -- Feature 10: DN as DER bytes
 ------------------------------------------------------------------------
 
--- | Serialize the subject distinguished name to DER.
-certSubjectDER :: X509Cert -> IO ByteString
-certSubjectDER (X509Cert fptr) =
+-- | Serialize the subject distinguished name to DER. Pure; fails with
+-- 'Left' instead of silently returning empty bytes.
+certSubjectDER :: X509Cert -> Either CryptoError ByteString
+certSubjectDER (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     namePtr <- c_X509_get_subject_name certPtr
     if namePtr == nullPtr
-      then return BS.empty
+      then return (Left (OperationFailed "certSubjectDER: certificate has no subject"))
       else nameToDER namePtr
+{-# NOINLINE certSubjectDER #-}
 
--- | Serialize the issuer distinguished name to DER.
-certIssuerDER :: X509Cert -> IO ByteString
-certIssuerDER (X509Cert fptr) =
+-- | Serialize the issuer distinguished name to DER. Pure; fails with
+-- 'Left' instead of silently returning empty bytes.
+certIssuerDER :: X509Cert -> Either CryptoError ByteString
+certIssuerDER (X509Cert fptr) = unsafePerformIO $
   withForeignPtr fptr $ \certPtr -> do
     namePtr <- c_X509_get_issuer_name certPtr
     if namePtr == nullPtr
-      then return BS.empty
+      then return (Left (OperationFailed "certIssuerDER: certificate has no issuer"))
       else nameToDER namePtr
+{-# NOINLINE certIssuerDER #-}
 
-nameToDER :: Ptr X509_NAME -> IO ByteString
+nameToDER :: Ptr X509_NAME -> IO (Either CryptoError ByteString)
 nameToDER namePtr = do
   len <- c_i2d_X509_NAME namePtr nullPtr
   if len <= 0
-    then return BS.empty
+    then return (Left (OperationFailed "nameToDER: i2d_X509_NAME failed to compute length"))
     else do
       outFPtr <- BSI.mallocByteString (fromIntegral len)
       actualLen <- withForeignPtr outFPtr $ \outBuf ->
@@ -594,5 +620,5 @@ nameToDER namePtr = do
           poke outPtrPtr (castPtr outBuf)
           c_i2d_X509_NAME namePtr outPtrPtr
       if actualLen < 0
-        then return BS.empty
-        else return (BSI.BS outFPtr (fromIntegral actualLen))
+        then return (Left (OperationFailed "nameToDER: i2d_X509_NAME failed to serialize"))
+        else return (Right (BSI.BS outFPtr (fromIntegral actualLen)))

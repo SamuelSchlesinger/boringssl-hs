@@ -6,9 +6,9 @@ module Crypto.BoringSSL.PEM
   ( pemEncode
   , pemDecode
   , pemDecodeMany
-  , CryptoError(..)
   ) where
 
+import Data.Char (isPrint)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
@@ -23,8 +23,17 @@ import qualified Crypto.BoringSSL.Base64 as Base64
 -- > -----BEGIN CERTIFICATE-----
 -- > <base64 data with line breaks every 64 characters>
 -- > -----END CERTIFICATE-----
+--
+-- The label is validated: it must be non-empty and contain only
+-- printable characters other than @-@. Without this check a caller
+-- passing attacker-influenced text could inject @-----BEGIN ...-----@
+-- framing or newlines and forge extra PEM blocks.
 pemEncode :: String -> ByteString -> Either CryptoError ByteString
-pemEncode label derBytes =
+pemEncode label derBytes
+  | null label = Left (InvalidInput "pemEncode: label must not be empty")
+  | any (\c -> c == '-' || not (isPrint c)) label =
+      Left (InvalidInput "pemEncode: label must contain only printable characters and no '-'")
+  | otherwise =
   case Base64.encode derBytes of
     Left err -> Left err
     Right b64 ->
