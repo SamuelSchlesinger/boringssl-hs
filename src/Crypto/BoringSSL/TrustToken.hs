@@ -1,7 +1,15 @@
--- | Trust Token issuance and redemption.
+-- | Trust Token issuance and redemption (Privacy Pass).
 --
--- Implements Privacy Pass-style anonymous tokens with limited
--- private metadata. Supports PMBToken and VOPRF protocol variants.
+-- Trust Tokens let an issuer hand out anonymous, unlinkable tokens that
+-- a client can later redeem to prove trustworthiness without being
+-- identified. Supports PMBToken and VOPRF protocol variants.
+--
+-- __Lifecycle__: client side — 'newClient', 'clientAddKey', then
+-- 'beginIssuance' -> (issuer 'issue') -> 'finishIssuance', and later
+-- 'beginRedemption' -> (issuer 'redeem') -> 'finishRedemption'.
+-- Issuer side — 'newIssuer', 'issuerAddKey', then 'issue'\/'redeem'.
+-- Calling a step out of order returns 'Left'. Contexts are safe to
+-- share between threads; calls are serialized by an internal lock.
 module Crypto.BoringSSL.TrustToken
   ( -- * Method selection
     TrustTokenMethod(..)
@@ -21,8 +29,6 @@ module Crypto.BoringSSL.TrustToken
   , issuerAddKey
   , issue
   , redeem
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -33,6 +39,8 @@ import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
+
+import Control.Concurrent.MVar
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -47,11 +55,13 @@ data TrustTokenMethod
   | PstV1PMB
   deriving (Eq, Show)
 
--- | A Trust Token client context.
-newtype TrustTokenClient = TrustTokenClient (ForeignPtr TRUST_TOKEN_CLIENT)
+-- | A Trust Token client context. Thread-safe: concurrent calls are
+-- serialized via an internal lock.
+data TrustTokenClient = TrustTokenClient !(MVar ()) !(ForeignPtr TRUST_TOKEN_CLIENT)
 
--- | A Trust Token issuer context.
-newtype TrustTokenIssuer = TrustTokenIssuer (ForeignPtr TRUST_TOKEN_ISSUER)
+-- | A Trust Token issuer context. Thread-safe: concurrent calls are
+-- serialized via an internal lock.
+data TrustTokenIssuer = TrustTokenIssuer !(MVar ()) !(ForeignPtr TRUST_TOKEN_ISSUER)
 
 methodPtr :: TrustTokenMethod -> Ptr TRUST_TOKEN_METHOD
 methodPtr ExperimentV2VOPRF = c_TRUST_TOKEN_experiment_v2_voprf
@@ -61,7 +71,8 @@ methodPtr PstV1PMB          = c_TRUST_TOKEN_pst_v1_pmb
 
 -- | Generate a Trust Token key pair. Returns @Right (privateKey, publicKey)@.
 generateKey :: TrustTokenMethod -> Word32 -> IO (Either CryptoError (ByteString, ByteString))
-generateKey method keyId = do
+generateKey method keyId = withBoundThread $ do
+  clearBoringSSLError
   let maxPriv = trustTokenMaxPrivateKeySize
       maxPub  = trustTokenMaxPublicKeySize
   privFPtr <- BSI.mallocByteString maxPriv
@@ -73,7 +84,7 @@ generateKey method keyId = do
           (castPtr privPtr) privLenPtr (fromIntegral maxPriv)
           (castPtr pubPtr) pubLenPtr (fromIntegral maxPub)
           keyId
-    checkRC (OperationFailed "generateKey: TRUST_TOKEN_generate_key failed") rc
+    checkRCError "generateKey: TRUST_TOKEN_generate_key failed" rc
     privLen <- liftIO $ peek privLenPtr
     pubLen  <- liftIO $ peek pubLenPtr
     return (BSI.BS privFPtr (fromIntegral privLen),
@@ -85,33 +96,40 @@ newClient method maxBatchSize = runExceptT $ maskE_ $ do
   ctx <- liftIO (c_TRUST_TOKEN_CLIENT_new (methodPtr method) (fromIntegral maxBatchSize))
     >>= nonNull (AllocationFailure "newClient: TRUST_TOKEN_CLIENT_new failed")
   fptr <- liftIO $ newForeignPtr c_TRUST_TOKEN_CLIENT_free_funptr ctx
-  return (TrustTokenClient fptr)
+  lock <- liftIO $ newMVar ()
+  return (TrustTokenClient lock fptr)
 
 -- | Add a public key to the client. Returns the key index.
 clientAddKey :: TrustTokenClient -> ByteString -> IO (Either CryptoError Int)
-clientAddKey (TrustTokenClient fptr) key =
+clientAddKey (TrustTokenClient lock fptr) key = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $
     allocaE $ \idxPtr -> do
       rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
         c_TRUST_TOKEN_CLIENT_add_key ctx idxPtr keyPtr keyLen
-      checkRC (OperationFailed "clientAddKey: TRUST_TOKEN_CLIENT_add_key failed") rc
+      checkRCError "clientAddKey: TRUST_TOKEN_CLIENT_add_key failed" rc
       idx <- liftIO $ peek idxPtr
       return (fromIntegral (idx :: CSize))
 
 -- | Begin token issuance. Returns the issuance request to send to the issuer.
 beginIssuance :: TrustTokenClient -> Int -> IO (Either CryptoError ByteString)
-beginIssuance (TrustTokenClient fptr) count =
+beginIssuance (TrustTokenClient lock fptr) count = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $
     allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> do
       rc <- liftIO $ c_TRUST_TOKEN_CLIENT_begin_issuance ctx outPtrPtr outLenPtr
               (fromIntegral count)
-      checkRC (OperationFailed "beginIssuance: TRUST_TOKEN_CLIENT_begin_issuance failed") rc
+      checkRCError "beginIssuance: TRUST_TOKEN_CLIENT_begin_issuance failed" rc
       liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Finish token issuance by processing the issuer's response.
 -- Returns @Right (tokens, keyIndex)@ on success.
 finishIssuance :: TrustTokenClient -> ByteString -> IO (Either CryptoError ([ByteString], Int))
-finishIssuance (TrustTokenClient fptr) response =
+finishIssuance (TrustTokenClient lock fptr) response = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $
     allocaE $ \keyIdxPtr -> do
       stack <- liftIO (withByteString response $ \respPtr respLen ->
@@ -140,7 +158,9 @@ extractToken stack i = do
 
 -- | Begin token redemption. Returns the redemption request.
 beginRedemption :: TrustTokenClient -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-beginRedemption (TrustTokenClient fptr) tokenData clientData =
+beginRedemption (TrustTokenClient lock fptr) tokenData clientData = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     tok <- liftIO (withByteString tokenData $ \tokDataPtr tokDataLen ->
       c_TRUST_TOKEN_new tokDataPtr tokDataLen)
@@ -150,21 +170,23 @@ beginRedemption (TrustTokenClient fptr) tokenData clientData =
         rc <- liftIO $ withByteString clientData $ \cdPtr cdLen ->
           c_TRUST_TOKEN_CLIENT_begin_redemption ctx outPtrPtr outLenPtr
             tok cdPtr cdLen 0
-        checkRC (OperationFailed "beginRedemption: TRUST_TOKEN_CLIENT_begin_redemption failed") rc
+        checkRCError "beginRedemption: TRUST_TOKEN_CLIENT_begin_redemption failed" rc
         liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr)
       (c_TRUST_TOKEN_free tok)
 
 -- | Finish redemption by processing the issuer's response.
 -- Returns @Right (rr, sig)@ on success.
 finishRedemption :: TrustTokenClient -> ByteString -> IO (Either CryptoError (ByteString, ByteString))
-finishRedemption (TrustTokenClient fptr) response =
+finishRedemption (TrustTokenClient lock fptr) response = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $
     allocaE $ \rrPtrPtr -> allocaE $ \rrLenPtr ->
       allocaE $ \sigPtrPtr -> allocaE $ \sigLenPtr -> do
         rc <- liftIO $ withByteString response $ \respPtr respLen ->
           c_TRUST_TOKEN_CLIENT_finish_redemption ctx rrPtrPtr rrLenPtr
             sigPtrPtr sigLenPtr respPtr respLen
-        checkRC (OperationFailed "finishRedemption: TRUST_TOKEN_CLIENT_finish_redemption failed") rc
+        checkRCError "finishRedemption: TRUST_TOKEN_CLIENT_finish_redemption failed" rc
         rr <- liftIO $ packOpenSSLBuffer rrPtrPtr rrLenPtr
         sig <- liftIO $ packOpenSSLBuffer sigPtrPtr sigLenPtr
         return (rr, sig)
@@ -175,28 +197,33 @@ newIssuer method maxBatchSize = runExceptT $ maskE_ $ do
   ctx <- liftIO (c_TRUST_TOKEN_ISSUER_new (methodPtr method) (fromIntegral maxBatchSize))
     >>= nonNull (AllocationFailure "newIssuer: TRUST_TOKEN_ISSUER_new failed")
   fptr <- liftIO $ newForeignPtr c_TRUST_TOKEN_ISSUER_free_funptr ctx
-  return (TrustTokenIssuer fptr)
+  lock <- liftIO $ newMVar ()
+  return (TrustTokenIssuer lock fptr)
 
 -- | Add a private key to the issuer.
 issuerAddKey :: TrustTokenIssuer -> ByteString -> IO (Either CryptoError ())
-issuerAddKey (TrustTokenIssuer fptr) key =
+issuerAddKey (TrustTokenIssuer lock fptr) key = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     rc <- liftIO $ withByteString key $ \keyPtr keyLen ->
       c_TRUST_TOKEN_ISSUER_add_key ctx keyPtr keyLen
-    checkRC (OperationFailed "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed") rc
+    checkRCError "issuerAddKey: TRUST_TOKEN_ISSUER_add_key failed" rc
 
 -- | Issue tokens in response to a client request.
 -- Returns @Right (response, tokensIssued)@ on success.
 issue :: TrustTokenIssuer -> ByteString -> Word32 -> Word8 -> Int
       -> IO (Either CryptoError (ByteString, Int))
-issue (TrustTokenIssuer fptr) request publicMeta privateMeta maxIssuance =
+issue (TrustTokenIssuer lock fptr) request publicMeta privateMeta maxIssuance = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $
     allocaE $ \outPtrPtr -> allocaE $ \outLenPtr -> allocaE $ \tokensIssuedPtr -> do
       rc <- liftIO $ withByteString request $ \reqPtr reqLen ->
         c_TRUST_TOKEN_ISSUER_issue ctx outPtrPtr outLenPtr
           tokensIssuedPtr reqPtr reqLen publicMeta privateMeta
           (fromIntegral maxIssuance)
-      checkRC (OperationFailed "issue: TRUST_TOKEN_ISSUER_issue failed") rc
+      checkRCError "issue: TRUST_TOKEN_ISSUER_issue failed" rc
       resp <- liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
       issued <- liftIO $ peek tokensIssuedPtr
       return (resp, fromIntegral (issued :: CSize))
@@ -205,14 +232,16 @@ issue (TrustTokenIssuer fptr) request publicMeta privateMeta maxIssuance =
 -- tokenData, clientData)@ on success.
 redeem :: TrustTokenIssuer -> ByteString
        -> IO (Either CryptoError (Word32, Word8, ByteString, ByteString))
-redeem (TrustTokenIssuer fptr) request =
+redeem (TrustTokenIssuer lock fptr) request = withBoundThread $
+  withMVar lock $ \_ -> do
+  clearBoringSSLError
   withForeignPtr fptr $ \ctx -> runExceptT $
     allocaE $ \pubPtr -> allocaE $ \privPtr ->
       allocaE $ \tokenPtrPtr -> allocaE $ \cdPtrPtr -> allocaE $ \cdLenPtr -> do
         rc <- liftIO $ withByteString request $ \reqPtr reqLen ->
           c_TRUST_TOKEN_ISSUER_redeem ctx pubPtr privPtr
             tokenPtrPtr cdPtrPtr cdLenPtr reqPtr reqLen
-        checkRC (OperationFailed "redeem: TRUST_TOKEN_ISSUER_redeem failed") rc
+        checkRCError "redeem: TRUST_TOKEN_ISSUER_redeem failed" rc
         pubMeta <- liftIO $ peek pubPtr
         privMeta <- liftIO $ peek privPtr
         tokenRawPtr <- liftIO $ peek tokenPtrPtr

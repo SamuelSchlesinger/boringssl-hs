@@ -6,6 +6,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.SPAKE2
+import Crypto.BoringSSL.SecureBytes
 
 tests :: TestTree
 tests = testGroup "SPAKE2"
