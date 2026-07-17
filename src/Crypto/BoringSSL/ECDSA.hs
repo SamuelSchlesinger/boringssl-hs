@@ -22,16 +22,11 @@ module Crypto.BoringSSL.ECDSA
   , ecPrivateKeySecureBytes
   , ecKeyPairFromPrivateBytes
   , ecPublicKeyFromBytes
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
+import System.IO.Unsafe (unsafePerformIO)
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
@@ -72,16 +67,19 @@ ecdsaSign kp digest = withBoundThread $
 -- | Verify an ECDSA signature on a pre-hashed digest.
 -- The @digest@ must be the hash of the original message, matching
 -- the hash used during signing.
--- Returns @Right True@ for valid, @Right False@ for invalid, or
--- @Left@ for internal errors (e.g. memory allocation failure).
-ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-ecdsaVerify pubKey digest sig = withBoundThread $
+--
+-- Pure and fail-closed: 'False' covers invalid signatures, malformed
+-- DER, and any internal failure.
+ecdsaVerify :: ECPublicKey -> ByteString -> ByteString -> Bool
+ecdsaVerify pubKey digest sig = unsafePerformIO $ withBoundThread $
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
         clearBoringSSLError
         rc <- c_ECDSA_verify 0 digestPtr digestLen sigPtr sigLen keyPtr
-        checkVerifyRC rc "ecdsaVerify: internal error"
+        clearBoringSSLError
+        return (rc == 1)
+{-# NOINLINE ecdsaVerify #-}
 
 -- | Sign a pre-hashed digest with ECDSA, producing a fixed-size P1363
 -- signature (r || s, each zero-padded to the group order size).
@@ -103,13 +101,16 @@ ecdsaSignP1363 kp digest = withBoundThread $
 -- | Verify a P1363 fixed-size ECDSA signature on a pre-hashed digest.
 -- The @digest@ must be the hash of the original message, matching
 -- the hash used during signing.
--- Returns @Right True@ for valid, @Right False@ for invalid, or
--- @Left@ for internal errors.
-ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-ecdsaVerifyP1363 pubKey digest sig = withBoundThread $
+--
+-- Pure and fail-closed: 'False' covers invalid signatures, wrong-length
+-- input, and any internal failure.
+ecdsaVerifyP1363 :: ECPublicKey -> ByteString -> ByteString -> Bool
+ecdsaVerifyP1363 pubKey digest sig = unsafePerformIO $ withBoundThread $
   withECPublicKey pubKey $ \keyPtr ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
         clearBoringSSLError
         rc <- c_ECDSA_verify_p1363 digestPtr digestLen sigPtr sigLen keyPtr
-        checkVerifyRC rc "ecdsaVerifyP1363: internal error"
+        clearBoringSSLError
+        return (rc == 1)
+{-# NOINLINE ecdsaVerifyP1363 #-}

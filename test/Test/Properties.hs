@@ -474,11 +474,7 @@ prop_ecdsaSignVerify curve = ioProperty $ do
   signResult <- ECDSA.ecdsaSign kp digest
   case signResult of
     Left err -> return $ counterexample ("sign failed: " ++ show err) False
-    Right sig -> do
-      verifyResult <- ECDSA.ecdsaVerify pubKey digest sig
-      case verifyResult of
-        Left err -> return $ counterexample ("verify failed: " ++ show err) False
-        Right ok -> return $ ok === True
+    Right sig -> return $ ECDSA.ecdsaVerify pubKey digest sig === True
 
 prop_ecdsaWrongDigest :: ECCurve -> Property
 prop_ecdsaWrongDigest curve = ioProperty $ do
@@ -494,11 +490,7 @@ prop_ecdsaWrongDigest curve = ioProperty $ do
       signResult <- ECDSA.ecdsaSign kp digest1
       case signResult of
         Left _ -> return $ property True
-        Right sig -> do
-          verifyResult <- ECDSA.ecdsaVerify pubKey digest2 sig
-          case verifyResult of
-            Left err -> return $ counterexample ("verify failed: " ++ show err) False
-            Right ok -> return $ ok === False
+        Right sig -> return $ ECDSA.ecdsaVerify pubKey digest2 sig === False
 
 -- ---------------------------------------------------------------------------
 -- ECDH Properties
@@ -518,8 +510,8 @@ prop_ecdhSymmetric curve = ioProperty $ do
   Right kpB <- ECDH.generateECKeyPair curve
   Right pubA <- ECDH.ecPublicKeyOfPair kpA
   Right pubB <- ECDH.ecPublicKeyOfPair kpB
-  secretAB <- ECDH.ecdhComputeSecret kpA pubB 32
-  secretBA <- ECDH.ecdhComputeSecret kpB pubA 32
+  secretAB <- pure $ ECDH.ecdhComputeSecret kpA pubB 32
+  secretBA <- pure $ ECDH.ecdhComputeSecret kpB pubA 32
   case (secretAB, secretBA) of
     (Right sAB, Right sBA) -> return $ SB.secureBytesToByteString sAB === SB.secureBytesToByteString sBA
     (Left err, _) -> return $ counterexample ("A->B failed: " ++ show err) False

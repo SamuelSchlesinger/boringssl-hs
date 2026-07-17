@@ -5,6 +5,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.ECDH
+import Crypto.BoringSSL.SecureBytes
 
 tests :: TestTree
 tests = testGroup "ECDH"
@@ -13,24 +14,24 @@ tests = testGroup "ECDH"
       Right kpB <- generateECKeyPair P256
       Right pubA <- ecPublicKeyOfPair kpA
       Right pubB <- ecPublicKeyOfPair kpB
-      Right secretAB <- ecdhComputeSecret kpA pubB 32
-      Right secretBA <- ecdhComputeSecret kpB pubA 32
+      Right secretAB <- pure $ ecdhComputeSecret kpA pubB 32
+      Right secretBA <- pure $ ecdhComputeSecret kpB pubA 32
       secureBytesToByteString secretAB @?= secureBytesToByteString secretBA
   , testCase "P-384 key agreement symmetry" $ do
       Right kpA <- generateECKeyPair P384
       Right kpB <- generateECKeyPair P384
       Right pubA <- ecPublicKeyOfPair kpA
       Right pubB <- ecPublicKeyOfPair kpB
-      Right secretAB <- ecdhComputeSecret kpA pubB 48
-      Right secretBA <- ecdhComputeSecret kpB pubA 48
+      Right secretAB <- pure $ ecdhComputeSecret kpA pubB 48
+      Right secretBA <- pure $ ecdhComputeSecret kpB pubA 48
       secureBytesToByteString secretAB @?= secureBytesToByteString secretBA
   , testCase "P-521 key agreement symmetry" $ do
       Right kpA <- generateECKeyPair P521
       Right kpB <- generateECKeyPair P521
       Right pubA <- ecPublicKeyOfPair kpA
       Right pubB <- ecPublicKeyOfPair kpB
-      Right secretAB <- ecdhComputeSecret kpA pubB 64
-      Right secretBA <- ecdhComputeSecret kpB pubA 64
+      Right secretAB <- pure $ ecdhComputeSecret kpA pubB 64
+      Right secretBA <- pure $ ecdhComputeSecret kpB pubA 64
       secureBytesToByteString secretAB @?= secureBytesToByteString secretBA
   , testCase "P-256 key serialization round-trip" $ do
       Right kpA <- generateECKeyPair P256
@@ -41,8 +42,8 @@ tests = testGroup "ECDH"
       Right pubA <- ecPublicKeyFromBytes P256 pubBytesA
       Right pubB <- ecPublicKeyFromBytes P256 pubBytesB
       -- Shared secret should still agree
-      Right secretAB <- ecdhComputeSecret kpA pubB 32
-      Right secretBA <- ecdhComputeSecret kpB pubA 32
+      Right secretAB <- pure $ ecdhComputeSecret kpA pubB 32
+      Right secretBA <- pure $ ecdhComputeSecret kpB pubA 32
       secureBytesToByteString secretAB @?= secureBytesToByteString secretBA
   , testCase "P-256 private key serialization round-trip" $ do
       Right kpA <- generateECKeyPair P256
@@ -51,15 +52,15 @@ tests = testGroup "ECDH"
       Right pubB <- ecPublicKeyOfPair kpB
       -- Reconstruct key pair from private bytes
       Right kpA2 <- ecKeyPairFromPrivateBytes P256 privBytesA
-      Right secret1 <- ecdhComputeSecret kpA pubB 32
-      Right secret2 <- ecdhComputeSecret kpA2 pubB 32
+      Right secret1 <- pure $ ecdhComputeSecret kpA pubB 32
+      Right secret2 <- pure $ ecdhComputeSecret kpA2 pubB 32
       secureBytesToByteString secret1 @?= secureBytesToByteString secret2
   , testGroup "Safety"
     [ testCase "rejects invalid output length 16" $ do
         Right kpA <- generateECKeyPair P256
         Right kpB <- generateECKeyPair P256
         Right pubB <- ecPublicKeyOfPair kpB
-        result <- ecdhComputeSecret kpA pubB 16
+        result <- pure $ ecdhComputeSecret kpA pubB 16
         case result of
           Left _  -> return ()
           Right _ -> assertFailure "should reject output length 16"
@@ -67,7 +68,7 @@ tests = testGroup "ECDH"
         Right kpA <- generateECKeyPair P256
         Right kpB <- generateECKeyPair P256
         Right pubB <- ecPublicKeyOfPair kpB
-        result <- ecdhComputeSecret kpA pubB 0
+        result <- pure $ ecdhComputeSecret kpA pubB 0
         case result of
           Left _  -> return ()
           Right _ -> assertFailure "should reject output length 0"
@@ -77,19 +78,19 @@ tests = testGroup "ECDH"
         Right kpA <- generateECKeyPair P256
         Right kpB <- generateECKeyPair P256
         Right pubB <- ecPublicKeyOfPair kpB
-        Right secret <- ecdhComputeSecret kpA pubB 32
+        Right secret <- pure $ ecdhComputeSecret kpA pubB 32
         secureBytesLength secret @?= 32
     , testCase "P-384 secret is 48 bytes" $ do
         Right kpA <- generateECKeyPair P384
         Right kpB <- generateECKeyPair P384
         Right pubB <- ecPublicKeyOfPair kpB
-        Right secret <- ecdhComputeSecret kpA pubB 48
+        Right secret <- pure $ ecdhComputeSecret kpA pubB 48
         secureBytesLength secret @?= 48
     , testCase "P-521 secret is 64 bytes" $ do
         Right kpA <- generateECKeyPair P521
         Right kpB <- generateECKeyPair P521
         Right pubB <- ecPublicKeyOfPair kpB
-        Right secret <- ecdhComputeSecret kpA pubB 64
+        Right secret <- pure $ ecdhComputeSecret kpA pubB 64
         secureBytesLength secret @?= 64
     ]
   , testGroup "raw ECDH"
@@ -98,34 +99,34 @@ tests = testGroup "ECDH"
         Right kpB <- generateECKeyPair P256
         Right pubA <- ecPublicKeyOfPair kpA
         Right pubB <- ecPublicKeyOfPair kpB
-        Right rawAB <- ecdhComputeRawSecret kpA pubB
-        Right rawBA <- ecdhComputeRawSecret kpB pubA
+        Right rawAB <- pure $ ecdhComputeRawSecret kpA pubB
+        Right rawBA <- pure $ ecdhComputeRawSecret kpB pubA
         secureBytesToByteString rawAB @?= secureBytesToByteString rawBA
     , testCase "P-384 raw symmetry" $ do
         Right kpA <- generateECKeyPair P384
         Right kpB <- generateECKeyPair P384
         Right pubA <- ecPublicKeyOfPair kpA
         Right pubB <- ecPublicKeyOfPair kpB
-        Right rawAB <- ecdhComputeRawSecret kpA pubB
-        Right rawBA <- ecdhComputeRawSecret kpB pubA
+        Right rawAB <- pure $ ecdhComputeRawSecret kpA pubB
+        Right rawBA <- pure $ ecdhComputeRawSecret kpB pubA
         secureBytesToByteString rawAB @?= secureBytesToByteString rawBA
     , testCase "P-256 raw output is 32 bytes" $ do
         Right kpA <- generateECKeyPair P256
         Right kpB <- generateECKeyPair P256
         Right pubB <- ecPublicKeyOfPair kpB
-        Right raw <- ecdhComputeRawSecret kpA pubB
+        Right raw <- pure $ ecdhComputeRawSecret kpA pubB
         secureBytesLength raw @?= 32
     , testCase "P-384 raw output is 48 bytes" $ do
         Right kpA <- generateECKeyPair P384
         Right kpB <- generateECKeyPair P384
         Right pubB <- ecPublicKeyOfPair kpB
-        Right raw <- ecdhComputeRawSecret kpA pubB
+        Right raw <- pure $ ecdhComputeRawSecret kpA pubB
         secureBytesLength raw @?= 48
     , testCase "P-521 raw output is 66 bytes" $ do
         Right kpA <- generateECKeyPair P521
         Right kpB <- generateECKeyPair P521
         Right pubB <- ecPublicKeyOfPair kpB
-        Right raw <- ecdhComputeRawSecret kpA pubB
+        Right raw <- pure $ ecdhComputeRawSecret kpA pubB
         secureBytesLength raw @?= 66
     ]
   , testCase "different key pairs produce different secrets" $ do
@@ -134,8 +135,8 @@ tests = testGroup "ECDH"
       Right kpC <- generateECKeyPair P256
       Right pubB <- ecPublicKeyOfPair kpB
       Right pubC <- ecPublicKeyOfPair kpC
-      Right secretAB <- ecdhComputeSecret kpA pubB 32
-      Right secretAC <- ecdhComputeSecret kpA pubC 32
+      Right secretAB <- pure $ ecdhComputeSecret kpA pubB 32
+      Right secretAC <- pure $ ecdhComputeSecret kpA pubC 32
       assertBool "different peers should give different secrets"
         (secureBytesToByteString secretAB /= secureBytesToByteString secretAC)
   ]

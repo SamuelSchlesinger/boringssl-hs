@@ -96,6 +96,11 @@ ecPublicKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runE
 -- full group order size. This avoids leaking information about the key value
 -- through variable-length encoding and ensures compatibility with protocols
 -- expecting fixed-width keys.
+--
+-- __Warning__: the result is an ordinary GC-managed 'ByteString' that is
+-- never cleansed. Prefer 'ecPrivateKeySecureBytes'. (The underlying
+-- @EC_KEY@ struct itself lives in BoringSSL-managed memory, which
+-- BoringSSL zeroes on free.)
 ecPrivateKeyBytes :: ECKeyPair -> IO (Either CryptoError ByteString)
 ecPrivateKeyBytes (ECKeyPair _curve fptr) = withForeignPtr fptr $ \keyPtr -> runExceptT $ do
   grp <- liftIO (c_EC_KEY_get0_group keyPtr)
