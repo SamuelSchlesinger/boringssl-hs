@@ -50,14 +50,19 @@ flag asm
 
 common warnings
     ghc-options: -Wall
-                 -optc-Wno-discarded-qualifiers
                  -optc-Wno-incompatible-pointer-types
+    -- GCC and Clang name this warning differently.
+    if os(linux)
+        ghc-options: -optc-Wno-discarded-qualifiers
+    else
+        ghc-options: -optc-Wno-ignored-qualifiers
     if os(windows)
         ghc-options: -optc-DWIN32_LEAN_AND_MEAN -optc-DNOCRYPT
 
 library
     import:           warnings
     exposed-modules:
+        Crypto.BoringSSL
         Crypto.BoringSSL.Digest
         Crypto.BoringSSL.AEAD
         Crypto.BoringSSL.HMAC

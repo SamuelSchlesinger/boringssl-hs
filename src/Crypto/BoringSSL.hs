@@ -1,0 +1,55 @@
+-- | Haskell bindings to Google's BoringSSL cryptography library.
+--
+-- This module is a guide, not an API: import the primitive-specific
+-- modules below (qualified imports are recommended — several share
+-- function names by design).
+--
+-- __Which module do I want?__
+--
+-- +----------------------------------------+----------------------------------------+
+-- | Task                                   | Module                                 |
+-- +========================================+========================================+
+-- | Hash data (SHA-2, BLAKE2b, …)          | "Crypto.BoringSSL.Digest"              |
+-- +----------------------------------------+----------------------------------------+
+-- | Authenticated encryption (AES-GCM,     | "Crypto.BoringSSL.AEAD"                |
+-- | ChaCha20-Poly1305, …)                  |                                        |
+-- +----------------------------------------+----------------------------------------+
+-- | Message authentication                 | "Crypto.BoringSSL.HMAC",               |
+-- |                                        | "Crypto.BoringSSL.CMAC"                |
+-- +----------------------------------------+----------------------------------------+
+-- | Derive keys from a strong secret       | "Crypto.BoringSSL.HKDF"                |
+-- +----------------------------------------+----------------------------------------+
+-- | Hash or verify /passwords/             | "Crypto.BoringSSL.PBKDF2",             |
+-- |                                        | "Crypto.BoringSSL.Scrypt"              |
+-- +----------------------------------------+----------------------------------------+
+-- | Random bytes and keys                  | "Crypto.BoringSSL.Random"              |
+-- +----------------------------------------+----------------------------------------+
+-- | Signatures (classical)                 | "Crypto.BoringSSL.Ed25519",            |
+-- |                                        | "Crypto.BoringSSL.ECDSA",              |
+-- |                                        | "Crypto.BoringSSL.RSA"                 |
+-- +----------------------------------------+----------------------------------------+
+-- | Signatures (post-quantum)              | "Crypto.BoringSSL.MLDSA",              |
+-- |                                        | "Crypto.BoringSSL.SLHDSA"              |
+-- +----------------------------------------+----------------------------------------+
+-- | Key agreement / encapsulation          | "Crypto.BoringSSL.X25519",             |
+-- |                                        | "Crypto.BoringSSL.ECDH",               |
+-- |                                        | "Crypto.BoringSSL.MLKEM",              |
+-- |                                        | "Crypto.BoringSSL.XWing",              |
+-- |                                        | "Crypto.BoringSSL.HPKE"                |
+-- +----------------------------------------+----------------------------------------+
+-- | Password-authenticated key exchange    | "Crypto.BoringSSL.SPAKE2"              |
+-- +----------------------------------------+----------------------------------------+
+-- | Certificates and encodings             | "Crypto.BoringSSL.X509",               |
+-- |                                        | "Crypto.BoringSSL.PEM",                |
+-- |                                        | "Crypto.BoringSSL.Base64"              |
+-- +----------------------------------------+----------------------------------------+
+-- | Unauthenticated block/stream ciphers   | "Crypto.BoringSSL.Cipher"              |
+-- | (interop only — prefer AEAD)           |                                        |
+-- +----------------------------------------+----------------------------------------+
+--
+-- Shared vocabulary: every fallible operation reports
+-- 'Crypto.BoringSSL.Error.CryptoError'; secret material lives in
+-- 'Crypto.BoringSSL.SecureBytes.SecureBytes'. The library's API
+-- conventions (purity tiers, verification semantics, argument order) are
+-- specified in the repository's @CONVENTIONS.md@.
+module Crypto.BoringSSL () where
