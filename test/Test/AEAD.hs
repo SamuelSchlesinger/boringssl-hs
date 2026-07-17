@@ -11,6 +11,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.AEAD
+import Crypto.BoringSSL.Error (CryptoError (..))
 
 hex :: BS.ByteString -> BS.ByteString
 hex s = case Base16.decode s of
@@ -132,10 +133,11 @@ tests = testGroup "AEAD"
             pt    = BS8.pack "secret"
             ad    = BS8.pack "correct ad"
         Right ctx <- newAEADCtx AES256GCM key
-        Right ct <- seal ctx nonce pt ad
-        result <- open ctx nonce ct (BS8.pack "wrong ad")
+        Right ct <- pure $ seal ctx nonce pt ad
+        result <- pure $ open ctx nonce ct (BS8.pack "wrong ad")
         case result of
-          Left _ -> return ()
+          Left AuthenticationFailed -> return ()
+          Left err -> assertFailure ("expected AuthenticationFailed, got: " ++ show err)
           Right _ -> assertFailure "open should fail with tampered AD"
     ]
   , testGroup "ciphertext length"
@@ -153,8 +155,8 @@ roundTrip algo = do
       pt    = BS8.pack "Hello, BoringSSL AEAD!"
       ad    = BS8.pack "additional data"
   Right ctx <- newAEADCtx algo key
-  Right ct <- seal ctx nonce pt ad
-  Right recovered <- open ctx nonce ct ad
+  Right ct <- pure $ seal ctx nonce pt ad
+  Right recovered <- pure $ open ctx nonce ct ad
   recovered @?= pt
 
 -- | Empty plaintext round-trip (authentication-only mode).
@@ -165,8 +167,8 @@ roundTripEmpty algo = do
       pt    = BS.empty
       ad    = BS8.pack "auth only"
   Right ctx <- newAEADCtx algo key
-  Right ct <- seal ctx nonce pt ad
-  Right recovered <- open ctx nonce ct ad
+  Right ct <- pure $ seal ctx nonce pt ad
+  Right recovered <- pure $ open ctx nonce ct ad
   recovered @?= pt
 
 -- | Authentication failure: tampering with ciphertext should cause open to fail.
@@ -177,11 +179,12 @@ authFailure algo = do
       pt    = BS8.pack "secret message"
       ad    = BS8.pack "aad"
   Right ctx <- newAEADCtx algo key
-  Right ct <- seal ctx nonce pt ad
+  Right ct <- pure $ seal ctx nonce pt ad
   let tampered = flipBit ct
-  result <- open ctx nonce tampered ad
+  result <- pure $ open ctx nonce tampered ad
   case result of
-    Left _  -> return ()
+    Left AuthenticationFailed -> return ()
+    Left err -> assertFailure ("expected AuthenticationFailed, got: " ++ show err)
     Right _ -> assertFailure "open should have failed on tampered ciphertext"
 
 -- | Flip the first bit of a ByteString.
@@ -202,7 +205,7 @@ rfc7539TestVector = do
       expectedTag = hex "1ae10b594f09e26a7e902ecbd0600691"
       expectedOutput = BS.append expectedCt expectedTag
   Right ctx <- newAEADCtx ChaCha20Poly1305 key
-  Right ct <- seal ctx nonce plaintext ad
+  Right ct <- pure $ seal ctx nonce plaintext ad
   ct @?= expectedOutput
 
 -- | NIST AES-128-GCM test vector (Test Case 3 from NIST SP 800-38D)
@@ -216,7 +219,7 @@ nistAES128GCMTestVector = do
       expectedTag = hex "4d5c2af327cd64a62cf35abd2ba6fab4"
       expectedOutput = BS.append expectedCt expectedTag
   Right ctx <- newAEADCtx AES128GCM key
-  Right ct <- seal ctx nonce plaintext ad
+  Right ct <- pure $ seal ctx nonce plaintext ad
   ct @?= expectedOutput
 
 -- | AES-256-GCM-SIV known answer test: verifies seal followed by open
@@ -229,14 +232,14 @@ aes256GCMSIVKnownAnswer = do
       plaintext = BS8.pack "AES-256-GCM-SIV test"
       ad = BS8.pack "additional data"
   Right ctx <- newAEADCtx AES256GCMSIV key
-  Right ct <- seal ctx nonce plaintext ad
+  Right ct <- pure $ seal ctx nonce plaintext ad
   -- Ciphertext should be plaintext + 16-byte tag
   BS.length ct @?= BS.length plaintext + maxOverhead AES256GCMSIV
   -- Decryption should recover plaintext
-  Right recovered <- open ctx nonce ct ad
+  Right recovered <- pure $ open ctx nonce ct ad
   recovered @?= plaintext
   -- Seal again should produce the same ciphertext (deterministic)
-  Right ct2 <- seal ctx nonce plaintext ad
+  Right ct2 <- pure $ seal ctx nonce plaintext ad
   ct @?= ct2
 
 -- | Verify ciphertext length equals plaintext length + maxOverhead.
@@ -247,5 +250,5 @@ ctLenCheck algo = do
       pt    = BS8.pack "test plaintext data"
       ad    = BS.empty
   Right ctx <- newAEADCtx algo key
-  Right ct <- seal ctx nonce pt ad
+  Right ct <- pure $ seal ctx nonce pt ad
   BS.length ct @?= BS.length pt + maxOverhead algo

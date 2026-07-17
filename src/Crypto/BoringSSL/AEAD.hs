@@ -3,12 +3,17 @@
 -- Supports AES-GCM (128\/192\/256), ChaCha20-Poly1305, XChaCha20-Poly1305,
 -- AES-GCM-SIV, AES-CTR-HMAC-SHA256, AES-EAX, and AES-CCM variants.
 -- Use 'seal' to encrypt and 'open' to decrypt.
+--
+-- Nonce lengths differ per algorithm — query 'nonceLength' or use
+-- 'generateNonce' (AES-GCM and friends use 12 bytes;
+-- 'XChaCha20Poly1305' uses 24). 'open' reports tampering as
+-- 'Left' 'AuthenticationFailed' and never returns unauthenticated
+-- plaintext.
 module Crypto.BoringSSL.AEAD
   ( -- * Algorithms
     AEADAlgorithm(..)
     -- * Context
   , AEADCtx
-  , CryptoError(..)
   , newAEADCtx
     -- * Encryption and decryption
   , seal
@@ -24,8 +29,8 @@ module Crypto.BoringSSL.AEAD
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
-import Control.Concurrent.MVar
 import Control.Exception (mask_)
+import System.IO.Unsafe (unsafePerformIO)
 import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
@@ -46,11 +51,11 @@ data AEADAlgorithm
   | AES128CCMBluetooth | AES128CCMBluetooth8 | AES128CCMMatter
   deriving (Eq, Show)
 
--- | An AEAD context wrapping a BoringSSL EVP_AEAD_CTX.
--- Automatically freed when garbage collected.
---
--- Thread-safe: concurrent 'seal' and 'open' calls are serialized via an internal lock.
-data AEADCtx = AEADCtx !AEADAlgorithm !(MVar ()) !(ForeignPtr EVP_AEAD_CTX)
+-- | An AEAD context wrapping a BoringSSL @EVP_AEAD_CTX@.
+-- Automatically freed when garbage collected. The context is immutable
+-- after creation (BoringSSL takes it @const@), so it may be shared
+-- freely between threads.
+data AEADCtx = AEADCtx !AEADAlgorithm !(ForeignPtr EVP_AEAD_CTX)
 
 -- | Get the C pointer for an AEAD algorithm.
 aeadPtr :: AEADAlgorithm -> Ptr EVP_AEAD
@@ -86,8 +91,7 @@ newAEADCtx algo key = do
       if ctx /= nullPtr
         then do
           fptr <- liftIO $ newForeignPtr c_EVP_AEAD_CTX_free_funptr ctx
-          lock <- liftIO $ newMVar ()
-          return (AEADCtx algo lock fptr)
+          return (AEADCtx algo fptr)
         else throwBoringSSLError (AllocationFailure "newAEADCtx: EVP_AEAD_CTX_new returned NULL")
 
 -- | Encrypt and authenticate plaintext.
@@ -100,13 +104,16 @@ newAEADCtx algo key = do
 -- — it completely destroys confidentiality and authenticity. Callers must
 -- ensure nonces are never reused. Consider using AES-GCM-SIV
 -- ('AES128GCMSIV', 'AES256GCMSIV') for nonce-misuse resistance.
-seal :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-seal (AEADCtx algo lock fptr) nonce plaintext ad
+--
+-- Pure: sealing is deterministic given the context, nonce, plaintext,
+-- and associated data.
+seal :: AEADCtx -> ByteString -> ByteString -> ByteString -> Either CryptoError ByteString
+seal (AEADCtx algo fptr) nonce plaintext ad
   | BS.length nonce /= nonceLength algo =
-      return $ Left $ InvalidInput $
+      Left $ InvalidInput $
         "seal: nonce length " ++ show (BS.length nonce) ++
         " does not match expected " ++ show (nonceLength algo)
-  | otherwise = withMVar lock $ \_ -> withBoundThread $
+  | otherwise = unsafePerformIO $ withBoundThread $
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString plaintext $ \inPtr inLen ->
@@ -122,19 +129,23 @@ seal (AEADCtx algo lock fptr) nonce plaintext ad
       checkRCError "seal failed" rc
       actualLen <- liftIO $ peek outLenPtr
       return (BSI.BS outFPtr (fromIntegral actualLen))
+{-# NOINLINE seal #-}
 
 -- | Decrypt and verify ciphertext.
 --
 -- @open ctx nonce ciphertext ad@ decrypts @ciphertext@ (which includes
 -- the authentication tag) with the given @nonce@ and additional data @ad@.
--- Returns 'Left' if authentication fails.
-open :: AEADCtx -> ByteString -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-open (AEADCtx algo lock fptr) nonce ciphertext ad
+--
+-- Tampered ciphertext or associated data — or a wrong key\/nonce — is
+-- reported as 'Left' 'AuthenticationFailed'; unauthenticated plaintext
+-- is never returned. Pure: opening is deterministic.
+open :: AEADCtx -> ByteString -> ByteString -> ByteString -> Either CryptoError ByteString
+open (AEADCtx algo fptr) nonce ciphertext ad
   | BS.length nonce /= nonceLength algo =
-      return $ Left $ InvalidInput $
+      Left $ InvalidInput $
         "open: nonce length " ++ show (BS.length nonce) ++
         " does not match expected " ++ show (nonceLength algo)
-  | otherwise = withMVar lock $ \_ -> withBoundThread $
+  | otherwise = unsafePerformIO $ withBoundThread $
   withForeignPtr fptr $ \ctx ->
   withByteString nonce $ \noncePtr nonceLen ->
   withByteString ciphertext $ \inPtr inLen ->
@@ -147,9 +158,12 @@ open (AEADCtx algo lock fptr) nonce ciphertext ad
       rc <- liftIO $ withForeignPtr outFPtr $ \outPtr ->
         c_EVP_AEAD_CTX_open ctx (castPtr outPtr) outLenPtr maxOutLen
           noncePtr nonceLen inPtr inLen adPtr adLen
-      checkRCError "open failed: authentication error" rc
+      -- With the nonce pre-validated and the output buffer correctly
+      -- sized, the only remaining failure is tag verification.
+      if rc /= 1 then throwE AuthenticationFailed else pure ()
       actualLen <- liftIO $ peek outLenPtr
       return (BSI.BS outFPtr (fromIntegral actualLen))
+{-# NOINLINE open #-}
 
 -- | Generate a cryptographically random nonce of the correct length
 -- for the given AEAD algorithm using BoringSSL's @RAND_bytes@.
@@ -164,10 +178,10 @@ generateNonce :: AEADAlgorithm -> IO ByteString
 generateNonce algo = do
   let n = nonceLength algo
   createByteString n $ \ptr -> do
-    rc <- c_RAND_bytes ptr (fromIntegral n)
-    if rc /= 1
-      then error "generateNonce: RAND_bytes failed"
-      else return ()
+    -- RAND_bytes cannot fail: BoringSSL aborts the process rather than
+    -- return weak randomness.
+    _ <- c_RAND_bytes ptr (fromIntegral n)
+    return ()
 
 -- | Query the expected key length for an AEAD algorithm.
 keyLength :: AEADAlgorithm -> Int

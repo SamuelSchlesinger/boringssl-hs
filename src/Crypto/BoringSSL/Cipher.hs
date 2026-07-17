@@ -12,15 +12,23 @@
 -- general-purpose encryption. Identical plaintext blocks produce identical
 -- ciphertext blocks, leaking patterns.
 --
--- __IV requirements:__ For CBC modes, IVs must be unpredictable (use random
--- generation). For CTR and OFB modes, IVs (nonces) must be unique per key —
--- reusing an IV under the same key compromises confidentiality.
+-- __IV requirements:__ For CBC modes, IVs must be unpredictable — use
+-- 'generateIV'. For CTR and OFB modes, IVs (nonces) must be unique per
+-- key — reusing an IV under the same key compromises confidentiality.
+--
+-- __Padding-oracle warning:__ 'decrypt' fails distinguishably on bad
+-- CBC\/ECB padding. If an attacker can submit ciphertexts and observe
+-- whether decryption succeeds, this is a padding oracle that recovers
+-- plaintext. Never expose the success\/failure of 'decrypt' on
+-- attacker-controlled input; use "Crypto.BoringSSL.AEAD" instead.
 module Crypto.BoringSSL.Cipher
   ( -- * Algorithms
     CipherAlgorithm(..)
     -- * Encryption and decryption
   , encrypt
   , decrypt
+    -- * IV generation
+  , generateIV
     -- * Algorithm properties
   , cipherKeyLength
   , cipherIVLength
@@ -35,10 +43,13 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
 
+import System.IO.Unsafe (unsafePerformIO)
+
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.Cipher
+import Crypto.BoringSSL.Internal.FFI.Random (c_RAND_bytes)
 
 -- | Supported symmetric cipher algorithms.
 data CipherAlgorithm
@@ -104,15 +115,18 @@ cipherBlockSize AES128OFB = 1
 cipherBlockSize AES256OFB = 1
 
 -- | Encrypt plaintext. CBC and ECB modes apply PKCS#7 padding automatically.
--- For ECB mode, pass an empty IV (@BS.empty@).
+-- For ECB mode, pass an empty IV (@BS.empty@); for every other mode
+-- obtain the IV from 'generateIV'.
+--
+-- Pure: encryption is deterministic given algorithm, key, and IV.
 encrypt :: CipherAlgorithm -> ByteString -> ByteString -> ByteString
-        -> IO (Either CryptoError ByteString)
+        -> Either CryptoError ByteString
 encrypt algo key iv plaintext
   | BS.length key /= cipherKeyLength algo =
-      return (Left (InvalidInput ("encrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
+      Left (InvalidInput ("encrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo)))
   | BS.length iv /= cipherIVLength algo =
-      return (Left (InvalidInput ("encrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
-  | otherwise = withBoundThread $
+      Left (InvalidInput ("encrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo)))
+  | otherwise = unsafePerformIO $ withBoundThread $
       withByteString key $ \keyPtr _ ->
         withByteString plaintext $ \inPtr inLen -> do
         let ivAction f =
@@ -145,18 +159,23 @@ encrypt algo key iv plaintext
                 finalLen <- liftIO $ peek finalLenPtr
                 return (fromIntegral (updateLen + finalLen))
             return ctx
+{-# NOINLINE encrypt #-}
 
 -- | Decrypt ciphertext. CBC and ECB modes remove PKCS#7 padding automatically.
 -- For ECB mode, pass an empty IV (@BS.empty@).
--- Returns Left on failure (e.g. bad padding).
+--
+-- Returns 'Left' on failure (e.g. bad padding). __Do not expose this
+-- failure to attackers__ — see the module-level padding-oracle warning.
+-- Note the plaintext is NOT authenticated; an attacker can tamper with
+-- ciphertext undetected. Pure: decryption is deterministic.
 decrypt :: CipherAlgorithm -> ByteString -> ByteString -> ByteString
-        -> IO (Either CryptoError ByteString)
+        -> Either CryptoError ByteString
 decrypt algo key iv ciphertext
   | BS.length key /= cipherKeyLength algo =
-      return (Left (InvalidInput ("decrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo))))
+      Left (InvalidInput ("decrypt: key length " ++ show (BS.length key) ++ " does not match expected " ++ show (cipherKeyLength algo)))
   | BS.length iv /= cipherIVLength algo =
-      return (Left (InvalidInput ("decrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo))))
-  | otherwise = withBoundThread $
+      Left (InvalidInput ("decrypt: IV length " ++ show (BS.length iv) ++ " does not match expected " ++ show (cipherIVLength algo)))
+  | otherwise = unsafePerformIO $ withBoundThread $
       withByteString key $ \keyPtr _ ->
         withByteString ciphertext $ \inPtr inLen -> do
         let ivAction f =
@@ -189,3 +208,16 @@ decrypt algo key iv ciphertext
                 finalLen <- liftIO $ peek finalLenPtr
                 return (fromIntegral (updateLen + finalLen))
             return ctx
+{-# NOINLINE decrypt #-}
+
+-- | Generate a cryptographically random IV of the correct length for
+-- the algorithm ('BS.empty' for ECB, which takes no IV). Suitable for
+-- CBC (unpredictable) and, when each message uses a fresh value, for
+-- CTR\/OFB (unique).
+generateIV :: CipherAlgorithm -> IO ByteString
+generateIV algo = do
+  let n = cipherIVLength algo
+  createByteString n $ \ptr -> do
+    -- RAND_bytes cannot fail: BoringSSL aborts rather than degrade.
+    _ <- c_RAND_bytes ptr (fromIntegral n)
+    return ()

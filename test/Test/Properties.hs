@@ -187,11 +187,11 @@ prop_aeadRoundTrip algo (ArbitraryBS plaintext) (ArbitraryBS ad) = ioProperty $ 
   key <- Random.randomBytes (AEAD.keyLength algo)
   nonce <- Random.randomBytes (AEAD.nonceLength algo)
   Right ctx <- AEAD.newAEADCtx algo key
-  sealResult <- AEAD.seal ctx nonce plaintext ad
+  sealResult <- pure $ AEAD.seal ctx nonce plaintext ad
   case sealResult of
     Left err -> return $ counterexample ("seal failed: " ++ show err) False
     Right ct -> do
-      openResult <- AEAD.open ctx nonce ct ad
+      openResult <- pure $ AEAD.open ctx nonce ct ad
       case openResult of
         Left err -> return $ counterexample ("open failed: " ++ show err) False
         Right pt -> return $ pt === plaintext
@@ -201,7 +201,7 @@ prop_aeadAuthFailure algo (ArbitraryBS plaintext) (ArbitraryBS ad) = ioProperty 
   key <- Random.randomBytes (AEAD.keyLength algo)
   nonce <- Random.randomBytes (AEAD.nonceLength algo)
   Right ctx <- AEAD.newAEADCtx algo key
-  sealResult <- AEAD.seal ctx nonce plaintext ad
+  sealResult <- pure $ AEAD.seal ctx nonce plaintext ad
   case sealResult of
     Left _ -> return $ property True  -- seal failed, skip
     Right ct -> do
@@ -209,7 +209,7 @@ prop_aeadAuthFailure algo (ArbitraryBS plaintext) (ArbitraryBS ad) = ioProperty 
         then return $ property True
         else do
           let tampered = flipFirstByte ct
-          openResult <- AEAD.open ctx nonce tampered ad
+          openResult <- pure $ AEAD.open ctx nonce tampered ad
           case openResult of
             Left _  -> return $ property True
             Right _ -> return $
@@ -224,8 +224,8 @@ prop_aeadDifferentNonce algo (NonEmptyBS plaintext) (ArbitraryBS ad) = ioPropert
     then return $ property True  -- extremely unlikely, skip
     else do
       Right ctx <- AEAD.newAEADCtx algo key
-      r1 <- AEAD.seal ctx nonce1 plaintext ad
-      r2 <- AEAD.seal ctx nonce2 plaintext ad
+      r1 <- pure $ AEAD.seal ctx nonce1 plaintext ad
+      r2 <- pure $ AEAD.seal ctx nonce2 plaintext ad
       case (r1, r2) of
         (Right ct1, Right ct2) ->
           return $ counterexample "same ciphertext with different nonces" (ct1 /= ct2)
@@ -238,11 +238,11 @@ prop_aeadAAD algo (ArbitraryBS plaintext) = ioProperty $ do
   Right ctx <- AEAD.newAEADCtx algo key
   let ad1 = BS.pack [1, 2, 3]
       ad2 = BS.pack [4, 5, 6]
-  sealResult <- AEAD.seal ctx nonce plaintext ad1
+  sealResult <- pure $ AEAD.seal ctx nonce plaintext ad1
   case sealResult of
     Left _ -> return $ property True
     Right ct -> do
-      openResult <- AEAD.open ctx nonce ct ad2
+      openResult <- pure $ AEAD.open ctx nonce ct ad2
       case openResult of
         Left _  -> return $ property True
         Right _ -> return $
@@ -355,11 +355,11 @@ prop_cipherRoundTrip algo (NonEmptyBS plaintext) = ioProperty $ do
   iv  <- if Cipher.cipherIVLength algo == 0
            then return BS.empty
            else Random.randomBytes (Cipher.cipherIVLength algo)
-  encResult <- Cipher.encrypt algo key iv plaintext
+  encResult <- pure $ Cipher.encrypt algo key iv plaintext
   case encResult of
     Left err -> return $ counterexample ("encrypt failed: " ++ show err) False
     Right ct -> do
-      decResult <- Cipher.decrypt algo key iv ct
+      decResult <- pure $ Cipher.decrypt algo key iv ct
       case decResult of
         Left err -> return $ counterexample ("decrypt failed: " ++ show err) False
         Right pt -> return $ pt === plaintext
@@ -376,8 +376,8 @@ prop_cipherDifferentKeys algo =
     if key1 == key2
       then return $ property True
       else do
-        r1 <- Cipher.encrypt algo key1 iv plaintext
-        r2 <- Cipher.encrypt algo key2 iv plaintext
+        r1 <- pure $ Cipher.encrypt algo key1 iv plaintext
+        r2 <- pure $ Cipher.encrypt algo key2 iv plaintext
         case (r1, r2) of
           (Right ct1, Right ct2) ->
             return $ counterexample "same ciphertext with different keys" (ct1 /= ct2)
