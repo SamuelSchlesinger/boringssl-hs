@@ -1,30 +1,29 @@
 -- | SLH-DSA stateless hash-based post-quantum signatures (FIPS 205).
 --
 -- Provides key generation, signing, and verification for SLH-DSA-SHA2-128s
--- and SLH-DSA-SHAKE-256f parameter sets. Keys and signatures are represented
--- as raw 'ByteString' values.
+-- and SLH-DSA-SHAKE-256f parameter sets.
 --
--- Note: SLH-DSA signing is very slow by design. The sign functions use safe
--- foreign calls to avoid blocking other Haskell threads.
+-- SLH-DSA signing is /very slow by design/ (especially SHAKE-256f) and,
+-- per FIPS 205, BoringSSL implements the __randomized__ signing variant:
+-- signing the same message twice yields different signatures, which is
+-- why 'sign' lives in 'IO'.
 module Crypto.BoringSSL.SLHDSA
   ( -- * Variant selection
     SLHDSAVariant(..)
+    -- * Key types
+  , SLHDSAPublicKey
     -- * Key generation
   , generateKeyPair
     -- * Signing and verification
   , sign
   , verify
+    -- * Public key serialization
+  , publicKeyFromBytes
+  , publicKeyToBytes
     -- * Size queries
   , publicKeyBytes
   , privateKeyBytes
   , signatureBytes
-    -- * Secure memory
-  , SecureBytes
-  , createSecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Control.Exception (mask_)
@@ -61,9 +60,28 @@ signatureBytes :: SLHDSAVariant -> Int
 signatureBytes SHA2_128S  = slhdsaSha2128sSignatureBytes
 signatureBytes SHAKE_256F = slhdsaShake256fSignatureBytes
 
+-- | An SLH-DSA public key: variant-tagged, length-validated bytes.
+data SLHDSAPublicKey = SLHDSAPublicKey !SLHDSAVariant !ByteString
+  deriving (Eq)
+
+instance Show SLHDSAPublicKey where
+  show (SLHDSAPublicKey v _) = "SLHDSAPublicKey " ++ show v
+
+-- | Validate (length) and wrap an encoded SLH-DSA public key.
+publicKeyFromBytes :: SLHDSAVariant -> ByteString -> Either CryptoError SLHDSAPublicKey
+publicKeyFromBytes variant bs
+  | BS.length bs /= publicKeyBytes variant =
+      Left (InvalidInput ("SLHDSA.publicKeyFromBytes: expected "
+        ++ show (publicKeyBytes variant) ++ " bytes, got " ++ show (BS.length bs)))
+  | otherwise = Right (SLHDSAPublicKey variant bs)
+
+-- | The encoded bytes of a public key.
+publicKeyToBytes :: SLHDSAPublicKey -> ByteString
+publicKeyToBytes (SLHDSAPublicKey _ bs) = bs
+
 -- | Generate a random SLH-DSA key pair. Returns @(publicKey, privateKey)@.
 -- The private key is backed by 'SecureBytes' and zeroized on finalization.
-generateKeyPair :: SLHDSAVariant -> IO (ByteString, SecureBytes)
+generateKeyPair :: SLHDSAVariant -> IO (SLHDSAPublicKey, SecureBytes)
 generateKeyPair variant = mask_ $ do
   let pubLen  = publicKeyBytes variant
       privLen = privateKeyBytes variant
@@ -73,21 +91,26 @@ generateKeyPair variant = mask_ $ do
       case variant of
         SHA2_128S  -> c_SLHDSA_SHA2_128S_generate_key (castPtr pubPtr) privPtr
         SHAKE_256F -> c_SLHDSA_SHAKE_256F_generate_key (castPtr pubPtr) privPtr
-  return (BSI.BS pubFPtr pubLen, privSB)
+  return (SLHDSAPublicKey variant (BSI.BS pubFPtr pubLen), privSB)
 
 -- | Sign a message with an SLH-DSA private key.
 --
--- Takes (privateKey, message, context) and returns the signature on
--- success, or an error if the context is longer than 255 bytes or the
--- private key has the wrong length.
+-- @sign variant privateKey message context@ returns the signature, or an
+-- error if the context is longer than 255 bytes or the private key has
+-- the wrong length.
 --
--- This function is pure (uses 'unsafePerformIO'). Signing is deterministic
--- but very slow by design.
-sign :: SLHDSAVariant -> SecureBytes -> ByteString -> ByteString -> Either CryptoError ByteString
+-- In 'IO': BoringSSL implements FIPS 205 __randomized__ signing, so each
+-- call produces a different signature for the same inputs. Signing is
+-- very slow by design.
+sign :: SLHDSAVariant -> SecureBytes -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
 sign variant privKey msg ctx
   | secureBytesLength privKey /= privateKeyBytes variant =
-      Left (InvalidInput "SLHDSA.sign: incorrect private key length")
-  | otherwise = unsafePerformIO $ do
+      return (Left (InvalidInput ("SLHDSA.sign: expected "
+        ++ show (privateKeyBytes variant) ++ "-byte private key, got "
+        ++ show (secureBytesLength privKey))))
+  | BS.length ctx > 255 =
+      return (Left (InvalidInput "SLHDSA.sign: context must be at most 255 bytes"))
+  | otherwise = do
       let sigLen = signatureBytes variant
       sigFPtr <- BSI.mallocByteString sigLen
       rc <- withForeignPtr sigFPtr $ \sigPtr ->
@@ -102,28 +125,22 @@ sign variant privKey msg ctx
       if rc == 1
         then return (Right (BSI.BS sigFPtr sigLen))
         else return (Left (OperationFailed "SLHDSA.sign: signing failed"))
-{-# NOINLINE sign #-}
 
 -- | Verify an SLH-DSA signature.
 --
--- Takes (publicKey, signature, message, context) and returns @Right True@ if
--- the signature is valid, @Right False@ if invalid, or @Left@ for input
--- validation errors (e.g. wrong-length public key).
---
--- This function is pure (uses 'unsafePerformIO').
-verify :: SLHDSAVariant -> ByteString -> ByteString -> ByteString -> ByteString -> Either CryptoError Bool
-verify variant pubKey sig msg ctx
-  | BS.length pubKey /= publicKeyBytes variant =
-      Left (InvalidInput "verify: incorrect public key length")
-  | otherwise = unsafePerformIO $
-      withByteString sig $ \sigPtr sigLen ->
-        withByteString pubKey $ \pubPtr _ ->
-          withByteString msg $ \msgPtr msgLen ->
-            withByteString ctx $ \ctxPtr ctxLen -> do
-              rc <- case variant of
-                SHA2_128S  -> c_SLHDSA_SHA2_128S_verify
-                                sigPtr sigLen pubPtr msgPtr msgLen ctxPtr ctxLen
-                SHAKE_256F -> c_SLHDSA_SHAKE_256F_verify
-                                sigPtr sigLen pubPtr msgPtr msgLen ctxPtr ctxLen
-              return (Right (rc == 1))
+-- @verify pub msg sig context@ — pure and fail-closed: 'False' covers
+-- invalid signatures and any malformed input. The variant travels with
+-- the public key.
+verify :: SLHDSAPublicKey -> ByteString -> ByteString -> ByteString -> Bool
+verify (SLHDSAPublicKey variant pubKey) msg sig ctx = unsafePerformIO $
+  withByteString sig $ \sigPtr sigLen ->
+    withByteString pubKey $ \pubPtr _ ->
+      withByteString msg $ \msgPtr msgLen ->
+        withByteString ctx $ \ctxPtr ctxLen -> do
+          rc <- case variant of
+            SHA2_128S  -> c_SLHDSA_SHA2_128S_verify
+                            sigPtr sigLen pubPtr msgPtr msgLen ctxPtr ctxLen
+            SHAKE_256F -> c_SLHDSA_SHAKE_256F_verify
+                            sigPtr sigLen pubPtr msgPtr msgLen ctxPtr ctxLen
+          return (rc == 1)
 {-# NOINLINE verify #-}

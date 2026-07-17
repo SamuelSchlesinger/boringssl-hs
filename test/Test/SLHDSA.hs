@@ -3,9 +3,11 @@ module Test.SLHDSA (tests) where
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Char8 as BS8
+import Data.Either (isLeft)
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import Crypto.BoringSSL.SecureBytes
 import Crypto.BoringSSL.SLHDSA
 
 tests :: TestTree
@@ -16,11 +18,12 @@ tests = testGroup "SLHDSA"
         (pub, priv) <- generateKeyPair SHAKE_256F
         let msg = BS8.pack "SHAKE-256F test"
             ctx = BS.empty
-        case sign SHAKE_256F priv msg ctx of
+        result <- sign SHAKE_256F priv msg ctx
+        case result of
           Left err -> assertFailure ("sign returned Left: " ++ show err)
           Right sig -> do
             BS.length sig @?= signatureBytes SHAKE_256F
-            verify SHAKE_256F pub sig msg ctx @?= Right True
+            verify pub msg sig ctx @?= True
     ]
   , testGroup "Constants"
     [ testCase "SHA2-128S public key bytes" $
@@ -42,67 +45,82 @@ variantTests :: SLHDSAVariant -> TestTree
 variantTests variant = testGroup (show variant)
   [ testCase "keygen produces correct sizes" $ do
       (pub, priv) <- generateKeyPair variant
-      BS.length pub @?= publicKeyBytes variant
+      BS.length (publicKeyToBytes pub) @?= publicKeyBytes variant
       secureBytesLength priv @?= privateKeyBytes variant
 
   , testCase "sign/verify round-trip" $ do
       (pub, priv) <- generateKeyPair variant
       let msg = BS8.pack "Hello, post-quantum world!"
           ctx = BS.empty
-      case sign variant priv msg ctx of
+      result <- sign variant priv msg ctx
+      case result of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig -> do
           BS.length sig @?= signatureBytes variant
-          verify variant pub sig msg ctx @?= Right True
+          verify pub msg sig ctx @?= True
 
   , testCase "sign/verify with context" $ do
       (pub, priv) <- generateKeyPair variant
       let msg = BS8.pack "context test message"
           ctx = BS8.pack "my-context"
-      case sign variant priv msg ctx of
+      result <- sign variant priv msg ctx
+      case result of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig ->
-          verify variant pub sig msg ctx @?= Right True
+          verify pub msg sig ctx @?= True
 
   , testCase "verify rejects tampered signature" $ do
       (pub, priv) <- generateKeyPair variant
       let msg = BS8.pack "test message"
           ctx = BS.empty
-      case sign variant priv msg ctx of
+      result <- sign variant priv msg ctx
+      case result of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig -> do
           let tampered = BS.cons (BS.head sig + 1) (BS.tail sig)
-          verify variant pub tampered msg ctx @?= Right False
+          verify pub msg tampered ctx @?= False
 
   , testCase "verify rejects wrong message" $ do
       (pub, priv) <- generateKeyPair variant
       let msg = BS8.pack "original"
           ctx = BS.empty
-      case sign variant priv msg ctx of
+      result <- sign variant priv msg ctx
+      case result of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig ->
-          verify variant pub sig "different" ctx @?= Right False
+          verify pub "different" sig ctx @?= False
 
   , testCase "verify rejects wrong context" $ do
       (pub, priv) <- generateKeyPair variant
       let msg = BS8.pack "test"
           ctx1 = BS8.pack "context-a"
           ctx2 = BS8.pack "context-b"
-      case sign variant priv msg ctx1 of
+      result <- sign variant priv msg ctx1
+      case result of
         Left err -> assertFailure ("sign returned Left: " ++ show err)
         Right sig ->
-          verify variant pub sig msg ctx2 @?= Right False
+          verify pub msg sig ctx2 @?= False
 
   , testCase "sign rejects wrong-length private key" $ do
       -- Create a SecureBytes of incorrect length (1 byte instead of privateKeyBytes)
       wrongKey <- createSecureBytes 1 $ \_ -> return ()
-      let result = sign variant wrongKey "msg" ""
+      result <- sign variant wrongKey "msg" ""
       case result of
         Left _  -> return ()
         Right _ -> assertFailure "sign should reject wrong-length private key"
 
-  , testCase "verify rejects wrong-length public key" $ do
-      case verify variant "short" "sig" "msg" "" of
-        Left _ -> return ()
-        Right _ -> assertFailure "should return Left for wrong-length public key"
+  , testCase "sign rejects overlong context" $ do
+      (_pub, priv) <- generateKeyPair variant
+      result <- sign variant priv "msg" (BS.replicate 256 0x61)
+      case result of
+        Left _  -> return ()
+        Right _ -> assertFailure "sign should reject a context longer than 255 bytes"
+
+  , testCase "publicKeyFromBytes rejects wrong length" $
+      assertBool "should reject wrong-length public key"
+        (isLeft (publicKeyFromBytes variant "short"))
+
+  , testCase "publicKeyFromBytes round-trips keygen output" $ do
+      (pub, _priv) <- generateKeyPair variant
+      publicKeyFromBytes variant (publicKeyToBytes pub) @?= Right pub
   ]

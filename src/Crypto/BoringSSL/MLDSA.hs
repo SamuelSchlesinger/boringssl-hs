@@ -11,10 +11,12 @@ module Crypto.BoringSSL.MLDSA
   , MLDSAPrivateKey
   , MLDSAPublicKey
     -- * Key generation
+  , MLDSAGenerated(..)
   , generateKeyPair
   , privateKeyFromSeed
   , publicKeyFromPrivate
   , publicKeyFromBytes
+  , publicKeyToBytes
     -- * Signing and verification
   , sign
   , verify
@@ -22,12 +24,6 @@ module Crypto.BoringSSL.MLDSA
   , publicKeyBytes
   , signatureBytes
   , seedBytes
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Control.Exception (mask_)
@@ -94,12 +90,17 @@ publicKeySize MLDSA44 = mldsa44PublicKeySize
 publicKeySize MLDSA65 = mldsa65PublicKeySize
 publicKeySize MLDSA87 = mldsa87PublicKeySize
 
+-- | The result of 'generateKeyPair': named fields so the three values
+-- cannot be transposed. The seed can regenerate the private key via
+-- 'privateKeyFromSeed' and lives in 'SecureBytes'.
+data MLDSAGenerated = MLDSAGenerated
+  { mldsaGenPublicKey  :: !MLDSAPublicKey
+  , mldsaGenSeed       :: !SecureBytes
+  , mldsaGenPrivateKey :: !MLDSAPrivateKey
+  }
+
 -- | Generate a random ML-DSA key pair.
--- Returns @(encodedPublicKey, seed, privateKey)@ where @seed@ is the
--- 32-byte seed that can be used with 'privateKeyFromSeed' to regenerate
--- the private key. The seed is returned as 'SecureBytes' and zeroized on
--- finalization.
-generateKeyPair :: MLDSAVariant -> IO (Either CryptoError (ByteString, SecureBytes, MLDSAPrivateKey))
+generateKeyPair :: MLDSAVariant -> IO (Either CryptoError MLDSAGenerated)
 generateKeyPair variant = withBoundThread $ mask_ $ do
   let pkSize = publicKeyBytes variant
       skSize = privateKeySize variant
@@ -121,7 +122,10 @@ generateKeyPair variant = withBoundThread $ mask_ $ do
             seedSB <- createSecureBytes mldsaSeedBytes $ \dstPtr ->
               copyBytes (castPtr dstPtr) (castPtr seedPtr) mldsaSeedBytes
             c_OPENSSL_cleanse (castPtr seedPtr) (fromIntegral mldsaSeedBytes)
-            return (Right (BSI.BS pubFPtr pkSize, seedSB, MLDSAPrivateKey variant skFPtr))
+            let priv = MLDSAPrivateKey variant skFPtr
+            case publicKeyFromBytes variant (BSI.BS pubFPtr pkSize) of
+              Left err -> return (Left err)
+              Right pub -> return (Right (MLDSAGenerated pub seedSB priv))
 
 -- | Regenerate a private key from a seed value that was produced by
 -- 'generateKeyPair'. The seed must be exactly 32 bytes.
@@ -182,8 +186,26 @@ publicKeyFromBytes variant bs
         else return (Left (DecodeError "MLDSA_parse_public_key failed"))
 {-# NOINLINE publicKeyFromBytes #-}
 
--- | Sign a message with an ML-DSA private key.
--- Takes a private key, message, and context string.
+-- | Serialize a public key to its encoded byte representation.
+publicKeyToBytes :: MLDSAPublicKey -> ByteString
+publicKeyToBytes (MLDSAPublicKey variant pkFPtr) = unsafePerformIO $ do
+  let pkBytesLen = publicKeyBytes variant
+  outFPtr <- BSI.mallocByteString pkBytesLen
+  rc <- withForeignPtr outFPtr $ \outPtr ->
+    withForeignPtr pkFPtr $ \pkPtr ->
+      allocaBytes c_bssl_CBB_size $ \cbbPtr -> do
+        c_bssl_CBB_init_fixed cbbPtr (castPtr outPtr) (fromIntegral pkBytesLen)
+        case variant of
+          MLDSA44 -> c_MLDSA44_marshal_public_key (castPtr cbbPtr) (castPtr pkPtr)
+          MLDSA65 -> c_MLDSA65_marshal_public_key (castPtr cbbPtr) (castPtr pkPtr)
+          MLDSA87 -> c_MLDSA87_marshal_public_key (castPtr cbbPtr) (castPtr pkPtr)
+  if rc == 1
+    then return (BSI.BS outFPtr pkBytesLen)
+    else errorWithoutStackTrace "MLDSA.publicKeyToBytes: marshalling a valid key cannot fail"
+{-# NOINLINE publicKeyToBytes #-}
+
+-- | Sign a message with an ML-DSA private key. In 'IO': ML-DSA signing
+-- follows the FIPS 204 randomized (hedged) algorithm.
 -- The @context@ parameter provides domain separation per FIPS 204;
 -- pass an empty 'ByteString' for general-purpose use. The same context
 -- must be supplied when verifying the signature.
@@ -208,15 +230,14 @@ sign (MLDSAPrivateKey variant skFPtr) msg context = withBoundThread $ do
     else do
       Left . fromMaybe (OperationFailed "MLDSA_sign failed") <$> getBoringSSLError
 
--- | Verify an ML-DSA signature (pure).
--- Takes the public key, signature, message, and context.
--- The @context@ must match the value used during signing.
--- Returns @Right True@ if the signature is valid, @Right False@ if invalid,
--- or @Left@ for input validation errors (e.g. wrong signature length).
-verify :: MLDSAPublicKey -> ByteString -> ByteString -> ByteString -> Either CryptoError Bool
-verify (MLDSAPublicKey variant pkFPtr) sig msg context
-  | BS.length sig /= signatureBytes variant =
-      Left (InvalidInput "verify: incorrect signature length")
+-- | Verify an ML-DSA signature.
+--
+-- @verify pub msg sig context@ — pure and fail-closed: 'False' covers
+-- invalid signatures and any malformed input. The @context@ must match
+-- the value used during signing.
+verify :: MLDSAPublicKey -> ByteString -> ByteString -> ByteString -> Bool
+verify (MLDSAPublicKey variant pkFPtr) msg sig context
+  | BS.length sig /= signatureBytes variant = False
   | otherwise = unsafePerformIO $
       withForeignPtr pkFPtr $ \pkPtr ->
         withByteString sig $ \sigPtr sigLen ->
@@ -229,5 +250,5 @@ verify (MLDSAPublicKey variant pkFPtr) sig msg context
                              sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
                 MLDSA87 -> c_MLDSA87_verify (castPtr pkPtr)
                              sigPtr sigLen msgPtr msgLen ctxPtr ctxLen
-              return (Right (rc == 1))
+              return (rc == 1)
 {-# NOINLINE verify #-}

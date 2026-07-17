@@ -6,8 +6,8 @@ import qualified Data.ByteString.Char8 as BS8
 import Test.Tasty
 import Test.Tasty.HUnit
 
-import Crypto.BoringSSL.MLDSA hiding (secureBytesToByteString, secureBytesLength)
-import Crypto.BoringSSL.SLHDSA (createSecureBytes)
+import Crypto.BoringSSL.MLDSA
+import Crypto.BoringSSL.SecureBytes (createSecureBytes)
 
 tests :: TestTree
 tests = testGroup "MLDSA"
@@ -16,15 +16,16 @@ tests = testGroup "MLDSA"
   , variantTests MLDSA87
   , testGroup "privateKeyFromSeed"
     [ testCase "reconstruct key from seed and sign/verify (ML-DSA-65)" $ do
-        Right (pubEncoded, seed, _priv) <- generateKeyPair MLDSA65
+        Right gen <- generateKeyPair MLDSA65
+        let seed = mldsaGenSeed gen
+            pubKey = mldsaGenPublicKey gen
         case privateKeyFromSeed MLDSA65 seed of
           Left err -> assertFailure ("privateKeyFromSeed failed: " ++ show err)
           Right priv2 -> do
             let msg = BS8.pack "seed round-trip"
                 ctx = BS.empty
             Right sig <- sign priv2 msg ctx
-            Right pubKey <- return (publicKeyFromBytes MLDSA65 pubEncoded)
-            verify pubKey sig msg ctx @?= Right True
+            verify pubKey msg sig ctx @?= True
     , testCase "reject wrong seed length (31 bytes)" $ do
         wrongSeed <- createSecureBytes 31 $ \_ -> return ()
         case privateKeyFromSeed MLDSA65 wrongSeed of
@@ -57,57 +58,81 @@ tests = testGroup "MLDSA"
 variantTests :: MLDSAVariant -> TestTree
 variantTests variant = testGroup (show variant)
   [ testCase "keygen produces correct public key size" $ do
-      Right (pub, _seed, _priv) <- generateKeyPair variant
-      BS.length pub @?= publicKeyBytes variant
+      Right gen <- generateKeyPair variant
+      let pub = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          _priv = mldsaGenPrivateKey gen
+      BS.length (publicKeyToBytes pub) @?= publicKeyBytes variant
 
   , testCase "sign/verify round-trip" $ do
-      Right (_pub, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let _pub = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "Hello, post-quantum world!"
           ctx = BS.empty
       Right sig <- sign priv msg ctx
       BS.length sig @?= signatureBytes variant
       Right pubKey <- return (publicKeyFromPrivate priv)
-      verify pubKey sig msg ctx @?= Right True
+      verify pubKey msg sig ctx @?= True
 
   , testCase "sign/verify with context" $ do
-      Right (_pub, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let _pub = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "context test message"
           ctx = BS8.pack "my-application-context"
       Right sig <- sign priv msg ctx
       Right pubKey <- return (publicKeyFromPrivate priv)
-      verify pubKey sig msg ctx @?= Right True
+      verify pubKey msg sig ctx @?= True
 
   , testCase "verify rejects invalid signature" $ do
-      Right (_pub, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let _pub = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "test message"
           ctx = BS.empty
       Right sig <- sign priv msg ctx
       -- Tamper with the signature
       let tampered = BS.cons (BS.head sig + 1) (BS.tail sig)
       Right pubKey <- return (publicKeyFromPrivate priv)
-      verify pubKey tampered msg ctx @?= Right False
+      verify pubKey msg tampered ctx @?= False
 
   , testCase "verify rejects wrong message" $ do
-      Right (_pub, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let _pub = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "original message"
           ctx = BS.empty
       Right sig <- sign priv msg ctx
       let wrongMsg = BS8.pack "different message"
       Right pubKey <- return (publicKeyFromPrivate priv)
-      verify pubKey sig wrongMsg ctx @?= Right False
+      verify pubKey wrongMsg sig ctx @?= False
 
   , testCase "verify rejects wrong context" $ do
-      Right (_pub, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let _pub = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "test"
           ctx1 = BS8.pack "context-a"
           ctx2 = BS8.pack "context-b"
       Right sig <- sign priv msg ctx1
       Right pubKey <- return (publicKeyFromPrivate priv)
-      verify pubKey sig msg ctx2 @?= Right False
+      verify pubKey msg sig ctx2 @?= False
 
   , testCase "different keys produce different signatures" $ do
-      Right (_pub1, _seed1, priv1) <- generateKeyPair variant
-      Right (_pub2, _seed2, priv2) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let _pub1 = mldsaGenPublicKey gen
+          _seed1 = mldsaGenSeed gen
+          priv1 = mldsaGenPrivateKey gen
+      Right gen <- generateKeyPair variant
+      let _pub2 = mldsaGenPublicKey gen
+          _seed2 = mldsaGenSeed gen
+          priv2 = mldsaGenPrivateKey gen
       let msg = BS8.pack "shared message"
           ctx = BS.empty
       Right sig1 <- sign priv1 msg ctx
@@ -115,14 +140,17 @@ variantTests variant = testGroup (show variant)
       assertBool "different keys should produce different sigs" (sig1 /= sig2)
 
   , testCase "publicKeyFromBytes round-trip" $ do
-      Right (pubEncoded, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let pubEncoded = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "round-trip test"
           ctx = BS.empty
       Right sig <- sign priv msg ctx
-      case publicKeyFromBytes variant pubEncoded of
+      case publicKeyFromBytes variant (publicKeyToBytes pubEncoded) of
         Left _ -> assertFailure "publicKeyFromBytes returned Left"
         Right pubKey ->
-          verify pubKey sig msg ctx @?= Right True
+          verify pubKey msg sig ctx @?= True
 
   , testCase "publicKeyFromBytes rejects wrong length" $ do
       let result = publicKeyFromBytes variant "too short"
@@ -131,14 +159,17 @@ variantTests variant = testGroup (show variant)
         Right _ -> assertFailure "publicKeyFromBytes should reject wrong length"
 
   , testCase "publicKeyFromPrivate matches publicKeyFromBytes" $ do
-      Right (pubEncoded, _seed, priv) <- generateKeyPair variant
+      Right gen <- generateKeyPair variant
+      let pubEncoded = mldsaGenPublicKey gen
+          _seed = mldsaGenSeed gen
+          priv = mldsaGenPrivateKey gen
       let msg = BS8.pack "cross-verify test"
           ctx = BS.empty
       Right sig <- sign priv msg ctx
       Right pubFromPriv <- return (publicKeyFromPrivate priv)
-      case publicKeyFromBytes variant pubEncoded of
+      case publicKeyFromBytes variant (publicKeyToBytes pubEncoded) of
         Left _ -> assertFailure "publicKeyFromBytes returned Left"
         Right pubFromBytes -> do
-          verify pubFromPriv sig msg ctx @?= Right True
-          verify pubFromBytes sig msg ctx @?= Right True
+          verify pubFromPriv msg sig ctx @?= True
+          verify pubFromBytes msg sig ctx @?= True
   ]

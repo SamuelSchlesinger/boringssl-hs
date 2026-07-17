@@ -28,6 +28,7 @@ module Crypto.BoringSSL.Internal.FFI.MLDSA
   , c_MLDSA44_sign
   , c_MLDSA44_verify
   , c_MLDSA44_parse_public_key
+  , c_MLDSA44_marshal_public_key
     -- * ML-DSA-65 FFI
   , c_MLDSA65_generate_key
   , c_MLDSA65_private_key_from_seed
@@ -35,6 +36,7 @@ module Crypto.BoringSSL.Internal.FFI.MLDSA
   , c_MLDSA65_sign
   , c_MLDSA65_verify
   , c_MLDSA65_parse_public_key
+  , c_MLDSA65_marshal_public_key
     -- * ML-DSA-87 FFI
   , c_MLDSA87_generate_key
   , c_MLDSA87_private_key_from_seed
@@ -42,6 +44,7 @@ module Crypto.BoringSSL.Internal.FFI.MLDSA
   , c_MLDSA87_sign
   , c_MLDSA87_verify
   , c_MLDSA87_parse_public_key
+  , c_MLDSA87_marshal_public_key
   ) where
 
 import Foreign.C.Types
@@ -182,6 +185,14 @@ foreign import capi unsafe "openssl/mldsa.h MLDSA44_parse_public_key"
     -> Ptr ()                        -- CBS *in
     -> IO CInt
 
+-- | int MLDSA44_marshal_public_key(
+--     CBB *out, const struct MLDSA44_public_key *public_key)
+foreign import capi unsafe "openssl/mldsa.h MLDSA44_marshal_public_key"
+  c_MLDSA44_marshal_public_key
+    :: Ptr ()                        -- CBB *out
+    -> Ptr MLDSA44_public_key        -- public_key
+    -> IO CInt
+
 
 -- ML-DSA-65 FFI
 
@@ -254,6 +265,14 @@ foreign import capi unsafe "openssl/mldsa.h MLDSA65_parse_public_key"
     -> Ptr ()                        -- CBS *in
     -> IO CInt
 
+-- | int MLDSA65_marshal_public_key(
+--     CBB *out, const struct MLDSA65_public_key *public_key)
+foreign import capi unsafe "openssl/mldsa.h MLDSA65_marshal_public_key"
+  c_MLDSA65_marshal_public_key
+    :: Ptr ()                        -- CBB *out
+    -> Ptr MLDSA65_public_key        -- public_key
+    -> IO CInt
+
 
 -- ML-DSA-87 FFI
 
@@ -324,4 +343,12 @@ foreign import capi unsafe "openssl/mldsa.h MLDSA87_parse_public_key"
   c_MLDSA87_parse_public_key
     :: Ptr MLDSA87_public_key        -- out_public_key
     -> Ptr ()                        -- CBS *in
+    -> IO CInt
+
+-- | int MLDSA87_marshal_public_key(
+--     CBB *out, const struct MLDSA87_public_key *public_key)
+foreign import capi unsafe "openssl/mldsa.h MLDSA87_marshal_public_key"
+  c_MLDSA87_marshal_public_key
+    :: Ptr ()                        -- CBB *out
+    -> Ptr MLDSA87_public_key        -- public_key
     -> IO CInt
