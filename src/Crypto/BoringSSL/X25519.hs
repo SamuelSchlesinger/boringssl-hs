@@ -16,12 +16,6 @@ module Crypto.BoringSSL.X25519
   , privateKeyToBytes
   , publicKeyFromBytes
   , privateKeyFromBytes
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -61,19 +55,19 @@ privateKeyToBytes :: PrivateKey -> ByteString
 privateKeyToBytes (PrivateKey sb) = secureBytesToByteString sb
 
 -- | Construct a public key from exactly 32 bytes.
-publicKeyFromBytes :: ByteString -> Maybe PublicKey
+publicKeyFromBytes :: ByteString -> Either CryptoError PublicKey
 publicKeyFromBytes bs
-  | BS.length bs == 32 = Just (PublicKey bs)
-  | otherwise = Nothing
+  | BS.length bs == 32 = Right (PublicKey bs)
+  | otherwise = Left (InvalidInput ("publicKeyFromBytes: expected 32 bytes, got " ++ show (BS.length bs)))
 
 -- | Construct a private key from exactly 32 bytes.
-privateKeyFromBytes :: ByteString -> Maybe PrivateKey
+privateKeyFromBytes :: ByteString -> Either CryptoError PrivateKey
 privateKeyFromBytes bs
-  | BS.length bs == 32 = Just . PrivateKey $ unsafePerformIO $
+  | BS.length bs == 32 = Right . PrivateKey $ unsafePerformIO $
       withByteString bs $ \srcPtr _ ->
         createSecureBytes 32 $ \dstPtr ->
           copyBytes (castPtr dstPtr) (castPtr srcPtr) 32
-  | otherwise = Nothing
+  | otherwise = Left (InvalidInput ("privateKeyFromBytes: expected 32 bytes, got " ++ show (BS.length bs)))
 {-# NOINLINE privateKeyFromBytes #-}
 
 -- | Generate a random X25519 key pair.

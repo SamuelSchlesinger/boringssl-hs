@@ -3,6 +3,7 @@ module Test.Ed25519 (tests) where
 
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as Base16
+import Data.Either (isLeft)
 import Test.Tasty
 import Test.Tasty.HUnit
 
@@ -31,8 +32,8 @@ tests = testGroup "Ed25519"
       sig <- unwrap $ sign priv msg
       let sigBytes = signatureToBytes sig
       case signatureFromBytes (BS.replicate (BS.length sigBytes) 0x00) of
-        Nothing -> assertFailure "signatureFromBytes returned Nothing for 64 zero bytes"
-        Just badSig -> assertBool "bad signature should not verify" (not (verify pub msg badSig))
+        Left _ -> assertFailure "signatureFromBytes returned Nothing for 64 zero bytes"
+        Right badSig -> assertBool "bad signature should not verify" (not (verify pub msg badSig))
   , testCase "wrong message rejected" $ do
       (pub, priv) <- generateKeyPair
       sig <- unwrap $ sign priv "message A"
@@ -120,45 +121,45 @@ tests = testGroup "Ed25519"
     [ testCase "publicKeyFromBytes accepts 32 bytes" $ do
         let bs = BS.replicate 32 0x42
         case publicKeyFromBytes bs of
-          Just _  -> return ()
-          Nothing -> assertFailure "publicKeyFromBytes rejected valid 32-byte input"
+          Right _  -> return ()
+          Left _ -> assertFailure "publicKeyFromBytes rejected valid 32-byte input"
     , testCase "publicKeyFromBytes rejects wrong lengths" $ do
-        assertBool "should reject 0 bytes" (publicKeyFromBytes BS.empty == Nothing)
-        assertBool "should reject 31 bytes" (publicKeyFromBytes (BS.replicate 31 0x00) == Nothing)
-        assertBool "should reject 33 bytes" (publicKeyFromBytes (BS.replicate 33 0x00) == Nothing)
+        assertBool "should reject 0 bytes" (isLeft (publicKeyFromBytes BS.empty))
+        assertBool "should reject 31 bytes" (isLeft (publicKeyFromBytes (BS.replicate 31 0x00)))
+        assertBool "should reject 33 bytes" (isLeft (publicKeyFromBytes (BS.replicate 33 0x00)))
     , testCase "privateKeyFromBytes accepts 64 bytes" $ do
         let bs = BS.replicate 64 0x42
         case privateKeyFromBytes bs of
-          Just _  -> return ()
-          Nothing -> assertFailure "privateKeyFromBytes rejected valid 64-byte input"
+          Right _  -> return ()
+          Left _ -> assertFailure "privateKeyFromBytes rejected valid 64-byte input"
     , testCase "privateKeyFromBytes rejects wrong lengths" $ do
-        assertBool "should reject 0 bytes" (privateKeyFromBytes BS.empty == Nothing)
-        assertBool "should reject 63 bytes" (privateKeyFromBytes (BS.replicate 63 0x00) == Nothing)
-        assertBool "should reject 65 bytes" (privateKeyFromBytes (BS.replicate 65 0x00) == Nothing)
+        assertBool "should reject 0 bytes" (isLeft (privateKeyFromBytes BS.empty))
+        assertBool "should reject 63 bytes" (isLeft (privateKeyFromBytes (BS.replicate 63 0x00)))
+        assertBool "should reject 65 bytes" (isLeft (privateKeyFromBytes (BS.replicate 65 0x00)))
     , testCase "signatureFromBytes accepts 64 bytes" $ do
         let bs = BS.replicate 64 0x42
         case signatureFromBytes bs of
-          Just _  -> return ()
-          Nothing -> assertFailure "signatureFromBytes rejected valid 64-byte input"
+          Right _  -> return ()
+          Left _ -> assertFailure "signatureFromBytes rejected valid 64-byte input"
     , testCase "signatureFromBytes rejects wrong lengths" $ do
-        assertBool "should reject 0 bytes" (signatureFromBytes BS.empty == Nothing)
-        assertBool "should reject 63 bytes" (signatureFromBytes (BS.replicate 63 0x00) == Nothing)
-        assertBool "should reject 65 bytes" (signatureFromBytes (BS.replicate 65 0x00) == Nothing)
+        assertBool "should reject 0 bytes" (isLeft (signatureFromBytes BS.empty))
+        assertBool "should reject 63 bytes" (isLeft (signatureFromBytes (BS.replicate 63 0x00)))
+        assertBool "should reject 65 bytes" (isLeft (signatureFromBytes (BS.replicate 65 0x00)))
     , testCase "publicKeyToBytes round-trip" $ do
         (pub, _) <- generateKeyPair
         case publicKeyFromBytes (publicKeyToBytes pub) of
-          Just pub' -> pub' @?= pub
-          Nothing   -> assertFailure "publicKeyFromBytes rejected publicKeyToBytes output"
+          Right pub' -> pub' @?= pub
+          Left _   -> assertFailure "publicKeyFromBytes rejected publicKeyToBytes output"
     , testCase "privateKeyToBytes round-trip" $ do
         (_, priv) <- generateKeyPair
         case privateKeyFromBytes (privateKeyToBytes priv) of
-          Just priv' -> priv' @?= priv
-          Nothing    -> assertFailure "privateKeyFromBytes rejected privateKeyToBytes output"
+          Right priv' -> priv' @?= priv
+          Left _    -> assertFailure "privateKeyFromBytes rejected privateKeyToBytes output"
     , testCase "signatureToBytes round-trip" $ do
         (_, priv) <- generateKeyPair
         sig <- unwrap $ sign priv "test"
         case signatureFromBytes (signatureToBytes sig) of
-          Just sig' -> sig' @?= sig
-          Nothing   -> assertFailure "signatureFromBytes rejected signatureToBytes output"
+          Right sig' -> sig' @?= sig
+          Left _   -> assertFailure "signatureFromBytes rejected signatureToBytes output"
     ]
   ]

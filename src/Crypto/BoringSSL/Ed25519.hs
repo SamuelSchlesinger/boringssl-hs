@@ -20,8 +20,6 @@ module Crypto.BoringSSL.Ed25519
   , publicKeyFromBytes
   , privateKeyFromBytes
   , signatureFromBytes
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -69,26 +67,26 @@ signatureToBytes :: Signature -> ByteString
 signatureToBytes (Signature bs) = bs
 
 -- | Construct a public key from exactly 32 bytes.
-publicKeyFromBytes :: ByteString -> Maybe PublicKey
+publicKeyFromBytes :: ByteString -> Either CryptoError PublicKey
 publicKeyFromBytes bs
-  | BS.length bs == 32 = Just (PublicKey bs)
-  | otherwise = Nothing
+  | BS.length bs == 32 = Right (PublicKey bs)
+  | otherwise = Left (InvalidInput ("publicKeyFromBytes: expected 32 bytes, got " ++ show (BS.length bs)))
 
 -- | Construct a private key from exactly 64 bytes.
-privateKeyFromBytes :: ByteString -> Maybe PrivateKey
+privateKeyFromBytes :: ByteString -> Either CryptoError PrivateKey
 privateKeyFromBytes bs
-  | BS.length bs == 64 = Just . PrivateKey $ unsafePerformIO $
+  | BS.length bs == 64 = Right . PrivateKey $ unsafePerformIO $
       withByteString bs $ \srcPtr _ ->
         createSecureBytes 64 $ \dstPtr ->
           copyBytes (castPtr dstPtr) (castPtr srcPtr) 64
-  | otherwise = Nothing
+  | otherwise = Left (InvalidInput ("privateKeyFromBytes: expected 64 bytes, got " ++ show (BS.length bs)))
 {-# NOINLINE privateKeyFromBytes #-}
 
 -- | Construct a signature from exactly 64 bytes.
-signatureFromBytes :: ByteString -> Maybe Signature
+signatureFromBytes :: ByteString -> Either CryptoError Signature
 signatureFromBytes bs
-  | BS.length bs == 64 = Just (Signature bs)
-  | otherwise = Nothing
+  | BS.length bs == 64 = Right (Signature bs)
+  | otherwise = Left (InvalidInput ("signatureFromBytes: expected 64 bytes, got " ++ show (BS.length bs)))
 
 -- | Generate a random Ed25519 key pair.
 generateKeyPair :: IO (PublicKey, PrivateKey)

@@ -4,9 +4,11 @@ module Test.X25519 (tests) where
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Base16 as Base16
+import Data.Either (isLeft)
 import Test.Tasty
 import Test.Tasty.HUnit
 
+import Crypto.BoringSSL.SecureBytes
 import Crypto.BoringSSL.X25519
 
 hex :: ByteString -> ByteString
@@ -52,7 +54,7 @@ tests = testGroup "X25519"
           bobPub    = hex "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f"
           expectedSecret = hex "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742"
       case (privateKeyFromBytes alicePriv, privateKeyFromBytes bobPriv, publicKeyFromBytes bobPub) of
-        (Just alicePrivKey, Just bobPrivKey, Just bobPubKey) -> do
+        (Right alicePrivKey, Right bobPrivKey, Right bobPubKey) -> do
           publicKeyToBytes (publicFromPrivate alicePrivKey) @?= alicePub
           publicKeyToBytes (publicFromPrivate bobPrivKey) @?= bobPub
           -- Check shared secret
@@ -64,30 +66,30 @@ tests = testGroup "X25519"
     [ testCase "publicKeyFromBytes accepts 32 bytes" $ do
         let bs = BS.replicate 32 0x42
         case publicKeyFromBytes bs of
-          Just _  -> return ()
-          Nothing -> assertFailure "publicKeyFromBytes rejected valid 32-byte input"
+          Right _  -> return ()
+          Left _ -> assertFailure "publicKeyFromBytes rejected valid 32-byte input"
     , testCase "publicKeyFromBytes rejects wrong lengths" $ do
-        assertBool "should reject 0 bytes" (publicKeyFromBytes BS.empty == Nothing)
-        assertBool "should reject 31 bytes" (publicKeyFromBytes (BS.replicate 31 0x00) == Nothing)
-        assertBool "should reject 33 bytes" (publicKeyFromBytes (BS.replicate 33 0x00) == Nothing)
+        assertBool "should reject 0 bytes" (isLeft (publicKeyFromBytes BS.empty))
+        assertBool "should reject 31 bytes" (isLeft (publicKeyFromBytes (BS.replicate 31 0x00)))
+        assertBool "should reject 33 bytes" (isLeft (publicKeyFromBytes (BS.replicate 33 0x00)))
     , testCase "privateKeyFromBytes accepts 32 bytes" $ do
         let bs = BS.replicate 32 0x42
         case privateKeyFromBytes bs of
-          Just _  -> return ()
-          Nothing -> assertFailure "privateKeyFromBytes rejected valid 32-byte input"
+          Right _  -> return ()
+          Left _ -> assertFailure "privateKeyFromBytes rejected valid 32-byte input"
     , testCase "privateKeyFromBytes rejects wrong lengths" $ do
-        assertBool "should reject 0 bytes" (privateKeyFromBytes BS.empty == Nothing)
-        assertBool "should reject 31 bytes" (privateKeyFromBytes (BS.replicate 31 0x00) == Nothing)
-        assertBool "should reject 33 bytes" (privateKeyFromBytes (BS.replicate 33 0x00) == Nothing)
+        assertBool "should reject 0 bytes" (isLeft (privateKeyFromBytes BS.empty))
+        assertBool "should reject 31 bytes" (isLeft (privateKeyFromBytes (BS.replicate 31 0x00)))
+        assertBool "should reject 33 bytes" (isLeft (privateKeyFromBytes (BS.replicate 33 0x00)))
     , testCase "publicKeyToBytes round-trip" $ do
         (pub, _) <- generateKeyPair
         case publicKeyFromBytes (publicKeyToBytes pub) of
-          Just pub' -> pub' @?= pub
-          Nothing   -> assertFailure "publicKeyFromBytes rejected publicKeyToBytes output"
+          Right pub' -> pub' @?= pub
+          Left _   -> assertFailure "publicKeyFromBytes rejected publicKeyToBytes output"
     , testCase "privateKeyToBytes round-trip" $ do
         (_, priv) <- generateKeyPair
         case privateKeyFromBytes (privateKeyToBytes priv) of
-          Just priv' -> priv' @?= priv
-          Nothing    -> assertFailure "privateKeyFromBytes rejected privateKeyToBytes output"
+          Right priv' -> priv' @?= priv
+          Left _    -> assertFailure "privateKeyFromBytes rejected privateKeyToBytes output"
     ]
   ]
