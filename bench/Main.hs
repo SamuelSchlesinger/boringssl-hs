@@ -10,6 +10,7 @@ import qualified Crypto.BoringSSL.AEAD as AEAD
 import Crypto.BoringSSL.AEAD (AEADAlgorithm(..))
 import qualified Crypto.BoringSSL.HMAC as HMAC
 import qualified Crypto.BoringSSL.HKDF as HKDF
+import qualified Crypto.BoringSSL.SecureBytes as SB
 import qualified Crypto.BoringSSL.Ed25519 as Ed25519
 import qualified Crypto.BoringSSL.X25519 as X25519
 import qualified Crypto.BoringSSL.ECDSA as ECDSA
@@ -74,7 +75,7 @@ chachaCtx = unsafePerformIO $ do
 
 {-# NOINLINE hpkeRecipKey #-}
 hpkeRecipKey :: HPKE.HPKEKey
-hpkeRecipKey = unsafePerformIO $ unsafeUnwrap "HPKE keygen" <$> HPKE.generateKey HPKE.X25519HkdfSha256
+hpkeRecipKey = unsafePerformIO $ unsafeUnwrap "HPKE keygen" <$> HPKE.generateKey HPKE.DHKEM_X25519_HKDF_SHA256
 
 {-# NOINLINE hpkeRecipPub #-}
 hpkeRecipPub :: BS.ByteString
@@ -98,13 +99,13 @@ main = do
   chachaNonce <- Random.randomBytes (AEAD.nonceLength AEAD.ChaCha20Poly1305)
 
   -- Pre-seal for open benchmarks
-  aesCt <- unwrapRight "AES seal" =<< AEAD.seal aesGcmCtx aeadNonce input1KB ""
-  chachaCt <- unwrapRight "ChaCha seal" =<< AEAD.seal chachaCtx chachaNonce input1KB ""
+  aesCt <- unwrapRight "AES seal" (AEAD.seal aesGcmCtx aeadNonce input1KB "")
+  chachaCt <- unwrapRight "ChaCha seal" (AEAD.seal chachaCtx chachaNonce input1KB "")
 
   -- Pre-sign for verify benchmarks
   let digest256 = hashSHA256 input1KB
   ecdsaSig <- unwrapRight "ECDSA sign" =<< ECDSA.ecdsaSign ecdsaKeyPair digest256
-  rsaSig <- unwrapRight "RSA sign" =<< RSA.rsaSign rsaKeyPair SHA256 digest256
+  rsaSig <- unwrapRight "RSA sign" (RSA.rsaSign SHA256 rsaKeyPair digest256)
 
   -- Pre-encrypt for RSA decrypt benchmark
   rsaCt <- unwrapRight "RSA encrypt" =<< RSA.rsaEncrypt rsaPubKey "short plaintext"
@@ -119,16 +120,16 @@ main = do
       , bench "BLAKE2b-256 64KB" $ nf (hash BLAKE2b256) input64KB
       ]
     , bgroup "AEAD"
-      [ bench "AES-256-GCM seal 1KB" $ nfIO $ unwrapRight "s" =<< AEAD.seal aesGcmCtx aeadNonce input1KB ""
-      , bench "AES-256-GCM open 1KB" $ nfIO $ unwrapRight "o" =<< AEAD.open aesGcmCtx aeadNonce aesCt ""
-      , bench "ChaCha20-Poly1305 seal 1KB" $ nfIO $ unwrapRight "s" =<< AEAD.seal chachaCtx chachaNonce input1KB ""
-      , bench "ChaCha20-Poly1305 open 1KB" $ nfIO $ unwrapRight "o" =<< AEAD.open chachaCtx chachaNonce chachaCt ""
+      [ bench "AES-256-GCM seal 1KB" $ nf (\i -> unsafeUnwrap "s" (AEAD.seal aesGcmCtx aeadNonce i "")) input1KB
+      , bench "AES-256-GCM open 1KB" $ nf (\c -> unsafeUnwrap "o" (AEAD.open aesGcmCtx aeadNonce c "")) aesCt
+      , bench "ChaCha20-Poly1305 seal 1KB" $ nf (\i -> unsafeUnwrap "s" (AEAD.seal chachaCtx chachaNonce i "")) input1KB
+      , bench "ChaCha20-Poly1305 open 1KB" $ nf (\c -> unsafeUnwrap "o" (AEAD.open chachaCtx chachaNonce c "")) chachaCt
       ]
     , bgroup "HMAC"
-      [ bench "HMAC-SHA-256 1KB" $ nf (unsafeUnwrap "hmac" . HMAC.hmac SHA256 "key") input1KB
+      [ bench "HMAC-SHA-256 1KB" $ nf (HMAC.hmac SHA256 "key") input1KB
       ]
     , bgroup "HKDF"
-      [ bench "HKDF-SHA-256 32B output" $ nf (\s -> HKDF.secureBytesToByteString $ unsafeUnwrap "hkdf" $ HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
+      [ bench "HKDF-SHA-256 32B output" $ nf (\s -> SB.secureBytesToByteString $ unsafeUnwrap "hkdf" $ HKDF.hkdf SHA256 s "salt" "info" 32) "secret"
       ]
     , bgroup "Ed25519"
       [ bench "generateKeyPair" $ nfIO (Ed25519.generateKeyPair >>= \(p, _) -> return (Ed25519.publicKeyToBytes p))
@@ -137,31 +138,31 @@ main = do
       ]
     , bgroup "X25519"
       [ bench "generateKeyPair" $ nfIO (X25519.generateKeyPair >>= \(p, _) -> return (X25519.publicKeyToBytes p))
-      , bench "sharedSecret" $ nf (\pk -> X25519.secureBytesToByteString $ unsafeUnwrap "x25519" $ X25519.computeSharedSecret x25519PrivA pk) x25519PubB
+      , bench "sharedSecret" $ nf (\pk -> SB.secureBytesToByteString $ unsafeUnwrap "x25519" $ X25519.computeSharedSecret x25519PrivA pk) x25519PubB
       ]
     , bgroup "ECDSA"
       [ bench "P-256 sign" $ nfIO $ unwrapRight "s" =<< ECDSA.ecdsaSign ecdsaKeyPair digest256
-      , bench "P-256 verify" $ nfIO $ unwrapRight "v" =<< ECDSA.ecdsaVerify ecdsaPubKey digest256 ecdsaSig
+      , bench "P-256 verify" $ nf (ECDSA.ecdsaVerify ecdsaPubKey digest256) ecdsaSig
       ]
     , bgroup "RSA"
-      [ bench "2048-bit sign (PKCS#1)" $ nfIO $ unwrapRight "s" =<< RSA.rsaSign rsaKeyPair SHA256 digest256
-      , bench "2048-bit verify (PKCS#1)" $ nfIO $ unwrapRight "v" =<< RSA.rsaVerify rsaPubKey SHA256 digest256 rsaSig
+      [ bench "2048-bit sign (PKCS#1)" $ nf (\d -> unsafeUnwrap "s" (RSA.rsaSign SHA256 rsaKeyPair d)) digest256
+      , bench "2048-bit verify (PKCS#1)" $ nf (RSA.rsaVerify SHA256 rsaPubKey digest256) rsaSig
       , bench "2048-bit encrypt (OAEP)" $ nfIO $ unwrapRight "e" =<< RSA.rsaEncrypt rsaPubKey "short plaintext"
-      , bench "2048-bit decrypt (OAEP)" $ nfIO $ unwrapRight "d" =<< RSA.rsaDecrypt rsaKeyPair rsaCt
+      , bench "2048-bit decrypt (OAEP)" $ nf (\c -> unsafeUnwrap "d" (RSA.rsaDecrypt rsaKeyPair c)) rsaCt
       ]
     , bgroup "HPKE"
       [ bench "X25519 setup+seal" $ nfIO $ do
-          (_, sCtx) <- unwrapRight "s" =<< HPKE.setupSender HPKE.X25519HkdfSha256 HPKE.HkdfSha256
-                          HPKE.Aes128Gcm hpkeRecipPub "bench"
+          (_, sCtx) <- unwrapRight "s" =<< HPKE.setupSender HPKE.DHKEM_X25519_HKDF_SHA256 HPKE.HKDF_SHA256
+                          HPKE.AES128GCM hpkeRecipPub "bench"
           unwrapRight "s" =<< HPKE.senderSeal sCtx input1KB ""
       , bench "X25519 setup+open" $ nfIO $ do
           -- HPKE contexts are stateful (sequence number), so we must create
           -- a fresh sender+recipient pair for each iteration.
-          (enc', sCtx') <- unwrapRight "s" =<< HPKE.setupSender HPKE.X25519HkdfSha256 HPKE.HkdfSha256
-                              HPKE.Aes128Gcm hpkeRecipPub "bench"
+          (enc', sCtx') <- unwrapRight "s" =<< HPKE.setupSender HPKE.DHKEM_X25519_HKDF_SHA256 HPKE.HKDF_SHA256
+                              HPKE.AES128GCM hpkeRecipPub "bench"
           ct' <- unwrapRight "s" =<< HPKE.senderSeal sCtx' input1KB ""
-          rCtx' <- unwrapRight "r" =<< HPKE.setupRecipient hpkeRecipKey HPKE.HkdfSha256
-                      HPKE.Aes128Gcm enc' "bench"
+          rCtx' <- unwrapRight "r" =<< HPKE.setupRecipient hpkeRecipKey HPKE.HKDF_SHA256
+                      HPKE.AES128GCM enc' "bench"
           unwrapRight "o" =<< HPKE.recipientOpen rCtx' ct' ""
       ]
     , bgroup "SPAKE2"
@@ -171,6 +172,6 @@ main = do
           msgA <- unwrapRight "s" =<< SPAKE2.generateMessage ctxA "password"
           msgB <- unwrapRight "s" =<< SPAKE2.generateMessage ctxB "password"
           _ <- unwrapRight "s" =<< SPAKE2.processMessage ctxA msgB
-          SPAKE2.secureBytesToByteString <$> (unwrapRight "s" =<< SPAKE2.processMessage ctxB msgA)
+          SB.secureBytesToByteString <$> (unwrapRight "s" =<< SPAKE2.processMessage ctxB msgA)
       ]
     ]

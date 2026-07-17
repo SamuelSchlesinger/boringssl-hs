@@ -35,7 +35,6 @@ import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.ECKey
-import Crypto.BoringSSL.Internal.SecureBytes
 import Crypto.BoringSSL.Internal.FFI.ECDSA
 
 -- | Generate a fresh random ECDSA key pair for the given curve.

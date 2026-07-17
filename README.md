@@ -24,6 +24,7 @@ memory management via `ForeignPtr` finalizers.
 | 9.6.x   | Yes   | Yes   | Yes     |
 | 9.8.x   | Yes   | Yes   | —       |
 | 9.10.x  | Yes   | Yes   | —       |
+| 9.12.x  | Yes   | Yes   | —       |
 
 ## Features
 
@@ -53,27 +54,48 @@ serialization.
 
 ## Quick start
 
+Start at [`Crypto.BoringSSL`](src/Crypto/BoringSSL.hs) — a Haddock-only
+module mapping tasks to the module that does them. Import the
+primitive-specific modules you need; several share function names by
+design, so qualified imports are recommended.
+
 ```haskell
-import Crypto.BoringSSL.AEAD
-import Crypto.BoringSSL.Digest
-import Crypto.BoringSSL.Random (getRandomBytes)
+{-# LANGUAGE OverloadedStrings #-}
+import qualified Crypto.BoringSSL.AEAD as AEAD
+import qualified Crypto.BoringSSL.Digest as Digest
+import qualified Crypto.BoringSSL.Random as Random
 
--- Hash some data
-let digest = hashSHA256 "hello, world"
+-- Hashing is pure and total.
+digest :: ByteString
+digest = Digest.hashSHA256 "hello, world"
 
--- Authenticated encryption with AES-256-GCM
+-- Authenticated encryption with AES-256-GCM.
 main :: IO ()
 main = do
-  key <- getRandomBytes 32
-  case newAEADCtx AES256GCM key of
-    Left err -> error (show err)
-    Right ctx -> do
-      nonce <- generateNonce ctx
-      let ad         = ""  -- associated data
-          ciphertext = seal ctx nonce ad "secret message"
-      case open ctx nonce ad ciphertext of
-        Left err        -> error (show err)
-        Right plaintext -> print plaintext  -- "secret message"
+  key <- Random.randomBytes (AEAD.keyLength AEAD.AES256GCM)
+  ctx <- either (error . show) pure =<< AEAD.newAEADCtx AEAD.AES256GCM key
+  -- Never reuse a nonce with the same key.
+  nonce <- AEAD.generateNonce AEAD.AES256GCM
+  let ad = "associated data"        -- authenticated, not encrypted
+  ciphertext <- either (error . show) pure (AEAD.seal ctx nonce "secret message" ad)
+  case AEAD.open ctx nonce ciphertext ad of
+    Left err        -> error (show err)   -- AuthenticationFailed if tampered
+    Right plaintext -> print plaintext    -- "secret message"
+```
+
+This example is compiled and executed as part of the test suite
+(`test/Test/Readme.hs`), so it cannot drift from the real API.
+
+Password hashing needs a *slow* KDF, never a plain hash:
+
+```haskell
+import qualified Crypto.BoringSSL.Scrypt as Scrypt
+import qualified Crypto.BoringSSL.Random as Random
+
+hashPassword :: ByteString -> IO (Either CryptoError SecureBytes)
+hashPassword password = do
+  salt <- Random.randomBytes 16
+  pure (Scrypt.scrypt password salt Scrypt.defaultScryptParams)
 ```
 
 ## Building
@@ -114,7 +136,8 @@ silently ignored.
   and aarch64.
 - **macOS**: Requires `clang++` (Xcode command-line tools). Tested on Apple
   Silicon and Intel.
-- **Windows**: Requires MinGW `g++`. Assembly optimizations are not available.
+- **Windows**: Assembly optimizations are not available. The C++ runtime is
+  linked via GHC's own `system-cxx-std-lib`, matching its Clang toolchain.
 
 ## Security considerations
 
@@ -124,13 +147,36 @@ silently ignored.
 - **Constant-time operations**: BoringSSL provides constant-time
   implementations for sensitive operations. Enabling `-fasm` provides stronger
   constant-time guarantees via hand-written assembly.
-- **Secure memory**: Private key material can be stored in `SecureBytes`, which
-  is allocated outside the GC heap and zeroed on deallocation.
+- **Secure memory**: Secret material lives in `SecureBytes`: page-aligned
+  allocation outside the GC heap, best-effort `mlock`/`VirtualLock` and
+  core-dump exclusion, and `OPENSSL_cleanse` before release, with a
+  constant-time `Eq` and a redacted `Show`. This protects against secrets
+  lingering in reusable memory, reaching swap, or landing in core dumps —
+  not against a same-privilege process reading live memory, hibernation
+  images, or copies you make with `secureBytesToByteString`.
+- **Passwords**: use `PBKDF2` or `Scrypt` (memory-hard, start from
+  `defaultScryptParams`). Never `Digest` or `HKDF` — plain hashes and HKDF
+  assume high-entropy input and are brute-forceable at billions of guesses
+  per second.
+- **Verification**: signature and MAC verification returns a plain `Bool`
+  and fails closed, so a `False` can never be mistaken for success.
+- **Post-quantum KEMs**: ML-KEM and X-Wing use FIPS 203 implicit
+  rejection — a tampered ciphertext decapsulates to a *different* secret
+  rather than an error. Detect it via the AEAD step that follows.
 - **Unauthenticated ciphers**: The `Cipher` module (AES-CBC, CTR, ECB, OFB)
   does **not** provide integrity protection. Prefer AEAD ciphers for
   encryption.
 - **PKCS#1 v1.5 encryption**: The RSA PKCS#1 v1.5 encryption functions are
   deprecated due to Bleichenbacher-style attacks. Use OAEP instead.
+
+## API conventions
+
+The public API follows a written specification — see
+[CONVENTIONS.md](CONVENTIONS.md). In short: purity tracks the underlying
+operation (total, pure-fallible via `Either CryptoError`, or `IO` when
+randomness or mutable state is involved); verification returns fail-closed
+`Bool`; errors are one `CryptoError` type from `Crypto.BoringSSL.Error`;
+secrets live in `SecureBytes` from `Crypto.BoringSSL.SecureBytes`.
 
 ## Governance
 

@@ -549,6 +549,7 @@ test-suite boringssl-test
         Test.SPAKE2
         Test.TrustToken
         Test.Properties
+        Test.Readme
         Test.CMAC
         Test.SLHDSA
         Test.XWing

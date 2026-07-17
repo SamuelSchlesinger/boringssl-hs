@@ -19,7 +19,12 @@
 -- __Salt requirements:__ Use a cryptographically random salt of at least
 -- 16 bytes. Each password should have a unique salt.
 --
--- __Example (interactive login):__
+-- __Memory ceiling:__ 'scryptMaxMem' bounds the allocation and must be
+-- at least @128 * N * r@ bytes, else the derivation fails.
+-- 'defaultScryptParams' sets it consistently; if you raise @N@ or @r@,
+-- raise it too.
+--
+-- __Example (lighter, ~16 MiB):__
 --
 -- @
 -- scrypt password salt defaultScryptParams { scryptN = 16384 }
@@ -46,23 +51,30 @@ import Crypto.BoringSSL.Internal.SecureBytes
 data ScryptParams = ScryptParams
   { scryptN      :: !Word64
     -- ^ CPU\/memory cost; must be a power of 2 (memory use is
-    -- @N * r * 128@ bytes).
+    -- @128 * N * r@ bytes).
   , scryptR      :: !Word64
     -- ^ Block size; 8 is the standard recommendation.
   , scryptP      :: !Word64
     -- ^ Parallelization factor; 1 is typical.
+  , scryptMaxMem :: !Word64
+    -- ^ Memory ceiling in bytes. The derivation fails rather than
+    -- allocating beyond this. __Must be raised to match @N@ and @r@__:
+    -- BoringSSL applies a 65 MiB default when this is @0@, which
+    -- rejects the recommended parameters below.
   , scryptLength :: !Int
     -- ^ Number of bytes of key material to derive.
   } deriving (Eq, Show)
 
--- | OWASP's 2023 first-choice scrypt parameters: @N = 2^17@, @r = 8@,
--- @p = 1@ (128 MiB, suitable for interactive logins on servers), with a
--- 32-byte output.
+-- | OWASP\'s 2023 first-choice scrypt parameters: @N = 2^17@, @r = 8@,
+-- @p = 1@ — 128 MiB of memory, suitable for interactive logins on
+-- server hardware — with a 32-byte output and a memory ceiling sized to
+-- match (160 MiB, leaving headroom above the 128 MiB working set).
 defaultScryptParams :: ScryptParams
 defaultScryptParams = ScryptParams
   { scryptN = 131072
   , scryptR = 8
   , scryptP = 1
+  , scryptMaxMem = 160 * 1024 * 1024
   , scryptLength = 32
   }
 
@@ -71,9 +83,10 @@ defaultScryptParams = ScryptParams
 -- @scrypt password salt params@ computes 'scryptLength' bytes of key
 -- material from @password@ and @salt@.
 --
--- Returns 'Left' on failure (e.g. invalid parameters).
+-- Returns 'Left' on invalid parameters, or if the memory required
+-- (@128 * N * r@ bytes) exceeds 'scryptMaxMem'.
 scrypt :: ByteString -> ByteString -> ScryptParams -> Either CryptoError SecureBytes
-scrypt password salt (ScryptParams n r p keyLen)
+scrypt password salt (ScryptParams n r p maxMem keyLen)
   | keyLen <= 0 = Left (InvalidInput "scrypt: key length must be positive")
   | n < 2 || (n .&. (n - 1)) /= 0 = Left (InvalidInput "scrypt: N must be >= 2 and a power of 2")
   | r == 0 = Left (InvalidInput "scrypt: r must be > 0")
@@ -86,7 +99,7 @@ scrypt password salt (ScryptParams n r p keyLen)
         c_EVP_PBE_scrypt
           (castPtr passPtr) passLen
           saltPtr saltLen
-          n r p 0
+          n r p (fromIntegral maxMem)
           (castPtr outPtr) (fromIntegral keyLen)
       if rc /= 1
         then return (Left (OperationFailed "scrypt: derivation failed"))

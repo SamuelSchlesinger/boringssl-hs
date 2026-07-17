@@ -50,7 +50,6 @@ import Foreign.C.String
 import Foreign.C.Types
 import Foreign.ForeignPtr
 import Foreign.Marshal.Alloc
-import Foreign.Marshal.Array
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe (unsafePerformIO)

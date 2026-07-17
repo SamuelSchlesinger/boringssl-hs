@@ -22,6 +22,7 @@ import qualified Test.HPKE
 import qualified Test.SPAKE2
 import qualified Test.TrustToken
 import qualified Test.Properties
+import qualified Test.Readme
 import qualified Test.CMAC
 import qualified Test.SLHDSA
 import qualified Test.XWing
@@ -53,6 +54,7 @@ main = defaultMain $ testGroup "BoringSSL"
   , Test.SPAKE2.tests
   , Test.TrustToken.tests
   , Test.Properties.tests
+  , Test.Readme.tests
   , Test.CMAC.tests
   , Test.SLHDSA.tests
   , Test.XWing.tests
