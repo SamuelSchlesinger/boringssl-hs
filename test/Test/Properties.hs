@@ -537,27 +537,19 @@ prop_rsaPKCS1SignVerify :: Property
 prop_rsaPKCS1SignVerify = ioProperty $ do
   msg <- Random.randomBytes 64
   let digest = Digest.hash SHA256 msg
-  signResult <- RSA.rsaSign rsaKeyPair SHA256 digest
+  signResult <- pure $ RSA.rsaSign SHA256 rsaKeyPair digest
   case signResult of
     Left err -> return $ counterexample ("sign failed: " ++ show err) False
-    Right sig -> do
-      verifyResult <- RSA.rsaVerify rsaPubKey SHA256 digest sig
-      case verifyResult of
-        Left err -> return $ counterexample ("verify failed: " ++ show err) False
-        Right ok -> return $ ok === True
+    Right sig -> return $ RSA.rsaVerify SHA256 rsaPubKey digest sig === True
 
 prop_rsaPSSSignVerify :: Property
 prop_rsaPSSSignVerify = ioProperty $ do
   msg <- Random.randomBytes 64
   let digest = Digest.hash SHA256 msg
-  signResult <- RSA.rsaSignPSS rsaKeyPair SHA256 digest
+  signResult <- RSA.rsaSignPSS SHA256 rsaKeyPair digest
   case signResult of
     Left err -> return $ counterexample ("sign failed: " ++ show err) False
-    Right sig -> do
-      verifyResult <- RSA.rsaVerifyPSS rsaPubKey SHA256 digest sig
-      case verifyResult of
-        Left err -> return $ counterexample ("verify failed: " ++ show err) False
-        Right ok -> return $ ok === True
+    Right sig -> return $ RSA.rsaVerifyPSS SHA256 rsaPubKey digest sig === True
 
 prop_rsaOAEPRoundTrip :: Property
 prop_rsaOAEPRoundTrip = forAll (choose (1, 190) >>= genBytes) $ \plaintext ->
@@ -566,7 +558,7 @@ prop_rsaOAEPRoundTrip = forAll (choose (1, 190) >>= genBytes) $ \plaintext ->
     case encResult of
       Left err -> return $ counterexample ("encrypt failed: " ++ show err) False
       Right ct -> do
-        decResult <- RSA.rsaDecrypt rsaKeyPair ct
+        decResult <- pure $ RSA.rsaDecrypt rsaKeyPair ct
         case decResult of
           Left err -> return $ counterexample ("decrypt failed: " ++ show err) False
           Right pt -> return $ pt === plaintext

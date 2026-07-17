@@ -22,8 +22,8 @@
 --   attacks.
 module Crypto.BoringSSL.RSA
   ( -- * Key types
-    RSAKeyPair(..)
-  , RSAPublicKey(..)
+    RSAKeyPair
+  , RSAPublicKey
     -- * Key generation
   , generateRSAKeyPair
     -- * Serialization
@@ -50,12 +50,6 @@ module Crypto.BoringSSL.RSA
     -- * Public key properties
   , rsaPublicBits
   , rsaPublicSize
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -66,6 +60,7 @@ import Foreign.ForeignPtr
 import Foreign.Ptr
 import Foreign.Storable
 import Control.Exception (mask, onException)
+import System.IO.Unsafe (unsafePerformIO)
 
 import Crypto.BoringSSL.Internal.Buffer
 import Crypto.BoringSSL.Internal.Error
@@ -129,6 +124,7 @@ publicKeyToBytes (RSAKeyPair fptr) = withBoundThread $
       liftIO $ packOpenSSLBuffer outPtrPtr outLenPtr
 
 -- | Deserialize a public key from DER-encoded PKCS#1 format.
+-- Keys below 2048 bits are rejected, mirroring 'generateRSAKeyPair'.
 publicKeyFromBytes :: ByteString -> IO (Either CryptoError RSAPublicKey)
 publicKeyFromBytes bs = withBoundThread $
   withByteString bs $ \ptr len -> runExceptT $ maskE_ $ do
@@ -136,7 +132,10 @@ publicKeyFromBytes bs = withBoundThread $
     rsa <- liftIO (c_RSA_public_key_from_bytes ptr len)
       >>= nonNull (OperationFailed "publicKeyFromBytes: RSA_public_key_from_bytes failed")
     fptr <- liftIO $ newForeignPtr c_RSA_free_funptr rsa
-    return (RSAPublicKey fptr)
+    bits <- liftIO $ fromIntegral <$> c_RSA_bits rsa
+    if (bits :: Int) < 2048
+      then throwE (InvalidInput ("publicKeyFromBytes: key is " ++ show bits ++ " bits; minimum is 2048"))
+      else return (RSAPublicKey fptr)
 
 -- | Serialize the private key to DER-encoded PKCS#1 format.
 privateKeyToBytes :: RSAKeyPair -> IO (Either CryptoError ByteString)
@@ -162,6 +161,7 @@ privateKeyToSecureBytes (RSAKeyPair fptr) = withBoundThread $
       liftIO $ packOpenSSLBufferSecure outPtrPtr outLenPtr
 
 -- | Deserialize a private key from DER-encoded PKCS#1 format.
+-- Keys below 2048 bits are rejected, mirroring 'generateRSAKeyPair'.
 privateKeyFromBytes :: ByteString -> IO (Either CryptoError RSAKeyPair)
 privateKeyFromBytes bs = withBoundThread $
   withByteString bs $ \ptr len -> runExceptT $ maskE_ $ do
@@ -169,28 +169,35 @@ privateKeyFromBytes bs = withBoundThread $
     rsa <- liftIO (c_RSA_private_key_from_bytes ptr len)
       >>= nonNull (OperationFailed "privateKeyFromBytes: RSA_private_key_from_bytes failed")
     fptr <- liftIO $ newForeignPtr c_RSA_free_funptr rsa
-    return (RSAKeyPair fptr)
+    bits <- liftIO $ fromIntegral <$> c_RSA_bits rsa
+    if (bits :: Int) < 2048
+      then throwE (InvalidInput ("privateKeyFromBytes: key is " ++ show bits ++ " bits; minimum is 2048"))
+      else return (RSAKeyPair fptr)
 
--- | Get the RSA key size in bits.
-rsaBits :: RSAKeyPair -> IO Int
-rsaBits (RSAKeyPair fptr) = withForeignPtr fptr $ \rsa ->
+-- | The RSA key size in bits. Pure: the key is immutable.
+rsaBits :: RSAKeyPair -> Int
+rsaBits (RSAKeyPair fptr) = unsafePerformIO $ withForeignPtr fptr $ \rsa ->
   fromIntegral <$> c_RSA_bits rsa
+{-# NOINLINE rsaBits #-}
 
--- | Get the RSA modulus size in bytes.
-rsaSize :: RSAKeyPair -> IO Int
-rsaSize (RSAKeyPair fptr) = withForeignPtr fptr $ \rsa ->
+-- | The RSA modulus size in bytes. Pure: the key is immutable.
+rsaSize :: RSAKeyPair -> Int
+rsaSize (RSAKeyPair fptr) = unsafePerformIO $ withForeignPtr fptr $ \rsa ->
   fromIntegral <$> c_RSA_size rsa
+{-# NOINLINE rsaSize #-}
 
 -- | PKCS#1 v1.5 sign a pre-hashed digest.
 -- The @digest@ parameter must be the hash of the message produced by the
 -- hash function corresponding to @algo@ (e.g. if @algo@ is 'SHA256',
 -- pass the output of 'Crypto.BoringSSL.Digest.hashSHA256').
 -- Returns 'Left' if the algorithm has no NID (e.g. BLAKE2b256).
-rsaSign :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
-rsaSign _ algo _
+--
+-- Pure: PKCS#1 v1.5 signatures are deterministic.
+rsaSign :: Algorithm -> RSAKeyPair -> ByteString -> Either CryptoError ByteString
+rsaSign algo _ _
   | Nothing <- ID.algorithmNID algo =
-      return (Left (InvalidInput ("rsaSign: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
-rsaSign (RSAKeyPair fptr) algo digest = withBoundThread $ do
+      Left (InvalidInput ("rsaSign: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5"))
+rsaSign algo (RSAKeyPair fptr) digest = unsafePerformIO $ withBoundThread $ do
   let nid = case ID.algorithmNID algo of
               Just n  -> n
               Nothing -> error "rsaSign: unreachable (algorithmNID already checked)"
@@ -205,34 +212,35 @@ rsaSign (RSAKeyPair fptr) algo digest = withBoundThread $ do
         checkRCError "rsaSign: RSA_sign failed" rc
         actualLen <- liftIO $ peek outLenPtr
         return (BSI.BS outFPtr (fromIntegral actualLen))
+{-# NOINLINE rsaSign #-}
 
 -- | PKCS#1 v1.5 verify a signature on a pre-hashed digest.
 -- The @digest@ must be the hash of the original message using the hash
 -- function matching @algo@.
--- Returns @Left@ if the algorithm has no NID, or @Right False@ for invalid
--- signatures, or @Right True@ for valid signatures.
-rsaVerify :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-rsaVerify _ algo _ _
-  | Nothing <- ID.algorithmNID algo =
-      return (Left (InvalidInput ("rsaVerify: algorithm " ++ show algo ++ " has no NID and cannot be used with PKCS#1 v1.5")))
-rsaVerify (RSAPublicKey fptr) algo digest sig = withBoundThread $ do
-  let nid = case ID.algorithmNID algo of
-              Just n  -> n
-              Nothing -> error "rsaVerify: unreachable (algorithmNID already checked)"
-  withForeignPtr fptr $ \rsa ->
-    withByteString digest $ \digestPtr digestLen ->
-      withByteString sig $ \sigPtr sigLen -> do
-        clearBoringSSLError
-        rc <- c_RSA_verify nid digestPtr digestLen sigPtr sigLen rsa
-        checkVerifyRC rc "rsaVerify: internal error"
+--
+-- Pure and fail-closed: 'False' covers invalid signatures, an algorithm
+-- with no NID, and any internal failure.
+rsaVerify :: Algorithm -> RSAPublicKey -> ByteString -> ByteString -> Bool
+rsaVerify algo (RSAPublicKey fptr) digest sig =
+  case ID.algorithmNID algo of
+    Nothing -> False
+    Just nid -> unsafePerformIO $ withBoundThread $
+      withForeignPtr fptr $ \rsa ->
+        withByteString digest $ \digestPtr digestLen ->
+          withByteString sig $ \sigPtr sigLen -> do
+            clearBoringSSLError
+            rc <- c_RSA_verify nid digestPtr digestLen sigPtr sigLen rsa
+            clearBoringSSLError
+            return (rc == 1)
+{-# NOINLINE rsaVerify #-}
 
 -- | RSA-PSS sign a pre-hashed digest. Uses the same hash for MGF1
 -- and salt length equal to the digest size.
 --
 -- The @digest@ parameter must be the hash of the message produced by the
 -- hash function corresponding to @algo@.
-rsaSignPSS :: RSAKeyPair -> Algorithm -> ByteString -> IO (Either CryptoError ByteString)
-rsaSignPSS (RSAKeyPair fptr) algo digest = withBoundThread $
+rsaSignPSS :: Algorithm -> RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
+rsaSignPSS algo (RSAKeyPair fptr) digest = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     withByteString digest $ \digestPtr digestLen -> runExceptT $
@@ -247,10 +255,11 @@ rsaSignPSS (RSAKeyPair fptr) algo digest = withBoundThread $
 -- | RSA-PSS verify a signature on a pre-hashed digest.
 -- The @digest@ must be the hash of the original message using the hash
 -- function matching @algo@.
--- Returns @Right True@ for valid, @Right False@ for invalid, or
--- @Left@ for internal errors.
-rsaVerifyPSS :: RSAPublicKey -> Algorithm -> ByteString -> ByteString -> IO (Either CryptoError Bool)
-rsaVerifyPSS (RSAPublicKey fptr) algo digest sig = withBoundThread $
+--
+-- Pure and fail-closed: 'False' covers invalid signatures and any
+-- internal failure.
+rsaVerifyPSS :: Algorithm -> RSAPublicKey -> ByteString -> ByteString -> Bool
+rsaVerifyPSS algo (RSAPublicKey fptr) digest sig = unsafePerformIO $ withBoundThread $
   withForeignPtr fptr $ \rsa ->
     withByteString digest $ \digestPtr digestLen ->
       withByteString sig $ \sigPtr sigLen -> do
@@ -258,9 +267,16 @@ rsaVerifyPSS (RSAPublicKey fptr) algo digest sig = withBoundThread $
             saltLen = fromIntegral (ID.digestSize algo)
         clearBoringSSLError
         rc <- c_RSA_verify_pss_mgf1 rsa digestPtr digestLen md md saltLen sigPtr sigLen
-        checkVerifyRC rc "rsaVerifyPSS: internal error"
+        clearBoringSSLError
+        return (rc == 1)
+{-# NOINLINE rsaVerifyPSS #-}
 
--- | RSA-OAEP encrypt plaintext with a public key.
+-- | RSA-OAEP encrypt plaintext with a public key. In 'IO' because OAEP
+-- padding is randomized.
+--
+-- BoringSSL fixes the OAEP and MGF-1 digest to SHA-1 (the universally
+-- interoperable choice; not a security concern for OAEP's use of the
+-- hash). Peers must decrypt with OAEP-SHA-1 parameters.
 rsaEncrypt :: RSAPublicKey -> ByteString -> IO (Either CryptoError ByteString)
 rsaEncrypt (RSAPublicKey fptr) plaintext = withBoundThread $
   withForeignPtr fptr $ \rsa -> do
@@ -272,9 +288,10 @@ rsaEncrypt (RSAPublicKey fptr) plaintext = withBoundThread $
             inPtr inLen rsaPKCS1OAEPPadding)
         "rsaEncrypt: failed"
 
--- | RSA-OAEP decrypt ciphertext with a private key.
-rsaDecrypt :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
-rsaDecrypt (RSAKeyPair fptr) ciphertext = withBoundThread $
+-- | RSA-OAEP decrypt ciphertext with a private key. Pure: decryption is
+-- deterministic. Uses OAEP-SHA-1 parameters (see 'rsaEncrypt').
+rsaDecrypt :: RSAKeyPair -> ByteString -> Either CryptoError ByteString
+rsaDecrypt (RSAKeyPair fptr) ciphertext = unsafePerformIO $ withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     withByteString ciphertext $ \inPtr inLen -> runExceptT $
@@ -283,6 +300,7 @@ rsaDecrypt (RSAKeyPair fptr) ciphertext = withBoundThread $
           c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
             inPtr inLen rsaPKCS1OAEPPadding)
         "rsaDecrypt: failed"
+{-# NOINLINE rsaDecrypt #-}
 
 -- | RSA PKCS#1 v1.5 encrypt plaintext with a public key.
 --
@@ -309,8 +327,8 @@ rsaEncryptPKCS1 (RSAPublicKey fptr) plaintext = withBoundThread $
 -- on padding failure creates an oracle. Use 'rsaDecrypt' (OAEP) instead for
 -- new protocols. This function is provided only for legacy compatibility.
 {-# DEPRECATED rsaDecryptPKCS1 "Use rsaDecrypt (OAEP) instead. PKCS#1 v1.5 encryption is vulnerable to Bleichenbacher-style attacks." #-}
-rsaDecryptPKCS1 :: RSAKeyPair -> ByteString -> IO (Either CryptoError ByteString)
-rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext = withBoundThread $
+rsaDecryptPKCS1 :: RSAKeyPair -> ByteString -> Either CryptoError ByteString
+rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext = unsafePerformIO $ withBoundThread $
   withForeignPtr fptr $ \rsa -> do
     modSize <- fromIntegral <$> c_RSA_size rsa
     withByteString ciphertext $ \inPtr inLen -> runExceptT $
@@ -319,13 +337,16 @@ rsaDecryptPKCS1 (RSAKeyPair fptr) ciphertext = withBoundThread $
           c_RSA_decrypt rsa outLenPtr (castPtr outPtr) (fromIntegral modSize)
             inPtr inLen rsaPKCS1Padding)
         "rsaDecryptPKCS1: failed"
+{-# NOINLINE rsaDecryptPKCS1 #-}
 
--- | Get the RSA key size in bits from a public key.
-rsaPublicBits :: RSAPublicKey -> IO Int
-rsaPublicBits (RSAPublicKey fptr) = withForeignPtr fptr $ \rsa ->
+-- | The RSA key size in bits from a public key. Pure: the key is immutable.
+rsaPublicBits :: RSAPublicKey -> Int
+rsaPublicBits (RSAPublicKey fptr) = unsafePerformIO $ withForeignPtr fptr $ \rsa ->
   fromIntegral <$> c_RSA_bits rsa
+{-# NOINLINE rsaPublicBits #-}
 
--- | Get the RSA modulus size in bytes from a public key.
-rsaPublicSize :: RSAPublicKey -> IO Int
-rsaPublicSize (RSAPublicKey fptr) = withForeignPtr fptr $ \rsa ->
+-- | The RSA modulus size in bytes from a public key. Pure: the key is immutable.
+rsaPublicSize :: RSAPublicKey -> Int
+rsaPublicSize (RSAPublicKey fptr) = unsafePerformIO $ withForeignPtr fptr $ \rsa ->
   fromIntegral <$> c_RSA_size rsa
+{-# NOINLINE rsaPublicSize #-}

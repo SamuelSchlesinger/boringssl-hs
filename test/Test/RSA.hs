@@ -15,9 +15,9 @@ tests :: TestTree
 tests = testGroup "RSA"
   [ testCase "key generation (2048-bit)" $ do
       Right kp <- generateRSAKeyPair 2048
-      bits <- rsaBits kp
+      let bits = rsaBits kp
       bits @?= 2048
-      size <- rsaSize kp
+      let size = rsaSize kp
       size @?= 256
   , testGroup "PKCS#1 v1.5"
     [ testCase "sign/verify round-trip" $ do
@@ -25,8 +25,8 @@ tests = testGroup "RSA"
         Right pubBytes <- publicKeyToBytes kp
         Right pub <- publicKeyFromBytes pubBytes
         let digest = hashSHA256 "Hello, RSA!"
-        Right sig <- rsaSign kp SHA256 digest
-        Right valid <- rsaVerify pub SHA256 digest sig
+        Right sig <- pure $ rsaSign SHA256 kp digest
+        let valid = rsaVerify SHA256 pub digest sig
         assertBool "signature should verify" valid
     , testCase "wrong digest rejected" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -34,8 +34,8 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         let digest1 = hashSHA256 "message A"
             digest2 = hashSHA256 "message B"
-        Right sig <- rsaSign kp SHA256 digest1
-        Right valid <- rsaVerify pub SHA256 digest2 sig
+        Right sig <- pure $ rsaSign SHA256 kp digest1
+        let valid = rsaVerify SHA256 pub digest2 sig
         assertBool "wrong digest should not verify" (not valid)
     ]
   , testGroup "PSS"
@@ -44,8 +44,8 @@ tests = testGroup "RSA"
         Right pubBytes <- publicKeyToBytes kp
         Right pub <- publicKeyFromBytes pubBytes
         let digest = hashSHA256 "Hello, RSA-PSS!"
-        Right sig <- rsaSignPSS kp SHA256 digest
-        Right valid <- rsaVerifyPSS pub SHA256 digest sig
+        Right sig <- rsaSignPSS SHA256 kp digest
+        let valid = rsaVerifyPSS SHA256 pub digest sig
         assertBool "PSS signature should verify" valid
     , testCase "wrong digest rejected" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -53,8 +53,8 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         let digest1 = hashSHA256 "message A"
             digest2 = hashSHA256 "message B"
-        Right sig <- rsaSignPSS kp SHA256 digest1
-        Right valid <- rsaVerifyPSS pub SHA256 digest2 sig
+        Right sig <- rsaSignPSS SHA256 kp digest1
+        let valid = rsaVerifyPSS SHA256 pub digest2 sig
         assertBool "wrong digest should not verify" (not valid)
     ]
   , testGroup "OAEP"
@@ -64,7 +64,7 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         let plaintext = "Hello, RSA-OAEP!"
         Right ct <- rsaEncrypt pub plaintext
-        Right recovered <- rsaDecrypt kp ct
+        Right recovered <- pure $ rsaDecrypt kp ct
         recovered @?= plaintext
     , testCase "max plaintext length" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -74,7 +74,7 @@ tests = testGroup "RSA"
         -- = 256 - 2*20 - 2 = 214 bytes
         let plaintext = BS.replicate 214 0x42
         Right ct <- rsaEncrypt pub plaintext
-        Right recovered <- rsaDecrypt kp ct
+        Right recovered <- pure $ rsaDecrypt kp ct
         recovered @?= plaintext
     , testCase "too-long plaintext returns Left" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -105,8 +105,8 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         -- Verify the deserialized key works
         let digest = hashSHA256 "serialization test"
-        Right sig <- rsaSign kp SHA256 digest
-        Right valid <- rsaVerify pub SHA256 digest sig
+        Right sig <- pure $ rsaSign SHA256 kp digest
+        let valid = rsaVerify SHA256 pub digest sig
         assertBool "deserialized key should work" valid
     , testCase "private key round-trip" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -116,8 +116,8 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         -- Sign with deserialized private key, verify with original public key
         let digest = hashSHA256 "private key serialization test"
-        Right sig <- rsaSign kp2 SHA256 digest
-        Right valid <- rsaVerify pub SHA256 digest sig
+        Right sig <- pure $ rsaSign SHA256 kp2 digest
+        let valid = rsaVerify SHA256 pub digest sig
         assertBool "deserialized private key should work" valid
     , testCase "publicKeyFromBytes rejects garbage" $ do
         result <- publicKeyFromBytes (BS.replicate 32 0xFF)
@@ -137,7 +137,7 @@ tests = testGroup "RSA"
         Right pub <- publicKeyFromBytes pubBytes
         let plaintext = "Hello, PKCS1!"
         Right ct <- rsaEncryptPKCS1 pub plaintext
-        Right recovered <- rsaDecryptPKCS1 kp ct
+        Right recovered <- pure $ rsaDecryptPKCS1 kp ct
         recovered @?= plaintext
     , testCase "max plaintext (245 bytes for 2048-bit key)" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -146,7 +146,7 @@ tests = testGroup "RSA"
         -- PKCS#1 v1.5: max = modulus_size - 11 = 256 - 11 = 245
         let plaintext = BS.replicate 245 0x42
         Right ct <- rsaEncryptPKCS1 pub plaintext
-        Right recovered <- rsaDecryptPKCS1 kp ct
+        Right recovered <- pure $ rsaDecryptPKCS1 kp ct
         recovered @?= plaintext
     , testCase "too-long plaintext returns Left" $ do
         Right kp <- generateRSAKeyPair 2048
@@ -163,29 +163,29 @@ tests = testGroup "RSA"
         Right kp <- generateRSAKeyPair 2048
         Right pubBytes <- publicKeyToBytes kp
         Right pub <- publicKeyFromBytes pubBytes
-        bits <- rsaBits kp
-        pubBits <- rsaPublicBits pub
+        let bits = rsaBits kp
+        let pubBits = rsaPublicBits pub
         pubBits @?= bits
     , testCase "rsaPublicSize matches rsaSize" $ do
         Right kp <- generateRSAKeyPair 2048
         Right pubBytes <- publicKeyToBytes kp
         Right pub <- publicKeyFromBytes pubBytes
-        size <- rsaSize kp
-        pubSize <- rsaPublicSize pub
+        let size = rsaSize kp
+        let pubSize = rsaPublicSize pub
         pubSize @?= size
     ]
   , testGroup "signature size"
     [ testCase "PKCS#1 v1.5 signature is rsaSize bytes" $ do
         Right kp <- generateRSAKeyPair 2048
-        size <- rsaSize kp
+        let size = rsaSize kp
         let digest = hashSHA256 "test"
-        Right sig <- rsaSign kp SHA256 digest
+        Right sig <- pure $ rsaSign SHA256 kp digest
         BS.length sig @?= size
     , testCase "PSS signature is rsaSize bytes" $ do
         Right kp <- generateRSAKeyPair 2048
-        size <- rsaSize kp
+        let size = rsaSize kp
         let digest = hashSHA256 "test"
-        Right sig <- rsaSignPSS kp SHA256 digest
+        Right sig <- rsaSignPSS SHA256 kp digest
         BS.length sig @?= size
     ]
   ]
