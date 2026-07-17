@@ -5,44 +5,45 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.Digest (Algorithm(..))
+import Crypto.BoringSSL.SecureBytes
 import Crypto.BoringSSL.TLSPRF
 
 tests :: TestTree
 tests = testGroup "TLSPRF"
   [ testCase "produces requested output length" $ do
-      let result = tlsPRF SHA256 32 "secret" "label" "seed1" "seed2"
+      let result = tlsPRF SHA256 "secret" "label" "seed1" "seed2" 32
       case result of
         Left err -> assertFailure ("tlsPRF returned Left: " ++ show err)
         Right derived -> secureBytesLength derived @?= 32
 
   , testCase "deterministic" $ do
-      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 48 "secret" "label" "seed1" "seed2"
-          d2 = fmap secureBytesToByteString $ tlsPRF SHA256 48 "secret" "label" "seed1" "seed2"
+      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret" "label" "seed1" "seed2" 48
+          d2 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret" "label" "seed1" "seed2" 48
       d1 @?= d2
 
   , testCase "different secrets produce different output" $ do
-      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 32 "secret1" "label" "seed" ""
-          d2 = fmap secureBytesToByteString $ tlsPRF SHA256 32 "secret2" "label" "seed" ""
+      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret1" "label" "seed" "" 32
+          d2 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret2" "label" "seed" "" 32
       assertBool "different secrets should differ" (d1 /= d2)
 
   , testCase "different labels produce different output" $ do
-      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 32 "secret" "label1" "seed" ""
-          d2 = fmap secureBytesToByteString $ tlsPRF SHA256 32 "secret" "label2" "seed" ""
+      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret" "label1" "seed" "" 32
+          d2 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret" "label2" "seed" "" 32
       assertBool "different labels should differ" (d1 /= d2)
 
   , testCase "different algorithms produce different output" $ do
-      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 32 "secret" "label" "seed" ""
-          d2 = fmap secureBytesToByteString $ tlsPRF SHA384 32 "secret" "label" "seed" ""
+      let d1 = fmap secureBytesToByteString $ tlsPRF SHA256 "secret" "label" "seed" "" 32
+          d2 = fmap secureBytesToByteString $ tlsPRF SHA384 "secret" "label" "seed" "" 32
       assertBool "different algorithms should differ" (d1 /= d2)
 
   , testCase "SHA-384 works" $ do
-      let result = tlsPRF SHA384 64 "master secret" "key expansion" "server_random" "client_random"
+      let result = tlsPRF SHA384 "master secret" "key expansion" "server_random" "client_random" 64
       case result of
         Left err -> assertFailure ("tlsPRF with SHA384 returned Left: " ++ show err)
         Right derived -> secureBytesLength derived @?= 64
 
   , testCase "empty seed2 works" $ do
-      let result = tlsPRF SHA256 32 "secret" "label" "seed1" ""
+      let result = tlsPRF SHA256 "secret" "label" "seed1" "" 32
       case result of
         Left err -> assertFailure ("tlsPRF with empty seed2 returned Left: " ++ show err)
         Right derived -> secureBytesLength derived @?= 32

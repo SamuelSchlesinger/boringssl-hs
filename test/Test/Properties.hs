@@ -270,9 +270,7 @@ prop_hmacDeterministic algo (ArbitraryBS key) (ArbitraryBS msg) =
 
 prop_hmacLength :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hmacLength algo (ArbitraryBS key) (ArbitraryBS msg) =
-  case HMAC.hmac algo key msg of
-    Left err -> counterexample ("hmac failed: " ++ show err) False
-    Right result -> BS.length result === Digest.digestSize algo
+  BS.length (HMAC.hmac algo key msg) === Digest.digestSize algo
 
 prop_hmacStreamingMatchesOneShot :: Algorithm -> ArbitraryBS -> ArbitraryBS -> Property
 prop_hmacStreamingMatchesOneShot algo (ArbitraryBS key) (ArbitraryBS msg) = ioProperty $ do
@@ -287,7 +285,7 @@ prop_hmacStreamingMatchesOneShot algo (ArbitraryBS key) (ArbitraryBS msg) = ioPr
           eResult <- HMAC.hmacFinalize ctx
           case eResult of
             Left err -> return $ counterexample ("hmacFinalize failed: " ++ show err) False
-            Right streamResult -> return (Right streamResult === HMAC.hmac algo key msg)
+            Right streamResult -> return (streamResult === HMAC.hmac algo key msg)
 
 prop_hmacDifferentKeys :: Algorithm -> NonEmptyBS -> Property
 prop_hmacDifferentKeys algo (NonEmptyBS msg) = ioProperty $ do

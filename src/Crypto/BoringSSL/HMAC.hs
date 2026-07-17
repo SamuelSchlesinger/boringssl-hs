@@ -1,7 +1,14 @@
--- | HMAC message authentication codes.
+-- | HMAC message authentication codes (RFC 2104).
 --
--- Provides one-shot HMAC computation, an incremental streaming API,
--- and constant-time verification to prevent timing attacks.
+-- Use HMAC to authenticate messages with a shared secret key. Keys may
+-- be any length (longer keys are hashed down internally per the HMAC
+-- construction); prefer keys of at least the digest size.
+--
+-- Verify received MACs with 'hmacVerify' — never with @(==)@ — so the
+-- comparison runs in constant time.
+--
+-- This module is not for password storage: use "Crypto.BoringSSL.PBKDF2"
+-- or "Crypto.BoringSSL.Scrypt" for passwords.
 module Crypto.BoringSSL.HMAC
   ( -- * One-shot
     hmac
@@ -13,10 +20,9 @@ module Crypto.BoringSSL.HMAC
     -- * Verification
   , hmacVerify
   , constTimeEq
-    -- * Error type
-  , CryptoError(..)
   ) where
 
+import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Internal as BSI
 import Foreign.ForeignPtr
@@ -32,11 +38,13 @@ import qualified Crypto.BoringSSL.Internal.Digest as ID
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.FFI.HMAC
 
--- | Compute HMAC in one shot (pure, deterministic).
+-- | Compute HMAC in one shot. Pure, deterministic, and total: every key
+-- and message is valid input.
 --
--- @hmac algo key message@ computes the HMAC of @message@ using @key@
--- with the specified hash algorithm.
-hmac :: Algorithm -> ByteString -> ByteString -> Either CryptoError ByteString
+-- @hmac algo key message@ computes the HMAC of @message@ under @key@
+-- with the specified hash algorithm. The result has 'ID.digestSize'
+-- @algo@ bytes.
+hmac :: Algorithm -> ByteString -> ByteString -> ByteString
 hmac algo key msg = unsafePerformIO $
   withByteString key $ \keyPtr keyLen ->
     withByteString msg $ \msgPtr msgLen -> do
@@ -50,13 +58,15 @@ hmac algo key msg = unsafePerformIO $
             then return Nothing
             else Just . fromIntegral <$> peek outLenPtr
       case result of
-        Nothing -> return (Left (OperationFailed "hmac: HMAC returned NULL"))
-        Just actualLen -> return (Right (BSI.BS fptr actualLen))
+        -- HMAC over a one-shot buffer cannot fail for any input; NULL
+        -- would mean allocation failure inside BoringSSL.
+        Nothing -> errorWithoutStackTrace "Crypto.BoringSSL.HMAC.hmac: HMAC returned NULL (allocation failure)"
+        Just actualLen -> return (BSI.BS fptr actualLen)
 {-# NOINLINE hmac #-}
 
--- | An incremental HMAC context. Automatically freed by GC.
--- Not thread-safe: do not share a single context across threads.
-newtype HMACCtx = HMACCtx (ForeignPtr HMAC_CTX)
+-- | An incremental HMAC context. Automatically freed by GC. Concurrent
+-- use from multiple threads is safe but serialized by an internal lock.
+data HMACCtx = HMACCtx !(MVar ()) !(ForeignPtr HMAC_CTX)
 
 -- | Initialize a streaming HMAC context.
 hmacInit :: Algorithm -> ByteString -> IO (Either CryptoError HMACCtx)
@@ -73,11 +83,12 @@ hmacInit algo key = mask_ $ do
             return (Left (OperationFailed "hmacInit: HMAC_Init_ex failed"))
           else do
             fptr <- newForeignPtr c_HMAC_CTX_free_funptr ctx
-            return (Right (HMACCtx fptr))
+            lock <- newMVar ()
+            return (Right (HMACCtx lock fptr))
 
 -- | Feed more data into the HMAC context.
 hmacUpdate :: HMACCtx -> ByteString -> IO (Either CryptoError ())
-hmacUpdate (HMACCtx fptr) bs =
+hmacUpdate (HMACCtx lock fptr) bs = withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx ->
     withByteString bs $ \dataPtr dataLen -> do
       rc <- c_HMAC_Update ctx dataPtr dataLen
@@ -87,7 +98,7 @@ hmacUpdate (HMACCtx fptr) bs =
 
 -- | Finalize the HMAC and return the MAC value.
 hmacFinalize :: HMACCtx -> IO (Either CryptoError ByteString)
-hmacFinalize (HMACCtx fptr) =
+hmacFinalize (HMACCtx lock fptr) = withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> do
     fout <- BSI.mallocByteString ID.evpMaxMdSize
     result <- withForeignPtr fout $ \outPtr ->
@@ -100,13 +111,10 @@ hmacFinalize (HMACCtx fptr) =
       Nothing -> return (Left (OperationFailed "hmacFinalize: HMAC_Final failed"))
       Just actualLen -> return (Right (BSI.BS fout actualLen))
 
--- | Verify an HMAC in constant time.
--- Computes HMAC of @message@ using @key@ and compares with @expected@
--- using constant-time comparison to prevent timing attacks.
--- Returns 'Left' if HMAC computation fails, or 'Right' with the
--- comparison result.
-hmacVerify :: Algorithm -> ByteString -> ByteString -> ByteString -> Either CryptoError Bool
-hmacVerify algo key msg expected =
-  case hmac algo key msg of
-    Left err -> Left err
-    Right computed -> Right (constTimeEq computed expected)
+-- | Verify an HMAC in constant time, fail-closed.
+--
+-- @hmacVerify algo key message expected@ recomputes the MAC and compares
+-- it with @expected@ using constant-time comparison. Returns 'False' for
+-- any mismatch, including an @expected@ value of the wrong length.
+hmacVerify :: Algorithm -> ByteString -> ByteString -> ByteString -> Bool
+hmacVerify algo key msg expected = constTimeEq (hmac algo key msg) expected

@@ -12,6 +12,10 @@
 -- * __MD5__ — cryptographically broken. Provided only for legacy
 --   interoperability (e.g. existing protocol checksums). Do not use for
 --   signatures, integrity, or new designs.
+--
+-- __Never hash passwords with these functions__ — plain hashes are
+-- brute-forceable at billions of guesses per second. Use
+-- "Crypto.BoringSSL.PBKDF2" or "Crypto.BoringSSL.Scrypt" for passwords.
 module Crypto.BoringSSL.Digest
   ( -- * Algorithms
     Algorithm(..)
@@ -32,8 +36,6 @@ module Crypto.BoringSSL.Digest
   , digestUpdate
   , digestFinalize
   , digestCopy
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)

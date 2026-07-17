@@ -1,19 +1,27 @@
--- | AES-CMAC message authentication codes.
+-- | AES-CMAC message authentication codes (RFC 4493).
 --
--- Provides one-shot AES-CMAC computation and an incremental streaming API.
--- CMAC is a MAC based on AES-CBC defined in RFC 4493.
+-- Provides one-shot AES-CMAC computation, an incremental streaming API,
+-- and constant-time verification. Verify received tags with 'cmacVerify'
+-- — never with @(==)@ — so the comparison runs in constant time.
+--
+-- Prefer "Crypto.BoringSSL.HMAC" unless you specifically need CMAC for
+-- interoperability; and use "Crypto.BoringSSL.PBKDF2" or
+-- "Crypto.BoringSSL.Scrypt" for passwords, never a MAC.
 module Crypto.BoringSSL.CMAC
   ( -- * One-shot
     cmac
+  , cmacTagSize
     -- * Incremental
   , CMACCtx
   , cmacInit
   , cmacUpdate
   , cmacFinalize
-    -- * Error type
-  , CryptoError(..)
+    -- * Verification
+  , cmacVerify
+  , constTimeEq
   ) where
 
+import Control.Concurrent.MVar (MVar, newMVar, withMVar)
 import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Internal as BSI
@@ -23,15 +31,27 @@ import Foreign.Storable
 import Control.Exception (mask_)
 import System.IO.Unsafe (unsafePerformIO)
 
-import Crypto.BoringSSL.Internal.Buffer (withByteString)
+import Crypto.BoringSSL.Internal.Buffer (withByteString, constTimeEq)
 import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.CMAC
 import Crypto.BoringSSL.Internal.FFI.Cipher (c_EVP_aes_128_cbc, c_EVP_aes_256_cbc)
 
--- | CMAC tag size in bytes.
+-- | Size of a CMAC authentication tag in bytes (always 16, one AES block).
 cmacTagSize :: Int
 cmacTagSize = 16
+
+-- | Verify an AES-CMAC tag in constant time, fail-closed.
+--
+-- @cmacVerify key message expected@ recomputes the tag and compares it
+-- with @expected@ using constant-time comparison. Returns 'False' on any
+-- mismatch — including an invalid key length or an @expected@ value that
+-- is not 'cmacTagSize' bytes.
+cmacVerify :: ByteString -> ByteString -> ByteString -> Bool
+cmacVerify key msg expected =
+  case cmac key msg of
+    Left _    -> False
+    Right tag -> constTimeEq tag expected
 
 -- | Select the appropriate AES-CBC cipher for the given key length.
 -- Returns Nothing for invalid key lengths.
@@ -61,8 +81,9 @@ cmac key msg
 {-# NOINLINE cmac #-}
 
 -- | An incremental AES-CMAC context. Automatically freed by GC.
--- Not thread-safe: do not share a single context across threads.
-newtype CMACCtx = CMACCtx (ForeignPtr CMAC_CTX)
+-- Concurrent use from multiple threads is safe but serialized by an
+-- internal lock.
+data CMACCtx = CMACCtx !(MVar ()) !(ForeignPtr CMAC_CTX)
 
 -- | Initialize a streaming CMAC context.
 --
@@ -83,14 +104,15 @@ cmacInit key
       if rc == 1
         then do
           fptr <- liftIO $ newForeignPtr c_CMAC_CTX_free_funptr ctx
-          return (CMACCtx fptr)
+          lock <- liftIO $ newMVar ()
+          return (CMACCtx lock fptr)
         else do
           liftIO $ c_CMAC_CTX_free ctx
           throwE (OperationFailed "cmacInit: CMAC_Init failed")
 
 -- | Feed more data into the CMAC context.
 cmacUpdate :: CMACCtx -> ByteString -> IO (Either CryptoError ())
-cmacUpdate (CMACCtx fptr) bs =
+cmacUpdate (CMACCtx lock fptr) bs = withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx ->
     withByteString bs $ \dataPtr dataLen -> do
       rc <- c_CMAC_Update ctx dataPtr dataLen
@@ -100,7 +122,7 @@ cmacUpdate (CMACCtx fptr) bs =
 
 -- | Finalize the CMAC and return the 16-byte authentication tag.
 cmacFinalize :: CMACCtx -> IO (Either CryptoError ByteString)
-cmacFinalize (CMACCtx fptr) =
+cmacFinalize (CMACCtx lock fptr) = withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     fout <- liftIO $ BSI.mallocByteString cmacTagSize
     ExceptT $ withForeignPtr fout $ \outPtr -> runExceptT $

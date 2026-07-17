@@ -1,15 +1,14 @@
 -- | TLS 1.0\/1.2 pseudorandom function (PRF).
 --
--- Implements the PRF defined in Section 5 of RFC 5246, used by TLS
--- to derive keying material from a shared secret.
+-- Implements the PRF defined in Section 5 of RFC 5246, used by TLS to
+-- derive keying material from a shared secret.
+--
+-- __This is a legacy primitive__: use it only to interoperate with
+-- TLS 1.2-era protocols that specify it. For general key derivation use
+-- "Crypto.BoringSSL.HKDF"; for passwords use "Crypto.BoringSSL.PBKDF2"
+-- or "Crypto.BoringSSL.Scrypt".
 module Crypto.BoringSSL.TLSPRF
   ( tlsPRF
-    -- * Secure memory
-  , SecureBytes
-  , secureBytesToByteString
-  , secureBytesLength
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -25,13 +24,13 @@ import Crypto.BoringSSL.Internal.SecureBytes
 
 -- | Compute the TLS PRF.
 --
--- @tlsPRF algo outLen secret label seed1 seed2@ derives @outLen@ bytes
+-- @tlsPRF algo secret label seed1 seed2 outLen@ derives @outLen@ bytes
 -- of keying material using the TLS PRF with the given digest @algo@,
 -- @secret@, @label@, @seed1@, and @seed2@.
 --
--- Returns 'Left' on failure.
-tlsPRF :: Algorithm -> Int -> ByteString -> ByteString -> ByteString -> ByteString -> Either CryptoError SecureBytes
-tlsPRF algo outLen secret label seed1 seed2
+-- Returns 'Left' ('InvalidInput') if @outLen@ is not positive.
+tlsPRF :: Algorithm -> ByteString -> ByteString -> ByteString -> ByteString -> Int -> Either CryptoError SecureBytes
+tlsPRF algo secret label seed1 seed2 outLen
   | outLen <= 0 = Left (InvalidInput "tlsPRF: output length must be positive")
   | otherwise = unsafePerformIO $
   withByteString secret $ \secretPtr secretLen ->

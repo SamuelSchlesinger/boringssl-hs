@@ -8,6 +8,7 @@ import Test.Tasty
 import Test.Tasty.HUnit
 
 import Crypto.BoringSSL.CMAC
+import Crypto.BoringSSL.Error (CryptoError)
 
 hex :: BS8.ByteString -> BS8.ByteString
 hex s = case Base16.decode s of
@@ -116,4 +117,30 @@ tests = testGroup "CMAC"
           Left _  -> return ()
           Right _ -> assertFailure "should reject 15-byte key"
     ]
+  , testGroup "cmacVerify"
+    [ testCase "correct tag verifies" $ do
+        let key = BS.replicate 16 0x2b
+        tag <- unwrapIO (cmac key "test message")
+        assertBool "correct tag should verify" (cmacVerify key "test message" tag)
+    , testCase "wrong tag rejects" $ do
+        let key = BS.replicate 16 0x2b
+        assertBool "wrong tag should not verify"
+          (not (cmacVerify key "test message" (BS.replicate cmacTagSize 0)))
+    , testCase "wrong message rejects" $ do
+        let key = BS.replicate 16 0x2b
+        tag <- unwrapIO (cmac key "test message")
+        assertBool "wrong message should not verify" (not (cmacVerify key "other message" tag))
+    , testCase "invalid key length fails closed" $ do
+        assertBool "bad key should not verify"
+          (not (cmacVerify (BS.replicate 15 0) "msg" (BS.replicate cmacTagSize 0)))
+    , testCase "truncated tag rejects" $ do
+        let key = BS.replicate 16 0x2b
+        tag <- unwrapIO (cmac key "test message")
+        assertBool "truncated tag should not verify"
+          (not (cmacVerify key "test message" (BS.take 8 tag)))
+    ]
   ]
+
+unwrapIO :: Either CryptoError a -> IO a
+unwrapIO (Right x)  = return x
+unwrapIO (Left err) = assertFailure ("unexpected error: " ++ show err) >> error "unreachable"
