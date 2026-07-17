@@ -2,20 +2,18 @@
 
 [![CI](https://github.com/haskell-cryptography/boringssl-hs/actions/workflows/ci.yml/badge.svg)](https://github.com/haskell-cryptography/boringssl-hs/actions/workflows/ci.yml)
 
-Idiomatic Haskell bindings to Google's [BoringSSL](https://boringssl.googlesource.com/boringssl/) cryptography library.
+Haskell bindings to Google's [BoringSSL](https://boringssl.googlesource.com/boringssl/) cryptography library.
 
 > **Warning:** This library is experimental and under active construction. The API
 > is unstable and may change without notice. Do not use this in production systems.
 
 ## Overview
 
-This library provides idiomatic Haskell bindings to BoringSSL's cryptographic
-primitives via the FFI. BoringSSL is Google's maintained fork of OpenSSL,
-battle-tested across Chrome, Android, and Google's infrastructure. These
-bindings give Haskell programs access to the same well-audited cryptographic
-implementations, wrapped in an API that feels natural in Haskell: pure
-interfaces where possible, `ByteString`-based data types throughout, and proper
-memory management via `ForeignPtr` finalizers.
+This library wraps BoringSSL's cryptographic primitives via the FFI. BoringSSL
+is Google's fork of OpenSSL — the same code Google ships in Chrome and Android.
+The bindings expose those implementations to Haskell with pure interfaces where
+the underlying operation is deterministic, `ByteString`-based types throughout,
+and `ForeignPtr` finalizers for memory management.
 
 ## Supported GHC versions
 
