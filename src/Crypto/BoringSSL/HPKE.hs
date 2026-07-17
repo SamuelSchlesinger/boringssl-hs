@@ -32,8 +32,6 @@ module Crypto.BoringSSL.HPKE
     -- * Export secret
   , senderExport
   , recipientExport
-    -- * Error type
-  , CryptoError(..)
   ) where
 
 import Data.ByteString (ByteString)
@@ -50,10 +48,12 @@ import Crypto.BoringSSL.Internal.Error
 import Crypto.BoringSSL.Internal.ExceptT
 import Crypto.BoringSSL.Internal.FFI.HPKE
 
--- | HPKE KEM algorithms.
+-- | HPKE KEM algorithms (RFC 9180 and post-quantum extensions).
 data HPKEKEM
-  = X25519HkdfSha256
-  | P256HkdfSha256
+  = DHKEM_X25519_HKDF_SHA256
+    -- ^ RFC 9180 DHKEM(X25519, HKDF-SHA256).
+  | DHKEM_P256_HKDF_SHA256
+    -- ^ RFC 9180 DHKEM(P-256, HKDF-SHA256).
   | XWing
     -- ^ X-Wing hybrid KEM combining X25519 and ML-KEM-768.
   | MLKEM768
@@ -61,11 +61,11 @@ data HPKEKEM
   deriving (Eq, Show)
 
 -- | HPKE KDF algorithms.
-data HPKEKDF = HkdfSha256
+data HPKEKDF = HKDF_SHA256
   deriving (Eq, Show)
 
 -- | HPKE AEAD algorithms.
-data HPKEAEAD = Aes128Gcm | Aes256Gcm | ChaChaPoly
+data HPKEAEAD = AES128GCM | AES256GCM | ChaCha20Poly1305
   deriving (Eq, Show)
 
 -- | An HPKE key pair.
@@ -80,19 +80,19 @@ data SenderCtx = SenderCtx !(MVar ()) !(ForeignPtr EVP_HPKE_CTX)
 data RecipientCtx = RecipientCtx !(MVar ()) !(ForeignPtr EVP_HPKE_CTX)
 
 kemPtr :: HPKEKEM -> Ptr EVP_HPKE_KEM
-kemPtr X25519HkdfSha256 = c_EVP_hpke_x25519_hkdf_sha256
-kemPtr P256HkdfSha256   = c_EVP_hpke_p256_hkdf_sha256
+kemPtr DHKEM_X25519_HKDF_SHA256 = c_EVP_hpke_x25519_hkdf_sha256
+kemPtr DHKEM_P256_HKDF_SHA256   = c_EVP_hpke_p256_hkdf_sha256
 kemPtr XWing            = c_EVP_hpke_xwing
 kemPtr MLKEM768         = c_EVP_hpke_mlkem768
 kemPtr MLKEM1024        = c_EVP_hpke_mlkem1024
 
 kdfPtr :: HPKEKDF -> Ptr EVP_HPKE_KDF
-kdfPtr HkdfSha256 = c_EVP_hpke_hkdf_sha256
+kdfPtr HKDF_SHA256 = c_EVP_hpke_hkdf_sha256
 
 aeadPtr :: HPKEAEAD -> Ptr EVP_HPKE_AEAD
-aeadPtr Aes128Gcm  = c_EVP_hpke_aes_128_gcm
-aeadPtr Aes256Gcm  = c_EVP_hpke_aes_256_gcm
-aeadPtr ChaChaPoly = c_EVP_hpke_chacha20_poly1305
+aeadPtr AES128GCM  = c_EVP_hpke_aes_128_gcm
+aeadPtr AES256GCM  = c_EVP_hpke_aes_256_gcm
+aeadPtr ChaCha20Poly1305 = c_EVP_hpke_chacha20_poly1305
 
 -- | Generate a new HPKE key pair for the given KEM.
 generateKey :: HPKEKEM -> IO (Either CryptoError HPKEKey)
@@ -267,12 +267,14 @@ senderSeal (SenderCtx lock fptr) plaintext ad = withBoundThread $
       "senderSeal: EVP_HPKE_CTX_seal failed"
 
 -- | Decrypt and verify ciphertext using the recipient context.
--- This is stateful: each call advances the internal sequence number.
--- Messages must be processed in the same order as 'senderSeal' produced
--- them, otherwise decryption will fail.
+-- This is stateful: each call advances the internal sequence number, so
+-- __messages must be opened in exactly the order 'senderSeal' produced
+-- them__ — an out-of-order, tampered, or wrong-associated-data message
+-- is reported as 'Left' 'AuthenticationFailed', and unauthenticated
+-- plaintext is never returned.
 -- Thread-safe: concurrent calls are serialized.
 recipientOpen :: RecipientCtx -> ByteString -> ByteString -> IO (Either CryptoError ByteString)
-recipientOpen (RecipientCtx lock fptr) ciphertext ad = withBoundThread $
+recipientOpen (RecipientCtx lock fptr) ciphertext ad = fmap remap $ withBoundThread $
   withMVar lock $ \_ ->
   withForeignPtr fptr $ \ctx -> runExceptT $ do
     let maxOutLen = BS.length ciphertext
@@ -282,7 +284,12 @@ recipientOpen (RecipientCtx lock fptr) ciphertext ad = withBoundThread $
           withByteString ad $ \adPtr adLen ->
             c_EVP_HPKE_CTX_open ctx (castPtr outPtr) outLenPtr
               (fromIntegral maxOutLen) inPtr inLen adPtr adLen)
-      "recipientOpen: decryption or authentication failed"
+      "recipientOpen"
+  where
+    -- With the output buffer correctly sized by construction, the only
+    -- failure EVP_HPKE_CTX_open can report is tag verification.
+    remap (Left _) = Left AuthenticationFailed
+    remap r        = r
 
 -- | Export a secret from the sender context.
 -- Thread-safe: concurrent calls are serialized.

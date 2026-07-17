@@ -10,73 +10,73 @@ import Crypto.BoringSSL.HPKE
 tests :: TestTree
 tests = testGroup "HPKE"
   [ testGroup "X25519"
-    [ testCase "round-trip seal/open" $ roundTrip X25519HkdfSha256 HkdfSha256 Aes128Gcm
-    , testCase "multiple seal/open" $ multiSealOpen X25519HkdfSha256 HkdfSha256 Aes128Gcm
-    , testCase "export secret agreement" $ exportAgreement X25519HkdfSha256 HkdfSha256 Aes128Gcm
+    [ testCase "round-trip seal/open" $ roundTrip DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 AES128GCM
+    , testCase "multiple seal/open" $ multiSealOpen DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 AES128GCM
+    , testCase "export secret agreement" $ exportAgreement DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 AES128GCM
     ]
   , testGroup "P-256"
-    [ testCase "round-trip seal/open" $ roundTrip P256HkdfSha256 HkdfSha256 Aes128Gcm
-    , testCase "multiple seal/open" $ multiSealOpen P256HkdfSha256 HkdfSha256 Aes128Gcm
+    [ testCase "round-trip seal/open" $ roundTrip DHKEM_P256_HKDF_SHA256 HKDF_SHA256 AES128GCM
+    , testCase "multiple seal/open" $ multiSealOpen DHKEM_P256_HKDF_SHA256 HKDF_SHA256 AES128GCM
     ]
   , testGroup "MLKEM768"
-    [ testCase "round-trip seal/open" $ roundTrip MLKEM768 HkdfSha256 Aes128Gcm
+    [ testCase "round-trip seal/open" $ roundTrip MLKEM768 HKDF_SHA256 AES128GCM
     ]
   , testGroup "XWing"
-    [ testCase "round-trip seal/open" $ roundTrip XWing HkdfSha256 Aes128Gcm
+    [ testCase "round-trip seal/open" $ roundTrip XWing HKDF_SHA256 AES128GCM
     ]
   , testGroup "MLKEM1024"
-    [ testCase "round-trip seal/open" $ roundTrip MLKEM1024 HkdfSha256 Aes128Gcm
+    [ testCase "round-trip seal/open" $ roundTrip MLKEM1024 HKDF_SHA256 AES128GCM
     ]
   , testGroup "AEAD variants"
-    [ testCase "AES-256-GCM" $ roundTrip X25519HkdfSha256 HkdfSha256 Aes256Gcm
-    , testCase "ChaCha20-Poly1305" $ roundTrip X25519HkdfSha256 HkdfSha256 ChaChaPoly
+    [ testCase "AES-256-GCM" $ roundTrip DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 AES256GCM
+    , testCase "ChaCha20-Poly1305" $ roundTrip DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 ChaCha20Poly1305
     ]
   , testGroup "Key serialization"
     [ testCase "public key round-trip" $ do
-        Right key <- generateKey X25519HkdfSha256
+        Right key <- generateKey DHKEM_X25519_HKDF_SHA256
         Right pub <- publicKeyBytes key
         assertBool "public key should not be empty" (not (BS.null pub))
     , testCase "private key round-trip" $ do
-        Right key <- generateKey X25519HkdfSha256
+        Right key <- generateKey DHKEM_X25519_HKDF_SHA256
         Right priv <- privateKeyBytes key
-        Right key2 <- keyFromPrivate X25519HkdfSha256 priv
+        Right key2 <- keyFromPrivate DHKEM_X25519_HKDF_SHA256 priv
         Right pub1 <- publicKeyBytes key
         Right pub2 <- publicKeyBytes key2
         pub1 @?= pub2
     ]
   , testGroup "Auth mode"
     [ testCase "X25519 auth round-trip" $
-        authRoundTrip X25519HkdfSha256 HkdfSha256 Aes128Gcm
+        authRoundTrip DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 AES128GCM
     , testCase "P-256 auth round-trip" $
-        authRoundTrip P256HkdfSha256 HkdfSha256 Aes128Gcm
+        authRoundTrip DHKEM_P256_HKDF_SHA256 HKDF_SHA256 AES128GCM
     , testCase "auth wrong sender key fails" $ do
         -- Generate sender, recipient, and impersonator keys
-        Right senderKey <- generateKey X25519HkdfSha256
-        Right recipientKey <- generateKey X25519HkdfSha256
-        Right imposterKey <- generateKey X25519HkdfSha256
+        Right senderKey <- generateKey DHKEM_X25519_HKDF_SHA256
+        Right recipientKey <- generateKey DHKEM_X25519_HKDF_SHA256
+        Right imposterKey <- generateKey DHKEM_X25519_HKDF_SHA256
         Right recipientPub <- publicKeyBytes recipientKey
         Right imposterPub <- publicKeyBytes imposterKey
         let info = "auth test"
         -- Sender authenticates with their key
-        Right (enc, sCtx) <- setupAuthSender senderKey HkdfSha256 Aes128Gcm recipientPub info
+        Right (enc, sCtx) <- setupAuthSender senderKey HKDF_SHA256 AES128GCM recipientPub info
         Right ct <- senderSeal sCtx "secret" "ad"
         -- Recipient tries to verify with the wrong sender public key
-        Right rCtx <- setupAuthRecipient recipientKey HkdfSha256 Aes128Gcm enc info imposterPub
+        Right rCtx <- setupAuthRecipient recipientKey HKDF_SHA256 AES128GCM enc info imposterPub
         result <- recipientOpen rCtx ct "ad"
         case result of
           Left _  -> return ()
           Right _ -> assertFailure "should not decrypt with wrong sender key"
     ]
   , testCase "wrong key fails open" $ do
-      Right key1 <- generateKey X25519HkdfSha256
-      Right key2 <- generateKey X25519HkdfSha256
+      Right key1 <- generateKey DHKEM_X25519_HKDF_SHA256
+      Right key2 <- generateKey DHKEM_X25519_HKDF_SHA256
       Right pub1 <- publicKeyBytes key1
       let info = "test info"
-      Right (enc, sCtx) <- setupSender X25519HkdfSha256 HkdfSha256 Aes128Gcm pub1 info
+      Right (enc, sCtx) <- setupSender DHKEM_X25519_HKDF_SHA256 HKDF_SHA256 AES128GCM pub1 info
       Right ct <- senderSeal sCtx "secret message" "ad"
       -- Try to open with the wrong key
       result <- do
-        Right rCtx <- setupRecipient key2 HkdfSha256 Aes128Gcm enc info
+        Right rCtx <- setupRecipient key2 HKDF_SHA256 AES128GCM enc info
         recipientOpen rCtx ct "ad"
       case result of
         Left _  -> return ()
