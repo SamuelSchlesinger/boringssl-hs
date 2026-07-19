@@ -22,6 +22,24 @@ cabal build -fasm
 cabal test --test-show-details=direct
 ```
 
+Before opening a pull request, run the local developer CI matrix:
+
+```bash
+scripts/local-ci.sh
+```
+
+The matrix reads the exact compiler versions from the Cabal `tested-with`
+field, locates already-installed toolchains through GHCup, tests portable and
+assembly builds where supported, runs the test suite with 1, 2, and 4 RTS
+capabilities, builds Haddock, and builds/tests a freshly unpacked `sdist`.
+It never installs missing compilers or updates the package index. Use
+`scripts/local-ci.sh --help` to select individual GHCs or skip expensive gates
+during iteration. `scripts/local-ci.sh --ghc VERSION --sdist-only` is a quick
+way to check that the package is self-contained. The unmodified command is the
+developer pre-CI matrix. It is not the complete release gate: sanitizer,
+dedicated cancellation/concurrency, archive-hardening, native-symbol, and
+OpenSSL-coexistence checks are still required for a release.
+
 ## Code style
 
 - Haskell2010 with no language extensions unless necessary.
